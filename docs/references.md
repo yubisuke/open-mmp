@@ -1,6 +1,6 @@
 # Primary References
 
-Checked on 2026-08-11.
+Checked on 2026-08-12.
 
 ## Apple
 
@@ -12,13 +12,15 @@ Checked on 2026-08-11.
 Design implications:
 
 - Use AdAttributionKit as the primary direction for Apple privacy-preserving app attribution while accounting for SKAdNetwork interoperability.
-- Never present privacy-preserving aggregate results as deterministic user-level attribution.
+- Never present privacy-preserving aggregate results as deterministic installation-level attribution.
 - Distinguish tracking that requires ATT from AdAttributionKit measurement that does not require ATT by itself.
 - Device fingerprinting is outside the project scope.
 
 ## Google
 
 - [Google Play Install Referrer](https://developer.android.com/google/play/installreferrer)
+- [Install Referrer API fields](https://developer.android.com/google/play/installreferrer/igetinstallreferrerservice)
+- [Android Auto Backup](https://developer.android.com/identity/data/autobackup)
 - [Attribution Reporting for mobile](https://privacysandbox.google.com/private-advertising/attribution-reporting/android)
 - [Attribution Reporting API integration guide](https://privacysandbox.google.com/private-advertising/attribution-reporting/android/integration-guide)
 - [Advertising ID policy](https://support.google.com/googleplay/android-developer/answer/6048248)
@@ -31,12 +33,40 @@ Design implications:
 - The initial MVP does not collect Advertising ID.
 - SDK providers and app developers remain responsible for identifier and user-data policy compliance.
 
+## Licensing and consent
+
+- [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0.txt)
+- [GDPR Article 7](https://eur-lex.europa.eu/eli/reg/2016/679/oj/eng)
+
+Design implications:
+
+- Keep the official Apache-2.0 text unchanged and maintain attribution separately in `NOTICE`.
+- Withdrawal does not invalidate processing completed before withdrawal. For a consent-required purpose, new server processing after withdrawal recognition requires a documented legal basis; `occurred_at` alone does not authorize ingestion.
+
+## Cloudflare reference deployment
+
+- [Workers](https://developers.cloudflare.com/workers/)
+- [Queues](https://developers.cloudflare.com/queues/)
+- [R2](https://developers.cloudflare.com/r2/)
+- [Hyperdrive](https://developers.cloudflare.com/hyperdrive/)
+- [Containers](https://developers.cloudflare.com/containers/)
+- [D1](https://developers.cloudflare.com/d1/)
+- [Secrets Store](https://developers.cloudflare.com/secrets-store/)
+
+Design implications:
+
+- Cloudflare is the preferred reference deployment, while public contracts remain portable.
+- PostgreSQL remains the initial authoritative ledger; D1 is not a drop-in contract change.
+- Recheck product status, limits, data-location behavior, and pricing immediately before deployment.
+
 ## Media integration
 
 - [Google Ads App Conversion Tracking API](https://developers.google.com/app-conversion-tracking/api)
 - [AppLovin MAX S2S Impression Revenue API](https://developers.applovin.com/en/max/advanced-features/s2s-impression-level-api/)
 
 These references demonstrate possible integration paths, not completed approval or production support.
+
+Before starting the Google Ads third-party provider flow, verify whether a provider ID/Link ID and partner approval are required and whether self-service configuration is sufficient. Before starting Apple privacy-preserving measurement, verify that developer postback copies available without ad-network registration are adequate for the intended tests. The Milestone 5 adapter owner records the primary-source result and revises the adapter order only with that evidence.
 
 ## Change warning
 

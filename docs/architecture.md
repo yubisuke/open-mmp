@@ -15,6 +15,10 @@ Proposed stack:
 - Dashboard: TypeScript web application, later in the MVP
 - Local runtime: Docker Compose
 
+## Cloudflare-first reference deployment
+
+Cloudflare is the preferred future reference deployment, not a Cloudflare-only product requirement. Use Workers for redirector and API edge handling, Queues for asynchronous ingestion, R2 for protected raw evidence and versioned snapshots, Pages or Workers for the dashboard, and Secrets Store for deployment secrets. Use Cloudflare Containers only for future workloads that require a full Linux container rather than the Workers runtime. Keep the authoritative audit ledger on PostgreSQL initially, reached from Workers through Hyperdrive. D1 may hold configuration or small metadata, but must not become the authoritative audit ledger until contract and equivalence evidence prove it suitable. Preserve self-hostability through explicit storage, queue, and database ports; no public contract may depend on a Cloudflare-specific API.
+
 ## Android Phase 1 flow
 
 ```mermaid
@@ -52,7 +56,7 @@ sequenceDiagram
 
 - Accepts `POST /v1/events/batch`
 - Assigns the authoritative tenant and app from an authenticated SDK key or adapter configuration; client-supplied IDs are consistency checks only
-- Validates payload size, event count, clock skew, and schema version
+- Validates payload size, event count, schema version, and client-clock skew: when client `occurred_at` is later than `received_at + 5 minutes`, retain it as evidence and mark `clock_skew_suspected`; it never controls an attribution window
 - Stores delivery, raw record, and logical event as separate concepts
 - Distinguishes successful receipt from successful normalization or attribution
 
@@ -92,7 +96,7 @@ Initial Android rule:
 
 1. Extract a verifiable `click_id` from Install Referrer evidence.
 2. Confirm that the click belongs to the same tenant and app.
-3. Confirm that the click precedes the install and falls inside the seven-day half-open window.
+3. Evaluate the seven-day half-open window with the redirector-recorded click time and the Google Play server `install_begin_at_server`; device `occurred_at` is evidence only and never decides the window.
 4. Return `non_organic` with a deterministic method and reason when valid.
 5. Otherwise return `organic` or `unattributed` with an explicit reason code.
 
@@ -103,7 +107,7 @@ Initial Android rule:
 - Include attribution method, rule version, input watermark, and data freshness
 - Include an immutable input snapshot ID or ledger position so equal timestamps cannot select different record sets
 - Expose late-arrival and recalculation state
-- Never present aggregate privacy reports as user-level records
+- Never present aggregate privacy reports as installation-level records
 
 ## Data layers
 
@@ -141,7 +145,7 @@ Do not compress independent concerns into one `data_quality_status`. Store inges
 - `attribution_id`
 - `tenant_id`
 - `app_id`
-- `subject_scope`: `user_level | aggregate`
+- `subject_scope`: `installation_level | aggregate`
 - `subject_ref`
 - `status`: `organic | non_organic | unattributed`
 - `method`

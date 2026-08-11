@@ -23,6 +23,8 @@ The first useful product runs alongside an existing MMP rather than replacing it
 - Explain differences through candidate evidence, exclusions, windows, joins, and data freshness
 - Reduce dependency only after a real shadow pilot validates a specific measurement path
 
+Difference reasons are neutral measurement-semantic categories (such as window, join, freshness, scope, redaction, currency, or policy); they do not score provider quality.
+
 ## Phase 1 native vertical slice
 
 ### Android and Unity SDK
@@ -31,6 +33,7 @@ The first useful product runs alongside an existing MMP rather than replacing it
 - Google Play Install Referrer retrieval
 - `install`, `session_start`, and custom event delivery
 - Persistent offline queue, retry, and batching
+- On consent withdrawal, purge or immediately redact queued events for consent-required purposes; post-withdrawal acceptance requires a documented alternative legal basis per purpose
 - Event-level idempotency
 - Collection disablement and local identifier reset
 - Unity C# surface backed by an Android Kotlin bridge
@@ -48,6 +51,7 @@ The first useful product runs alongside an existing MMP rather than replacing it
 - Deterministic click-to-install matching
 - Seven-day last-click window for the MVP
 - Explicit organic and unattributed classifications for missing, expired, conflicting, or unknown evidence
+- Explicit unattributed classifications for unsupported or unavailable Install Referrer paths
 - Required attribution method, reason code, input cutoff, and rule version
 - Recalculation from immutable or lawfully redacted source records
 
@@ -79,6 +83,7 @@ The first useful product runs alongside an existing MMP rather than replacing it
 6. The SDK sends no new events after collection is disabled.
 7. An installation-scoped deletion request removes identifiable data and triggers aggregate recalculation.
 8. Shadow results remain labeled as unverified until compared against real campaigns for an adequate observation period.
+9. Android Auto Backup/device-transfer testing shows that an `installation_id` is not restored onto another device.
 
 ## Measurement terminology
 

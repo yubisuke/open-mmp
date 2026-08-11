@@ -17,6 +17,7 @@
 - Scoped to one app
 - Resettable through the SDK and removable through a deletion request
 - Never joined to a persistent device identifier
+- SDK storage holding this value must be excluded from Android Auto Backup and device-transfer restoration so one installation ID cannot reappear on another device.
 
 ### `click_id`
 
@@ -31,14 +32,15 @@ The initial MVP does not collect them. A future adapter may handle one only when
 ## Apple
 
 - Tracking across apps or websites requires App Tracking Transparency when Apple's definition applies.
-- AdAttributionKit is modeled as privacy-preserving platform attribution, not deterministic user-level attribution.
+- AdAttributionKit is modeled as privacy-preserving platform attribution, not deterministic installation-level attribution.
 - Device fingerprinting is prohibited by project policy.
 - Verify postback signatures and transaction IDs and reject replayed postbacks.
 
 ## Android
 
 - Phase 1 uses Google Play Install Referrer.
-- Preserve referrer read time, click time, install-begin time, and validation outcome.
+- Preserve referrer read time, device and server referrer timestamps, and validation outcome. Window evaluation uses `redirector_click_at` and Google Play server `install_begin_at_server`; device `occurred_at` is evidence only.
+- Treat an unsupported or unavailable Install Referrer path as explicit unattributed evidence (`install_referrer_unsupported` or `install_referrer_unavailable`), not as an organic assertion.
 - Never reconnect a deleted advertising ID to an earlier ID or derived profile.
 - Add Android Attribution Reporting through an isolated adapter because enrollment, API availability, and report behavior can change.
 
@@ -49,8 +51,15 @@ The initial MVP does not collect them. A future adapter may handle one only when
 - In-app events: 13 months, tenant-reducible
 - Audit records: 13 months
 - Raw IP at the redirector: not persisted in the application database
+- Redirector infrastructure logs: access-controlled minimum abuse metadata for up to 14 days outside the application database; deployments may choose a shorter period, and any extension requires documented necessity. Do not copy raw IP into the application database.
 
 Before implementation, legal and operational requirements must validate these defaults. Tenants must be able to choose shorter periods.
+
+## Consent withdrawal and queued delivery
+
+- Once the server recognizes a withdrawal, it rejects every event for a consent-required purpose regardless of `occurred_at`, retaining only non-identifying rejection metadata.
+- Acceptance of a queued event after withdrawal requires an explicit, per-purpose, documented alternative legal basis in the versioned server policy; it is never inferred from an earlier occurrence time.
+- On withdrawal, the SDK stops delivery and purges or immediately redacts queued consent-required events.
 
 ## Correction, deletion, and export
 
@@ -100,3 +109,13 @@ Each decision records its reason, evidence references, policy digest, evaluation
 - Retention and deletion end-to-end tests
 - Dependency and artifact SBOM
 - Replay, conflict, tenant-isolation, and redaction fixtures
+
+Gate ownership follows the canonical [roadmap](roadmap.md):
+
+| Gate | Required milestone |
+| --- | --- |
+| Initial threat model, retention/redaction contract, and replay/conflict/redaction fixtures | M0 Contract |
+| Private vulnerability-reporting path, ledger isolation tests, deletion recalculation, and an SBOM for every runtime artifact | M1 Shadow ledger and every later runtime milestone |
+| Complete Android SDK field inventory, Google Play Data safety mapping, consent-queue tests, and backup/restore exclusion for `installation_id` | M2 Android and Unity SDK |
+| Apple Privacy Manifest and App Privacy Details mapping | M4 iOS privacy-preserving measurement |
+| Final threat-model review, production SBOM, tenant-isolation/replay/deletion exercises, and backup/restore evidence | M5 Production and fraud boundary |
