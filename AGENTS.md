@@ -6,6 +6,7 @@
 - Project documentation, GitHub issues, pull requests, and release notes must be written in English by default.
 - Code identifiers and API field names must use English.
 - The initial product entry point is a Shadow MMP. The first native attribution vertical slice targets Android and Unity.
+- `docs/roadmap.md` is the canonical milestone sequence. When a milestone, exit gate, or ordering changes, update its project-plan crosswalk in that file and the corresponding summary in `docs/project-plan.md` in the same change.
 
 ## GitHub boundary
 

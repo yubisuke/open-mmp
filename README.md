@@ -4,17 +4,21 @@ Open MMP is an early-stage project for a self-hostable, open-source Mobile Measu
 
 ## Why this project exists
 
-Mobile measurement can expose totals without enough evidence to reproduce them: raw events, attribution decisions, metric definitions, attribution decision logic, and pricing or cost assumptions may remain black boxes. Open MMP starts in shadow mode alongside an existing MMP, so differences can be explained before any primary migration.
+Independent measurement systems can produce totals that need transparent evidence to reconcile: raw events, attribution decisions, metric definitions, attribution logic, and pricing or cost assumptions. Open MMP starts in complementary shadow mode alongside an existing MMP, so neutral measurement differences can be explained before any primary migration.
 
 The project focuses on auditable, open event and metric contracts that independent implementations can reproduce from synthetic fixtures. Deployment-specific data, credentials, and live fraud defenses remain private. It is designed to make measurement more transparent without enabling device fingerprinting or cross-app tracking.
 
 This is an early design-stage project, not a production-ready MMP.
 
+## License
+
+This project is licensed under the [Apache License 2.0](LICENSE); attribution is recorded in [NOTICE](NOTICE). The project maintainer must complete a name and trademark clearance before the first public release; this is a release prerequisite, not a claim of trademark rights. Security reporting follows [SECURITY.md](SECURITY.md).
+
 ## Current status
 
 This project is currently in the design phase. The repository contains documentation only; no runtime code has been generated.
 
-The first product entry point is a Shadow MMP that runs alongside an existing provider. It normalizes first-party events, existing MMP exports, media cost, and revenue into a common contract, then explains differences through candidate evidence, exclusion reasons, attribution windows, ID joins, and recalculation history. It must not be treated as the primary MMP until a real shadow pilot has produced sufficient evidence.
+The first product entry point is a Shadow MMP that runs alongside an existing provider. It normalizes first-party events, existing MMP exports, media cost, and revenue into a common contract, then explains neutral differences through candidate evidence, exclusion reasons, attribution windows, ID joins, and recalculation history. Difference reasons describe measurement semantics, not provider quality. It must not be treated as the primary MMP until a real shadow pilot has produced sufficient evidence.
 
 The first native attribution vertical slice targets Android:
 

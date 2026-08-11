@@ -9,7 +9,7 @@ The product therefore starts as a Shadow MMP alongside an existing provider.
 - Store first-party events independently
 - Normalize existing MMP and media outputs into a common contract
 - Recalculate attribution and revenue under explicit definitions
-- Explain discrepancies through candidates, exclusion reasons, windows, joins, and freshness
+- Explain neutral measurement differences through candidates, exclusion reasons, windows, joins, and freshness; these categories do not score provider quality
 - Move a measurement path to primary status only after a real shadow pilot validates it
 
 ## Open and private boundaries
@@ -37,6 +37,8 @@ Fraud decisions retain evidence references, reason codes, rule-bundle versions a
 
 ## Execution phases
 
+`docs/roadmap.md` is the canonical execution order and contains the project-plan crosswalk. This document is a phase summary and must be updated with that crosswalk when the roadmap changes.
+
 ### Phase 0: Contract
 
 Produce `Open MMP Event & Metric Contract v0.1`:
@@ -46,6 +48,7 @@ Produce `Open MMP Event & Metric Contract v0.1`:
 - Schema-only revenue, purchase, consent, privacy, and fraud extensions
 - Orthogonal lifecycle and quality states
 - Attribution result and reason registry
+- Shadow difference-reason registry and external-row matching-key types
 - Explicit D0 24-hour, UTC-calendar, and JST-calendar definitions
 - Synthetic fixtures and a pure reference evaluator
 
@@ -54,6 +57,7 @@ Produce `Open MMP Event & Metric Contract v0.1`:
 - PostgreSQL received-evidence ledger
 - Normalized logical records
 - Import API and CSV import
+- Public shadow-import profile and synthetic fixtures; provider mappings and certification remain deployment-private
 - Recalculable metric engine
 - Difference-audit API
 
@@ -69,7 +73,17 @@ The first goal is to explain differences between existing MMP raw output and fir
 - Persistent queue, retry, and idempotency
 - Versioned last-click attribution
 
-### Phase 3: Trust and fraud boundary
+### Phase 3: Minimal dashboard
+
+- App registration, measurement-link creation, and daily reporting
+- Raw/report/dashboard consistency under identical definitions
+
+### Phase 4: iOS privacy-preserving measurement
+
+- AdAttributionKit and SKAdNetwork postback receipt and aggregate reporting
+- No mixing of aggregate iOS reports with deterministic installation-level attribution
+
+### Phase 5: Production, trust, fraud, and media adapters
 
 - Replay evidence using nonce, time, and event IDs
 - Play Integrity integration
@@ -78,9 +92,7 @@ The first goal is to explain differences between existing MMP raw output and fir
 - Signed, least-privilege media adapters
 - Adapter certification against public fixtures
 
-### Phase 4: Media adapters
-
-Add public and verifiable paths first:
+Add media adapters only with primary-source, current approval evidence. The initially proposed order is:
 
 1. First-party ads and referral URLs
 2. AppLovin MAX ad revenue
@@ -90,8 +102,6 @@ Add public and verifiable paths first:
 6. Networks requiring additional approval or contracts
 
 Each adapter declares `official | approval_pending | experimental | unsupported`.
-
-### Phase 5: Production pilot
 
 - Three-to-five-month real-campaign shadow comparison
 - Missing, duplicate, delayed, and reinstall measurement
