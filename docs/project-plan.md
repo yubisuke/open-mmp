@@ -41,6 +41,8 @@ Fraud decisions retain evidence references, reason codes, rule-bundle versions a
 
 ### Phase 0: Contract
 
+M0.1 hardening is complete and its local validation gate passes. The phase now has explicit paid reinstall/redownload semantics, global record-ID collision rejection, tenant/app-scoped defensive references, deterministic click ambiguity handling, unambiguous installation anchors, and an initial public [threat model](threat-model.md). M1 Shadow Ledger is next; this is not production-runtime readiness.
+
 Produce `Open MMP Event & Metric Contract v0.1`:
 
 - Raw-record envelope

@@ -102,6 +102,8 @@ Each decision records its reason, evidence references, policy digest, evaluation
 
 ## Release gates
 
+The initial public [threat model](threat-model.md) maps the M0.1 contract controls and the residual risks that only a runtime release can address.
+
 - Threat model
 - Complete SDK field inventory
 - Apple Privacy Manifest and App Privacy Details mapping
@@ -114,7 +116,7 @@ Gate ownership follows the canonical [roadmap](roadmap.md):
 
 | Gate | Required milestone |
 | --- | --- |
-| Initial threat model, retention/redaction contract, and replay/conflict/redaction fixtures | M0 Contract |
+| Initial threat model, retention/redaction contract, and replay/conflict/redaction fixtures | M0.1 Contract hardening |
 | Private vulnerability-reporting path, ledger isolation tests, deletion recalculation, and an SBOM for every runtime artifact | M1 Shadow ledger and every later runtime milestone |
 | Complete Android SDK field inventory, Google Play Data safety mapping, consent-queue tests, and backup/restore exclusion for `installation_id` | M2 Android and Unity SDK |
 | Apple Privacy Manifest and App Privacy Details mapping | M4 iOS privacy-preserving measurement |

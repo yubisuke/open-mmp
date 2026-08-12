@@ -24,6 +24,8 @@
     "currency": "USD",
     "evidence_refs": [
       {
+        "tenant_id": "tenant-a",
+        "app_id": "app-a",
         "ref": "install-8",
         "lifecycle_status": "available",
         "access_class": "protected"
@@ -55,6 +57,8 @@
     "currency": "USD",
     "evidence_refs": [
       {
+        "tenant_id": "tenant-a",
+        "app_id": "app-a",
         "ref": "install-8",
         "lifecycle_status": "available",
         "access_class": "protected"
@@ -86,6 +90,8 @@
     "currency": "USD",
     "evidence_refs": [
       {
+        "tenant_id": "tenant-a",
+        "app_id": "app-a",
         "ref": "install-8",
         "lifecycle_status": "available",
         "access_class": "protected"
@@ -117,11 +123,15 @@
     "currency": "USD",
     "evidence_refs": [
       {
+        "tenant_id": "tenant-a",
+        "app_id": "app-a",
         "ref": "install-8",
         "lifecycle_status": "available",
         "access_class": "protected"
       },
       {
+        "tenant_id": "tenant-a",
+        "app_id": "app-a",
         "ref": "revenue-late",
         "lifecycle_status": "available",
         "access_class": "protected"
@@ -154,11 +164,15 @@
     "currency": "USD",
     "evidence_refs": [
       {
+        "tenant_id": "tenant-a",
+        "app_id": "app-a",
         "ref": "install-8",
         "lifecycle_status": "available",
         "access_class": "protected"
       },
       {
+        "tenant_id": "tenant-a",
+        "app_id": "app-a",
         "ref": "revenue-late",
         "lifecycle_status": "available",
         "access_class": "protected"
@@ -191,11 +205,15 @@
     "currency": "USD",
     "evidence_refs": [
       {
+        "tenant_id": "tenant-a",
+        "app_id": "app-a",
         "ref": "install-8",
         "lifecycle_status": "available",
         "access_class": "protected"
       },
       {
+        "tenant_id": "tenant-a",
+        "app_id": "app-a",
         "ref": "revenue-late",
         "lifecycle_status": "available",
         "access_class": "protected"

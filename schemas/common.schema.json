@@ -18,8 +18,10 @@
     "evidenceRef": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["ref", "lifecycle_status"],
+      "required": ["tenant_id", "app_id", "ref", "lifecycle_status"],
       "properties": {
+        "tenant_id": { "$ref": "#/$defs/id" },
+        "app_id": { "$ref": "#/$defs/id" },
         "ref": { "type": "string" },
         "lifecycle_status": { "enum": ["available", "redacted", "purged"] },
         "access_class": { "enum": ["public", "protected", "private"] }

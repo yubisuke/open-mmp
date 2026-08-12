@@ -45,7 +45,13 @@ def identifier(value: dict[str, Any]) -> str:
 
 
 def ordered(values: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return sorted(values, key=identifier)
+    return sorted(values, key=lambda value: (
+        identifier(value),
+        str(value.get("tenant_id", "")),
+        str(value.get("app_id", "")),
+        str(value.get("delivery_id", "")),
+        digest(value),
+    ))
 
 
 def flatten_attempts(value: dict[str, Any]) -> list[dict[str, Any]]:
@@ -59,6 +65,8 @@ def flatten_attempts(value: dict[str, Any]) -> list[dict[str, Any]]:
             result.append({"server": value["server_context"], "record": record, "batch_id": "batch-default"})
     return sorted(result, key=lambda item: (
         item["record"]["received_at"], item["record"]["record_id"], item["record"]["delivery_id"],
+        item["server"]["tenant_id"], item["server"]["app_id"], item["record"]["schema_version"],
+        digest(item["record"]),
     ))
 
 
@@ -77,6 +85,55 @@ def attempt_evidence_key(attempt: dict[str, Any]) -> tuple[str, str, str]:
         attempt["server"]["app_id"],
         attempt["record"]["record_id"],
     )
+
+
+def attempt_decision_key(attempt: dict[str, Any]) -> tuple[str, ...]:
+    # record_id is globally allocated by the server. Delivery context keeps a
+    # malformed collision from overwriting another decision in this evaluator.
+    return (
+        attempt["batch_id"], attempt["server"]["tenant_id"], attempt["server"]["app_id"],
+        attempt["record"]["delivery_id"], attempt["record"]["record_id"], attempt["record"]["schema_version"],
+        digest(attempt["record"]),
+    )
+
+
+def decision_for(decisions: dict[tuple[str, ...], dict[str, Any]], attempt: dict[str, Any]) -> dict[str, Any]:
+    try:
+        return decisions[attempt_decision_key(attempt)]
+    except KeyError as error:
+        raise ValueError(f"missing decision: {attempt['record']['delivery_id']}") from error
+
+
+def assert_installation_anchors(
+    attempts: list[dict[str, Any]],
+    decisions: dict[tuple[str, ...], dict[str, Any]],
+) -> None:
+    anchors: set[tuple[str, str, str]] = set()
+    accepted_installs = [
+        item for item in attempts
+        if item["record"]["event_name"] == "install"
+        and decision_for(decisions, item)["ingestion_status"] == "accepted"
+        and decision_for(decisions, item)["duplicate_resolution"] == "unique"
+    ]
+    for attempt in accepted_installs:
+        server, record = attempt["server"], attempt["record"]
+        payload = record["payload"]
+        key = evidence_key(server["tenant_id"], server["app_id"], payload["installation_id"])
+        if key in anchors:
+            raise ValueError(f"ambiguous installation anchor: {payload['installation_id']}")
+        anchors.add(key)
+        if payload["install_type"] in ("reinstall", "redownload"):
+            if not payload.get("prior_installation_id") or payload["prior_installation_id"] == payload["installation_id"]:
+                raise ValueError(f"invalid reinstall installation anchor: {record['record_id']}")
+            prior = evidence_key(server["tenant_id"], server["app_id"], payload["prior_installation_id"])
+            if not any(
+                candidate["record"]["event_name"] == "install"
+                and evidence_key(candidate["server"]["tenant_id"], candidate["server"]["app_id"], candidate["record"]["payload"]["installation_id"]) == prior
+                for candidate in accepted_installs
+            ):
+                raise ValueError(f"missing prior installation anchor: {record['record_id']}")
+        elif payload.get("prior_installation_id"):
+            raise ValueError(f"first install must not name a prior installation: {record['record_id']}")
 
 
 def assert_scoped_references(value: dict[str, Any], attempts: list[dict[str, Any]]) -> None:
@@ -152,9 +209,12 @@ def consent_decision(attempt: dict[str, Any]) -> dict[str, Any]:
 
 def decide(attempt: dict[str, Any], attempts: list[dict[str, Any]]) -> dict[str, Any]:
     server, record = attempt["server"], attempt["record"]
+    same_record_id = [candidate for candidate in attempts if candidate["record"]["record_id"] == record["record_id"]]
     matches = [candidate for candidate in attempts if scope_key(candidate) == scope_key(attempt)]
     first = matches[0]
-    if first is attempt:
+    if len(same_record_id) > 1:
+        duplicate = "record_id_collision"
+    elif first is attempt:
         duplicate = "unique"
     elif digest(first["record"]["payload"]) == digest(record["payload"]):
         duplicate = "duplicate_delivery"
@@ -164,6 +224,8 @@ def decide(attempt: dict[str, Any], attempts: list[dict[str, Any]]) -> dict[str,
     status, reason = "accepted", None
     if record["tenant_id"] != server["tenant_id"] or record["app_id"] != server["app_id"]:
         status, reason = "rejected", "client_scope_mismatch"
+    elif duplicate == "record_id_collision":
+        status, reason = "rejected", "record_id_collision"
     elif not consent["allowed"]:
         status, reason = "rejected", "consent_withdrawn"
     elif record.get("subject_scope") == "aggregate" and record["payload"].get("installation_id"):
@@ -172,7 +234,7 @@ def decide(attempt: dict[str, Any], attempts: list[dict[str, Any]]) -> dict[str,
         status, reason = "rejected", "event_id_conflict"
     result = {
         "record_id": record["record_id"],
-        "canonical_record_id": record["record_id"] if duplicate == "unique" else first["record"]["record_id"],
+        "canonical_record_id": record["record_id"] if duplicate in ("unique", "record_id_collision") else first["record"]["record_id"],
         "delivery_id": record["delivery_id"],
         "event_name": record["event_name"],
         "tenant_id": server["tenant_id"],
@@ -240,6 +302,8 @@ def attribution(
 
     def evidence(record_id: str) -> dict[str, Any]:
         return {
+            "tenant_id": server["tenant_id"],
+            "app_id": server["app_id"],
             "ref": record_id,
             "lifecycle_status": lifecycle.get(evidence_key(server["tenant_id"], server["app_id"], record_id), "available"),
             "access_class": "protected",
@@ -265,28 +329,26 @@ def attribution(
     def result(status: str, method: str, model: str, reason: str, extra: dict[str, Any] | None = None) -> dict[str, Any]:
         return base | {"status": status, "method": method, "model": model, "reason_code": reason} | (extra or {})
 
-    if payload["install_type"] in ("reinstall", "redownload"):
-        return result("organic", "none", "none", "reinstall_or_redownload")
     if payload["referrer_status"] == "none":
         return result("organic", "none", "none", "no_referrer")
     if payload["referrer_status"] == "unsupported":
         return result("unattributed", "none", "none", "install_referrer_unsupported")
     if payload["referrer_status"] == "unavailable":
         return result("unattributed", "none", "none", "install_referrer_unavailable")
-    click = next(
-        (
-            candidate for candidate in attempts
-            if candidate["server"]["tenant_id"] == server["tenant_id"]
-            and candidate["server"]["app_id"] == server["app_id"]
-            and candidate["record"]["event_name"] == "click"
-            and candidate["record"]["payload"].get("click_id") == payload.get("click_id")
-            and decisions[candidate["record"]["record_id"]]["ingestion_status"] == "accepted"
-            and decisions[candidate["record"]["record_id"]]["duplicate_resolution"] == "unique"
-        ),
-        None,
-    )
-    if not click:
+    clicks = [
+        candidate for candidate in attempts
+        if candidate["server"]["tenant_id"] == server["tenant_id"]
+        and candidate["server"]["app_id"] == server["app_id"]
+        and candidate["record"]["event_name"] == "click"
+        and candidate["record"]["payload"].get("click_id") == payload.get("click_id")
+        and decision_for(decisions, candidate)["ingestion_status"] == "accepted"
+        and decision_for(decisions, candidate)["duplicate_resolution"] == "unique"
+    ]
+    if not clicks:
         return result("unattributed", "none", "none", "unknown_click_id")
+    if len(clicks) > 1:
+        return result("unattributed", "none", "none", "ambiguous_click_id")
+    click = clicks[0]
     if click["record"]["payload"].get("bot_prefetch"):
         return result("unattributed", "none", "none", "bot_prefetch", {
             "evidence_refs": [evidence(click["record"]["record_id"]), evidence(install["record_id"])],
@@ -366,8 +428,8 @@ def metric_runs(
     for evaluation in value.get("metric_evaluations", []):
         included = [
             attempt for attempt in attempts
-            if decisions[attempt["record"]["record_id"]]["ingestion_status"] == "accepted"
-            and decisions[attempt["record"]["record_id"]]["duplicate_resolution"] == "unique"
+            if decision_for(decisions, attempt)["ingestion_status"] == "accepted"
+            and decision_for(decisions, attempt)["duplicate_resolution"] == "unique"
             and attempt["record"]["received_at"] <= evaluation["input_received_at_watermark"]
         ]
         included.sort(key=lambda attempt: (attempt["record"]["received_at"], attempt["record"]["record_id"], attempt["record"]["delivery_id"]))
@@ -394,6 +456,8 @@ def metric_runs(
         reproducibility = "redaction_affected" if "redacted" in states else ("retention_affected" if "purged" in states else "fully_reproducible")
         evidence = [
             {
+                "tenant_id": attempt["server"]["tenant_id"],
+                "app_id": attempt["server"]["app_id"],
                 "ref": attempt["record"]["record_id"],
                 "lifecycle_status": lifecycle.get(attempt_evidence_key(attempt), "available") if evaluation["privacy_state"] == "after" else "available",
                 "access_class": "protected",
@@ -504,16 +568,17 @@ def evaluate(value: dict[str, Any]) -> dict[str, Any]:
     attempts = flatten_attempts(value)
     assert_scoped_references(value, attempts)
     decisions_list = [decide(attempt, attempts) for attempt in attempts]
-    decisions = {decision["record_id"]: decision for decision in decisions_list}
+    decisions = {attempt_decision_key(attempt): decision for attempt, decision in zip(attempts, decisions_list)}
+    assert_installation_anchors(attempts, decisions)
     lifecycle = lifecycle_index(value)
     accepted = [
         attempt for attempt in attempts
-        if decisions[attempt["record"]["record_id"]]["ingestion_status"] == "accepted"
-        and decisions[attempt["record"]["record_id"]]["duplicate_resolution"] == "unique"
+        if decision_for(decisions, attempt)["ingestion_status"] == "accepted"
+        and decision_for(decisions, attempt)["duplicate_resolution"] == "unique"
     ]
     conflict_evidence = [
         attempt for attempt in attempts
-        if decisions[attempt["record"]["record_id"]].get("reason_code") == "event_id_conflict"
+        if decision_for(decisions, attempt).get("reason_code") == "event_id_conflict"
     ]
     raw_evidence = [
         attempt for attempt in accepted + conflict_evidence
@@ -526,25 +591,25 @@ def evaluate(value: dict[str, Any]) -> dict[str, Any]:
             "contract_version": CONTRACT_VERSION,
             "delivery_id": attempt["record"]["delivery_id"],
             "record_id": attempt["record"]["record_id"],
-            "canonical_record_id": decisions[attempt["record"]["record_id"]]["canonical_record_id"],
+            "canonical_record_id": decision_for(decisions, attempt)["canonical_record_id"],
             "tenant_id": attempt["server"]["tenant_id"],
             "app_id": attempt["server"]["app_id"],
             "received_at": attempt["record"]["received_at"],
-            "ingestion_status": decisions[attempt["record"]["record_id"]]["ingestion_status"],
-            "duplicate_resolution": decisions[attempt["record"]["record_id"]]["duplicate_resolution"],
-            "timeliness": decisions[attempt["record"]["record_id"]]["timeliness"],
-            "clock_skew_suspected": decisions[attempt["record"]["record_id"]]["clock_skew_suspected"],
-            "payload_disposition": decisions[attempt["record"]["record_id"]]["payload_disposition"],
+            "ingestion_status": decision_for(decisions, attempt)["ingestion_status"],
+            "duplicate_resolution": decision_for(decisions, attempt)["duplicate_resolution"],
+            "timeliness": decision_for(decisions, attempt)["timeliness"],
+            "clock_skew_suspected": decision_for(decisions, attempt)["clock_skew_suspected"],
+            "payload_disposition": decision_for(decisions, attempt)["payload_disposition"],
         }
         | {
-            key: decisions[attempt["record"]["record_id"]][key]
+            key: decision_for(decisions, attempt)[key]
             for key in (
                 "processing_purpose_id", "consent_evaluation_policy_version",
                 "consent_decision_reason_code", "withdrawal_recognized_at",
                 "alternative_legal_basis_id", "alternative_legal_basis_policy_version",
                 "reason_code",
             )
-            if decisions[attempt["record"]["record_id"]].get(key) is not None
+            if decision_for(decisions, attempt).get(key) is not None
         }
         for attempt in attempts
     ])
@@ -686,5 +751,8 @@ if __name__ == "__main__":
     if len(sys.argv) == 2 and sys.argv[1] == "--conformance":
         conformance()
     else:
-        with open(sys.argv[1], encoding="utf-8") as source:
-            print(canonical(evaluate(json.load(source))))
+        if sys.argv[1] == "-":
+            print(canonical(evaluate(json.load(sys.stdin))))
+        else:
+            with open(sys.argv[1], encoding="utf-8") as source:
+                print(canonical(evaluate(json.load(source))))

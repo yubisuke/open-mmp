@@ -8,6 +8,8 @@
     "reason_code_version": "0.1.0",
     "evidence_refs": [
       {
+        "tenant_id": "tenant-a",
+        "app_id": "app-a",
         "ref": "install-after",
         "lifecycle_status": "available",
         "access_class": "protected"
@@ -34,11 +36,15 @@
     "reason_code_version": "0.1.0",
     "evidence_refs": [
       {
+        "tenant_id": "tenant-a",
+        "app_id": "app-a",
         "ref": "click-4",
         "lifecycle_status": "available",
         "access_class": "protected"
       },
       {
+        "tenant_id": "tenant-a",
+        "app_id": "app-a",
         "ref": "install-before",
         "lifecycle_status": "available",
         "access_class": "protected"
@@ -65,6 +71,8 @@
     "reason_code_version": "0.1.0",
     "evidence_refs": [
       {
+        "tenant_id": "tenant-a",
+        "app_id": "app-a",
         "ref": "install-exact",
         "lifecycle_status": "available",
         "access_class": "protected"

@@ -28,8 +28,26 @@ function stableId(value: Any): string {
   );
 }
 
+function stableOrderKey(value: Any): string[] {
+  return [
+    stableId(value),
+    String(value.tenant_id ?? ""),
+    String(value.app_id ?? ""),
+    String(value.delivery_id ?? ""),
+    sha256(value),
+  ];
+}
+
 function sortById<T extends Any>(values: T[]): T[] {
-  return [...values].sort((a, b) => compareText(stableId(a), stableId(b)));
+  return [...values].sort((a, b) => {
+    const aKey = stableOrderKey(a);
+    const bKey = stableOrderKey(b);
+    for (let index = 0; index < aKey.length; index += 1) {
+      const comparison = compareText(aKey[index], bKey[index]);
+      if (comparison !== 0) return comparison;
+    }
+    return 0;
+  });
 }
 
 function time(value: string | undefined): number {
@@ -55,10 +73,19 @@ function attempts(input: Any): Attempt[] {
 }
 
 function attemptOrder(a: Attempt, b: Attempt): number {
-  const received = compareText(a.record.received_at, b.record.received_at);
-  if (received !== 0) return received;
-  const record = compareText(a.record.record_id, b.record.record_id);
-  return record !== 0 ? record : compareText(a.record.delivery_id, b.record.delivery_id);
+  const aKey = [
+    a.record.received_at, a.record.record_id, a.record.delivery_id,
+    a.server.tenant_id, a.server.app_id, a.record.schema_version, sha256(a.record),
+  ];
+  const bKey = [
+    b.record.received_at, b.record.record_id, b.record.delivery_id,
+    b.server.tenant_id, b.server.app_id, b.record.schema_version, sha256(b.record),
+  ];
+  for (let index = 0; index < aKey.length; index += 1) {
+    const comparison = compareText(aKey[index], bKey[index]);
+    if (comparison !== 0) return comparison;
+  }
+  return 0;
 }
 
 function scopeKey(attempt: Attempt): string {
@@ -72,6 +99,48 @@ function evidenceKey(tenantId: string, appId: string, recordId: string): string 
 
 function attemptEvidenceKey(attempt: Attempt): string {
   return evidenceKey(attempt.server.tenant_id, attempt.server.app_id, attempt.record.record_id);
+}
+
+// record_id is a server-generated global identity. Keep delivery context in
+// the evaluator key so malformed collisions cannot overwrite each other.
+function attemptDecisionKey(attempt: Attempt): string {
+  return [
+    attempt.batch_id, attempt.server.tenant_id, attempt.server.app_id,
+    attempt.record.delivery_id, attempt.record.record_id, attempt.record.schema_version,
+    sha256(attempt.record),
+  ].join("|");
+}
+
+function decisionFor(decisions: Map<string, Any>, attempt: Attempt): Any {
+  const decision = decisions.get(attemptDecisionKey(attempt));
+  if (!decision) throw new Error(`missing decision: ${attempt.record.delivery_id}`);
+  return decision;
+}
+
+function assertInstallationAnchors(all: Attempt[], decisions: Map<string, Any>): void {
+  const anchors = new Set<string>();
+  const acceptedInstalls = all.filter((entry) => entry.record.event_name === "install" &&
+    decisionFor(decisions, entry).ingestion_status === "accepted" &&
+    decisionFor(decisions, entry).duplicate_resolution === "unique",
+  );
+  for (const attempt of acceptedInstalls) {
+    const { server, record } = attempt;
+    const payload = record.payload;
+    const key = evidenceKey(server.tenant_id, server.app_id, payload.installation_id);
+    if (anchors.has(key)) throw new Error(`ambiguous installation anchor: ${payload.installation_id}`);
+    anchors.add(key);
+    if (payload.install_type === "reinstall" || payload.install_type === "redownload") {
+      if (!payload.prior_installation_id || payload.prior_installation_id === payload.installation_id) {
+        throw new Error(`invalid reinstall installation anchor: ${record.record_id}`);
+      }
+      const prior = evidenceKey(server.tenant_id, server.app_id, payload.prior_installation_id);
+      if (!acceptedInstalls.some((candidate) =>
+        evidenceKey(candidate.server.tenant_id, candidate.server.app_id, candidate.record.payload.installation_id) === prior,
+      )) throw new Error(`missing prior installation anchor: ${record.record_id}`);
+    } else if (payload.prior_installation_id) {
+      throw new Error(`first install must not name a prior installation: ${record.record_id}`);
+    }
+  }
 }
 
 function assertScopedReferences(input: Any, all: Attempt[]): void {
@@ -141,9 +210,12 @@ function consentDecision(attempt: Attempt): Any {
 
 function decide(attempt: Attempt, orderedAttempts: Attempt[]): Any {
   const { server, record } = attempt;
+  const sameRecordId = orderedAttempts.filter((candidate) => candidate.record.record_id === record.record_id);
   const sameKey = orderedAttempts.filter((candidate) => scopeKey(candidate) === scopeKey(attempt));
   const first = sameKey[0];
-  const duplicate_resolution = first === attempt
+  const duplicate_resolution = sameRecordId.length > 1
+    ? "record_id_collision"
+    : first === attempt
     ? "unique"
     : sha256(first.record.payload) === sha256(record.payload)
       ? "duplicate_delivery"
@@ -154,6 +226,9 @@ function decide(attempt: Attempt, orderedAttempts: Attempt[]): Any {
   if (record.tenant_id !== server.tenant_id || record.app_id !== server.app_id) {
     ingestion_status = "rejected";
     reason_code = "client_scope_mismatch";
+  } else if (duplicate_resolution === "record_id_collision") {
+    ingestion_status = "rejected";
+    reason_code = "record_id_collision";
   } else if (!consent.allowed) {
     ingestion_status = "rejected";
     reason_code = "consent_withdrawn";
@@ -164,7 +239,8 @@ function decide(attempt: Attempt, orderedAttempts: Attempt[]): Any {
     ingestion_status = "rejected";
     reason_code = "event_id_conflict";
   }
-  const canonical_record_id = duplicate_resolution === "unique" ? record.record_id : first.record.record_id;
+  const canonical_record_id = duplicate_resolution === "unique" || duplicate_resolution === "record_id_collision"
+    ? record.record_id : first.record.record_id;
   return {
     record_id: record.record_id,
     canonical_record_id,
@@ -228,6 +304,8 @@ function makeAttribution(attempt: Attempt, all: Attempt[], decisions: Map<string
   const { server, record: install } = attempt;
   const payload = install.payload;
   const evidence = (ref: string) => ({
+    tenant_id: server.tenant_id,
+    app_id: server.app_id,
     ref,
     lifecycle_status: lifecycle.get(evidenceKey(server.tenant_id, server.app_id, ref)) ?? "available",
     access_class: "protected",
@@ -250,19 +328,18 @@ function makeAttribution(attempt: Attempt, all: Attempt[], decisions: Map<string
   };
   const result = (status: string, method: string, model: string, reason_code: string, extra: Any = {}) =>
     ({ ...base, status, method, model, reason_code, ...extra });
-  if (payload.install_type === "reinstall" || payload.install_type === "redownload") {
-    return result("organic", "none", "none", "reinstall_or_redownload");
-  }
   if (payload.referrer_status === "none") return result("organic", "none", "none", "no_referrer");
   if (payload.referrer_status === "unsupported") return result("unattributed", "none", "none", "install_referrer_unsupported");
   if (payload.referrer_status === "unavailable") return result("unattributed", "none", "none", "install_referrer_unavailable");
-  const click = all.find((candidate) =>
+  const clicks = all.filter((candidate) =>
     candidate.server.tenant_id === server.tenant_id && candidate.server.app_id === server.app_id &&
     candidate.record.event_name === "click" && candidate.record.payload.click_id === payload.click_id &&
-    decisions.get(candidate.record.record_id)?.ingestion_status === "accepted" &&
-    decisions.get(candidate.record.record_id)?.duplicate_resolution === "unique",
+    decisionFor(decisions, candidate).ingestion_status === "accepted" &&
+    decisionFor(decisions, candidate).duplicate_resolution === "unique",
   );
-  if (!click) return result("unattributed", "none", "none", "unknown_click_id");
+  if (!clicks.length) return result("unattributed", "none", "none", "unknown_click_id");
+  if (clicks.length > 1) return result("unattributed", "none", "none", "ambiguous_click_id");
+  const [click] = clicks;
   if (click.record.payload.bot_prefetch) {
     return result("unattributed", "none", "none", "bot_prefetch", {
       evidence_refs: [evidence(click.record.record_id), evidence(install.record_id)],
@@ -313,8 +390,8 @@ function metricRuns(input: Any, all: Attempt[], decisions: Map<string, Any>, lif
   const output: Any[] = [];
   for (const evaluation of evaluations) {
     const included = all.filter((attempt) =>
-      decisions.get(attempt.record.record_id)?.ingestion_status === "accepted" &&
-      decisions.get(attempt.record.record_id)?.duplicate_resolution === "unique" &&
+      decisionFor(decisions, attempt).ingestion_status === "accepted" &&
+      decisionFor(decisions, attempt).duplicate_resolution === "unique" &&
       compareText(attempt.record.received_at, evaluation.input_received_at_watermark) <= 0,
     );
     const snapshotRows = [...included].sort(attemptOrder).map((attempt) => [
@@ -334,6 +411,8 @@ function metricRuns(input: Any, all: Attempt[], decisions: Map<string, Any>, lif
       : affectedStates.includes("purged") ? "retention_affected" : "fully_reproducible";
     const ledger = snapshotRows.at(-1);
     const evidence_refs = [...included].sort(attemptOrder).map((attempt) => ({
+      tenant_id: attempt.server.tenant_id,
+      app_id: attempt.server.app_id,
       ref: attempt.record.record_id,
       lifecycle_status: evaluation.privacy_state === "after" ? (lifecycle.get(attemptEvidenceKey(attempt)) ?? "available") : "available",
       access_class: "protected",
@@ -425,18 +504,19 @@ export function evaluate(input: Any): Any {
   const all = attempts(input).sort(attemptOrder);
   assertScopedReferences(input, all);
   const decisionsList = all.map((attempt) => decide(attempt, all));
-  const decisions = new Map(decisionsList.map((decision) => [decision.record_id, decision]));
+  const decisions = new Map(all.map((attempt, index) => [attemptDecisionKey(attempt), decisionsList[index]]));
+  assertInstallationAnchors(all, decisions);
   const lifecycle = privacyIndex(input);
   const acceptedUnique = all.filter((attempt) => {
-    const decision = decisions.get(attempt.record.record_id)!;
+    const decision = decisionFor(decisions, attempt);
     return decision.ingestion_status === "accepted" && decision.duplicate_resolution === "unique";
   });
-  const conflictEvidence = all.filter((attempt) => decisions.get(attempt.record.record_id)?.reason_code === "event_id_conflict");
+  const conflictEvidence = all.filter((attempt) => decisionFor(decisions, attempt).reason_code === "event_id_conflict");
   const rawEvidence = [...acceptedUnique, ...conflictEvidence].filter((attempt) => !lifecycle.has(attemptEvidenceKey(attempt)));
   const logicalEvidence = acceptedUnique.filter((attempt) => !lifecycle.has(attemptEvidenceKey(attempt)));
   const raw_records = sortById(rawEvidence.map((attempt) => makeRawRecord(attempt, "available")));
   const deliveries = sortById(all.map((attempt) => {
-    const decision = decisions.get(attempt.record.record_id)!;
+    const decision = decisionFor(decisions, attempt);
     return {
       contract_version: CONTRACT_VERSION,
       delivery_id: attempt.record.delivery_id,

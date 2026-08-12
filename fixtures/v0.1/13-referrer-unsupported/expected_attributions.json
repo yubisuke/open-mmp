@@ -8,6 +8,8 @@
     "reason_code_version": "0.1.0",
     "evidence_refs": [
       {
+        "tenant_id": "tenant-a",
+        "app_id": "app-a",
         "ref": "install-unavailable",
         "lifecycle_status": "available",
         "access_class": "protected"
@@ -34,6 +36,8 @@
     "reason_code_version": "0.1.0",
     "evidence_refs": [
       {
+        "tenant_id": "tenant-a",
+        "app_id": "app-a",
         "ref": "install-unsupported",
         "lifecycle_status": "available",
         "access_class": "protected"

@@ -36,6 +36,30 @@
   "records": [
     {
       "contract_version": "0.1.0",
+      "record_id": "click-10-paid",
+      "delivery_id": "delivery:click-10-paid",
+      "tenant_id": "tenant-a",
+      "app_id": "app-a",
+      "producer": "redirector",
+      "producer_version": "fixture-v0.1",
+      "event_id": "event:click-10-paid",
+      "event_name": "click",
+      "schema_version": "0.1.0",
+      "occurred_at": "2026-08-11T12:00:00.000Z",
+      "occurred_at_source": "server",
+      "received_at": "2026-08-12T00:00:00.000Z",
+      "processing_purpose_id": "analytics",
+      "processing_sequence": 1,
+      "payload": {
+        "click_id": "click-paid-reinstall",
+        "tracking_link_id": "link-10-paid",
+        "campaign_id": "campaign-10-paid",
+        "redirector_click_at": "2026-08-11T12:00:00.000Z",
+        "redirector_time_status": "available"
+      }
+    },
+    {
+      "contract_version": "0.1.0",
       "record_id": "install-10a",
       "delivery_id": "delivery:install-10a",
       "tenant_id": "tenant-a",
@@ -77,10 +101,35 @@
       "payload": {
         "installation_id": "installation:install-10b",
         "install_type": "reinstall",
-        "referrer_status": "none",
-        "click_id": "click-a",
-        "install_begin_at_server_status": "missing",
+        "referrer_status": "available",
+        "click_id": "click-paid-reinstall",
+        "install_begin_at_server": "2026-08-12T00:00:00.000Z",
+        "install_begin_at_server_status": "available",
         "prior_installation_id": "installation:install-10a"
+      }
+    },
+    {
+      "contract_version": "0.1.0",
+      "record_id": "install-10c",
+      "delivery_id": "delivery:install-10c",
+      "tenant_id": "tenant-a",
+      "app_id": "app-a",
+      "producer": "sdk-android",
+      "producer_version": "fixture-v0.1",
+      "event_id": "event:install-10c",
+      "event_name": "install",
+      "schema_version": "0.1.0",
+      "occurred_at": "2026-08-12T01:00:00.000Z",
+      "occurred_at_source": "device",
+      "received_at": "2026-08-12T01:00:00.000Z",
+      "processing_purpose_id": "analytics",
+      "processing_sequence": 1,
+      "payload": {
+        "installation_id": "installation:install-10c",
+        "install_type": "redownload",
+        "referrer_status": "none",
+        "install_begin_at_server_status": "missing",
+        "prior_installation_id": "installation:install-10b"
       }
     }
   ]
