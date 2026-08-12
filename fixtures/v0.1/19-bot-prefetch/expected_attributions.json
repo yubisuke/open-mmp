@@ -8,11 +8,15 @@
     "reason_code_version": "0.1.0",
     "evidence_refs": [
       {
+        "tenant_id": "tenant-a",
+        "app_id": "app-a",
         "ref": "prefetch-click",
         "lifecycle_status": "available",
         "access_class": "protected"
       },
       {
+        "tenant_id": "tenant-a",
+        "app_id": "app-a",
         "ref": "prefetch-install",
         "lifecycle_status": "available",
         "access_class": "protected"

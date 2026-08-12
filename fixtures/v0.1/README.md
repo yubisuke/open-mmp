@@ -16,6 +16,6 @@ Each fixture has one synthetic input and 11 independently asserted output classe
 - non-identifying rejections
 - shadow reconciliation results
 
-The validator checks every object against its Draft 2020-12 schema, checks registry references, runs 19 scenario-specific semantic assertions, runs all 22 Issue #1 acceptance assertions, evaluates each input twice in TypeScript, evaluates it independently in Python, and compares RFC 8785 canonical bytes. Deliberate in-memory mutations prove that malformed timestamps, negative ad revenue, unknown registry values, and changed golden output fail validation.
+The validator checks every object against its Draft 2020-12 schema, checks registry references, runs scenario-specific semantic assertions and acceptance assertions, evaluates each input twice in TypeScript, evaluates it independently in Python, and compares RFC 8785 canonical bytes. Deliberate in-memory mutations prove that malformed timestamps, negative ad revenue, unknown registry values, changed golden output, input reorder, paid reinstall evidence, record-ID collisions, ambiguous clicks, and cross-scope references fail validation or fail closed as specified.
 
-The data is synthetic. It contains no provider export, campaign data, user data, credential, live fraud rule, or operational threshold.
+The data is synthetic. It contains no external-source format, campaign data, user data, credential, live fraud rule, or operational threshold.

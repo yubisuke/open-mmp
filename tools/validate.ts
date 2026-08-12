@@ -156,6 +156,23 @@ function fixtureAttempts(input: Any): Any[] {
   return input.records.map((record: Any) => ({ server: input.server_context, record }));
 }
 
+function reorderedInput(input: Any): Any {
+  const reordered = structuredClone(input);
+  if (reordered.records) reordered.records.reverse();
+  if (reordered.batches) {
+    reordered.batches.reverse();
+    for (const batch of reordered.batches) batch.records.reverse();
+  }
+  return reordered;
+}
+
+function pythonEvaluate(input: Any): Any {
+  return JSON.parse(execFileSync("python", [join(root, "tools", "python_evaluator.py"), "-"], {
+    input: JSON.stringify(input),
+    encoding: "utf8",
+  }));
+}
+
 function validateMatchingKey(value: Any, label: string): void {
   const definition = matchingDefinitions.get(value.type);
   check(definition, `unknown matching key in ${label}: ${value.type}`);
@@ -183,6 +200,14 @@ function validateRegistryReferences(output: Any, label: string): void {
       row.model === attribution.model && row.statuses.includes(attribution.status),
     );
     check(compatible, `incompatible attribution tuple in ${label}`);
+    for (const evidence of attribution.evidence_refs) {
+      check(evidence.tenant_id === attribution.tenant_id && evidence.app_id === attribution.app_id, `cross-scope attribution evidence in ${label}`);
+    }
+  }
+  for (const run of output.metric_runs) {
+    for (const evidence of run.evidence_refs) {
+      check(typeof evidence.tenant_id === "string" && typeof evidence.app_id === "string", `unqualified metric evidence in ${label}`);
+    }
   }
   for (const rejection of output.rejections) {
     check(rejectionReasons.has(rejection.reason_code), `unknown rejection reason in ${label}`);
@@ -237,6 +262,7 @@ for (const dir of fixtureDirs) {
   const first = evaluate(input);
   const second = evaluate(JSON.parse(JSON.stringify(input)));
   check(equal(first, second), `nondeterministic TypeScript output: ${name}`);
+  check(equal(first, evaluate(reorderedInput(input))), `input reorder changed semantic output: ${name}`);
   check(equal(first, expected), `reviewed golden mismatch: ${name}`);
   const python = JSON.parse(execFileSync("python", [join(root, "tools", "python_evaluator.py"), inputPath], { encoding: "utf8" }));
   check(equal(first, python), `cross-language mismatch: ${name}`);
@@ -299,7 +325,9 @@ const scenarios: Array<[string, () => void]> = [
     check(metrics.find((item: Any) => item.metric_name.includes("_24h_")).value_unscaled === "1000000", "scenario 09 24h");
   }],
   ["10 reinstall classification", () => {
-    check(fixture("10-reinstall-redownload").output.attributions.some((item: Any) => item.reason_code === "reinstall_or_redownload"), "scenario 10");
+    const attrs = Object.fromEntries(fixture("10-reinstall-redownload").output.attributions.map((item: Any) => [item.attribution_id, item]));
+    check(attrs["attr:install-10b"].status === "non_organic" && attrs["attr:install-10b"].reason_code === "valid_install_referrer", "scenario 10 paid reinstall");
+    check(attrs["attr:install-10c"].status === "organic" && attrs["attr:install-10c"].reason_code === "no_referrer", "scenario 10 no-referrer redownload");
   }],
   ["11 client clock skew", () => {
     const deliveries = Object.fromEntries(fixture("11-clock-skew").output.deliveries.map((item: Any) => [item.record_id, item]));
@@ -482,12 +510,70 @@ const acceptance: Array<[string, () => void]> = [
     const python = execFileSync("python", [join(root, "tools", "python_evaluator.py"), "--conformance"], { encoding: "utf8" }).trim();
     check(canonicalize(vector) === python, "AC22 RFC 8785 conformance vector");
   }],
+  ["AC23 paid evidence dominates reinstall lifecycle classification", () => {
+    const base = fixture("10-reinstall-redownload");
+    const changed = structuredClone(base.input);
+    changed.records.find((item: Any) => item.record_id === "install-10b").payload.install_type = "redownload";
+    const attr = evaluate(changed).attributions.find((item: Any) => item.attribution_id === "attr:install-10b");
+    check(attr.status === "non_organic" && attr.reason_code === "valid_install_referrer", "AC23 paid redownload");
+  }],
+  ["AC24 record ID collisions reject every colliding delivery", () => {
+    const collision = structuredClone(fixture("01-valid-install-referrer").input);
+    const source = collision.records[0];
+    collision.records.push({ ...source, delivery_id: "delivery:record-id-collision", event_id: "event:record-id-collision" });
+    const output = evaluate(collision);
+    const colliding = output.deliveries.filter((item: Any) => item.record_id === source.record_id);
+    check(colliding.length === 2 && colliding.every((item: Any) => item.ingestion_status === "rejected" && item.duplicate_resolution === "record_id_collision"), "AC24 delivery collision");
+    check(output.rejections.filter((item: Any) => item.record_id === source.record_id && item.reason_code === "record_id_collision").length === 2, "AC24 rejection collision");
+    check(!output.raw_records.some((item: Any) => item.record_id === source.record_id), "AC24 collision evidence rejected");
+    const scoped = structuredClone(fixture("01-valid-install-referrer").input);
+    const scopedSource = scoped.records.find((item: Any) => item.event_name === "click");
+    const record = {
+      ...scopedSource,
+      record_id: "cross-scope-same-context",
+      delivery_id: "delivery:cross-scope-same-context",
+      event_id: "event:cross-scope-same-context",
+    };
+    scoped.batches = [
+      { batch_id: "batch-cross-scope", server_context: { ...scoped.server_context }, records: [{ ...record }] },
+      {
+        batch_id: "batch-cross-scope",
+        server_context: { ...scoped.server_context, tenant_id: "tenant-b", app_id: "app-b" },
+        records: [{ ...record, tenant_id: "tenant-b", app_id: "app-b" }],
+      },
+    ];
+    delete scoped.server_context;
+    delete scoped.records;
+    const scopedOutput = evaluate(scoped);
+    const scopedReordered = reorderedInput(scoped);
+    const scopedReorderedOutput = evaluate(scopedReordered);
+    check(equal(scopedOutput, scopedReorderedOutput), "AC24 cross-scope same-context reorder");
+    check(equal(scopedOutput, pythonEvaluate(scoped)) && equal(scopedReorderedOutput, pythonEvaluate(scopedReordered)), "AC24 cross-scope Python agreement");
+    check(scopedOutput.deliveries.length === 2 && scopedOutput.deliveries.every((item: Any) => item.reason_code === "record_id_collision"), "AC24 cross-scope collision deliveries");
+    check(scopedOutput.raw_records.length === 0 && scopedOutput.logical_events.length === 0 && scopedOutput.attributions.length === 0, "AC24 cross-scope collision no derived leakage");
+  }],
+  ["AC25 click ambiguity never selects the first candidate", () => {
+    const ambiguous = structuredClone(fixture("01-valid-install-referrer").input);
+    const source = ambiguous.records.find((item: Any) => item.event_name === "click");
+    ambiguous.records.push({ ...source, record_id: "click-ambiguous", delivery_id: "delivery:click-ambiguous", event_id: "event:click-ambiguous" });
+    const output = evaluate(ambiguous);
+    check(output.attributions[0].status === "unattributed" && output.attributions[0].reason_code === "ambiguous_click_id", "AC25 ambiguous click");
+    check(equal(output, evaluate(reorderedInput(ambiguous))), "AC25 ambiguous click reorder");
+  }],
+  ["AC26 installation anchors are explicit and unambiguous", () => {
+    const invalid = structuredClone(fixture("10-reinstall-redownload").input);
+    const install = invalid.records.find((item: Any) => item.record_id === "install-10c");
+    install.payload.prior_installation_id = install.payload.installation_id;
+    let rejected = false;
+    try { evaluate(invalid); } catch { rejected = true; }
+    check(rejected, "AC26 self-referential reinstall anchor");
+  }],
 ];
 for (const [name, assertion] of acceptance) {
   assertion();
   process.stdout.write(`ACCEPTANCE PASS: ${name}\n`);
 }
-check(acceptance.length === 22, "acceptance inventory must contain 22 entries");
+check(acceptance.length === 26, "acceptance inventory must contain 26 entries");
 
 // Deliberate in-memory mutations prove that the validator is not a count-only
 // or self-generated-golden check.
@@ -528,4 +614,4 @@ let correctionReferenceRejected = false;
 try { evaluate(crossTenantCorrection); } catch { correctionReferenceRejected = true; }
 check(correctionReferenceRejected, "mutation cross-tenant correction reference was accepted");
 
-console.log(`Validated ${schemaPaths.length} schemas, 7 registries, 19 reviewed fixtures, 209 golden output artifacts, 19 scenario assertions, 22 acceptance criteria, deterministic TypeScript, independent Python, and RFC 8785 conformance.`);
+console.log(`Validated ${schemaPaths.length} schemas, 7 registries, 19 reviewed fixtures, 209 golden output artifacts, 19 scenario assertions, 26 acceptance criteria, deterministic TypeScript, independent Python, and RFC 8785 conformance.`);

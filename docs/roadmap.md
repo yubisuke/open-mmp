@@ -13,6 +13,10 @@ This is the canonical milestone sequence. `docs/project-plan.md` is a phase summ
 
 ## Milestone 0: Event & Metric Contract v0.1
 
+### M0.1 Contract hardening
+
+M0.1 is complete and the full local contract validation suite passes. It hardens paid reinstall/redownload attribution, globally unique `record_id` rejection, tenant/app-scoped references, deterministic `click_id` ambiguity handling, explicit installation anchors, and the initial public [threat model](threat-model.md). The contract remains a reference implementation; M1 Shadow Ledger is next, not a runtime release.
+
 - Versioned event envelope and raw-record contract
 - Attribution result, reason codes, and state transitions
 - Retraction, redaction, and privacy-request contracts
@@ -90,4 +94,4 @@ Evidence gate: A production pilot completes backup restoration, deletion, replay
 
 ## Immediate next step
 
-Complete the `Open MMP Event & Metric Contract v0.1` tracking Epic before generating runtime code. This step requires no external service or GitHub access.
+Begin M1 Shadow Ledger planning and implementation. The M0.1 validation evidence is recorded; M1 remains separate from runtime-release and production evidence. This step requires no external service or GitHub access.

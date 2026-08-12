@@ -16,7 +16,7 @@ This project is licensed under the [Apache License 2.0](LICENSE); attribution is
 
 ## Current status
 
-This project contains the v0.1 contract schemas, registries, synthetic fixtures, and reference evaluators. It is not production-ready runtime ingestion software.
+This project contains the v0.1 contract schemas, registries, synthetic fixtures, and executable reference evaluators. M0.1 contract hardening is complete, the local validation gate passes, and M1 Shadow Ledger is next. It is not production-ready runtime ingestion software or a runtime release.
 
 The first product entry point is a Shadow MMP that runs alongside an existing provider. It normalizes first-party events, existing MMP exports, media cost, and revenue into a common contract, then explains neutral differences through candidate evidence, exclusion reasons, attribution windows, ID joins, and recalculation history. Difference reasons describe measurement semantics, not provider quality. It must not be treated as the primary MMP until a real shadow pilot has produced sufficient evidence.
 
@@ -64,6 +64,7 @@ This is a proposed implementation layout, not generated code.
 - [Product scope](docs/product-scope.md)
 - [Architecture](docs/architecture.md)
 - [Privacy and security](docs/privacy-security.md)
+- [Initial threat model](docs/threat-model.md)
 - [Roadmap](docs/roadmap.md)
 - [Project plan](docs/project-plan.md)
 - [Issue #1 draft](issue-drafts/001-event-metric-contract-v0.1.md)
@@ -80,4 +81,4 @@ python -m pip install --require-hashes --requirement requirements-contract.txt
 npm run validate
 ```
 
-Validation is read-only. It checks 23 schemas, seven registries, 19 reviewed synthetic fixtures, 209 golden output artifacts, 19 scenario assertions, all 22 Issue #1 acceptance criteria, deliberate negative mutations, deterministic TypeScript output, independent Python output, and RFC 8785 conformance. See the [fixture provenance note](fixtures/v0.1/README.md).
+Validation is read-only. It checks schemas, registries, 19 reviewed synthetic fixtures, golden output artifacts, semantic and metamorphic mutations, deterministic TypeScript output, independent Python output, and RFC 8785 conformance. See the [fixture provenance note](fixtures/v0.1/README.md).

@@ -21,5 +21,15 @@
     "referrer_read_at": { "$ref": "../common.schema.json#/$defs/dateTime" },
     "occurred_at_device": { "$ref": "../common.schema.json#/$defs/dateTime" },
     "extensions": { "type": "object", "additionalProperties": true }
-  }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "install_type": { "enum": ["reinstall", "redownload"] } }, "required": ["install_type"] },
+      "then": { "required": ["prior_installation_id"] }
+    },
+    {
+      "if": { "properties": { "install_type": { "const": "first_install" } }, "required": ["install_type"] },
+      "then": { "not": { "required": ["prior_installation_id"] } }
+    }
+  ]
 }

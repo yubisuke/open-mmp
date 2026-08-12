@@ -19,7 +19,7 @@
     "app_id": { "$ref": "common.schema.json#/$defs/id" },
     "received_at": { "$ref": "common.schema.json#/$defs/dateTime" },
     "ingestion_status": { "enum": ["accepted", "rejected"] },
-    "duplicate_resolution": { "enum": ["unique", "duplicate_delivery", "event_id_conflict"] },
+    "duplicate_resolution": { "enum": ["unique", "duplicate_delivery", "event_id_conflict", "record_id_collision"] },
     "timeliness": { "enum": ["on_time", "late"] },
     "clock_skew_suspected": { "type": "boolean" },
     "payload_disposition": { "enum": ["protected", "discarded", "redacted"] },

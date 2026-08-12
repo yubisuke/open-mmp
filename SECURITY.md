@@ -2,7 +2,7 @@
 
 ## Current phase
 
-Open MMP currently contains design documents and no runtime code. It is not production-ready.
+Open MMP contains public contract artifacts and executable reference evaluators, but no runtime service. It is not production-ready.
 
 ## Reporting a vulnerability
 
