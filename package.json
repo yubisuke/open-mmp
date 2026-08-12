@@ -1,0 +1,22 @@
+{
+  "name": "open-mmp-contract",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Open MMP Event & Metric Contract v0.1 reference validation",
+  "type": "module",
+  "engines": {
+    "node": "22.18.0",
+    "npm": "11.6.2"
+  },
+  "scripts": {
+    "validate": "tsc --noEmit && tsx tools/validate.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "22.15.3",
+    "ajv": "8.20.0",
+    "json-canonicalize": "2.0.0",
+    "tsx": "4.19.3",
+    "typescript": "5.8.3"
+  }
+}

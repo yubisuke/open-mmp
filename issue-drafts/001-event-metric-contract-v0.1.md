@@ -94,7 +94,7 @@ Define identifier ownership and cardinality:
 - Ingestion: `received | accepted | rejected`
 - Duplicate resolution: `unique | duplicate_delivery | event_id_conflict`
 - Timeliness: `on_time | late`
-- Record lifecycle: `active | retracted | redacted`
+- Record lifecycle: `active | retracted | redacted | purged`
 - Attribution finality: `pending | provisional | final | superseded | retracted`
 - Privacy request: `received | processing | completed | failed`
 
@@ -276,9 +276,16 @@ Each fixture contains:
 
 - `input.json`
 - `expected_raw_records.json`
+- `expected_deliveries.json`
+- `expected_logical_events.json`
+- `expected_corrections.json`
+- `expected_privacy_requests.json`
+- `expected_privacy_tombstones.json`
 - `expected_attributions.json`
 - `expected_metric_runs.json`
+- `expected_fraud_decisions.json`
 - `expected_rejections.json`
+- `expected_reconciliation.json`
 
 With fixed time, FX, and rule digests, run a pure evaluator twice and require identical canonicalized output.
 
@@ -301,6 +308,8 @@ Live import connectivity and provider approval remain follow-up work. This packa
 
 - `spec/event-metric-contract-v0.1.md`
 - `schemas/raw-record.schema.json`
+- `schemas/event-delivery.schema.json`
+- `schemas/logical-event.schema.json`
 - `schemas/events/*.schema.json`
 - `schemas/attribution-result.schema.json`
 - `schemas/metric-definition.schema.json`
@@ -308,39 +317,49 @@ Live import connectivity and provider approval remain follow-up work. This packa
 - `schemas/evidence-reference.schema.json`
 - `schemas/correction.schema.json`
 - `schemas/privacy-request.schema.json`
+- `schemas/privacy-tombstone.schema.json`
 - `schemas/fraud-decision.schema.json`
+- `schemas/rejection.schema.json`
+- `schemas/reconciliation-result.schema.json`
+- `schemas/fixture-input.schema.json`
+- `schemas/common.schema.json`
+- `registries/event-names-v0.1.json`
 - `registries/reason-codes-v0.1.json`
 - `registries/producer-values-v0.1.json`
 - `registries/difference-reasons-v0.1.json`
+- `registries/state-transitions-v0.1.json`
+- `registries/compatibility-v0.1.json`
+- `registries/matching-key-types-v0.1.json`
 - `fixtures/v0.1/**`
 - State-transition and method/model/subject compatibility tables
 - External-row matching-key type table and reconciliation-result schema
-- Pure reference evaluator and one validation command
+- Deterministic TypeScript evaluator, independently implemented Python evaluator, and one validation command
+- GitHub Actions validation on Linux and Windows
 
 ## Acceptance criteria
 
-- [ ] Every schema validates under Draft 2020-12 and has a stable `$id` and version
-- [ ] `event_name` is canonical across documents, examples, and schemas
-- [ ] Raw record, delivery, logical event, correction, and derived result are separate concepts
-- [ ] Tenant-scoped idempotency, duplicate delivery, and event-ID conflict are covered by fixtures
-- [ ] Authoritative tenant and app scope comes from server authentication context, and a client mismatch is rejected
-- [ ] Orthogonal state axes and allowed transitions are fixed in a machine-readable form or table
-- [ ] Attribution requires scope, method, model, reason, policy version, and input cutoff
-- [ ] Fixtures distinguish organic from unattributed
-- [ ] A fixture attaching `installation_id` to an aggregate result is rejected
-- [ ] `subject_scope=installation_level` is used consistently; `user_level` is not a contract value
-- [ ] D0 24-hour, UTC calendar-day, and JST calendar-day metrics recalculate independently
-- [ ] Currency, FX, rounding, and input watermark produce reproducible results
-- [ ] High-precision source amounts survive ingestion without conversion to currency minor units
-- [ ] An immutable input snapshot or ledger position fixes the exact records used by each metric run
-- [ ] Correction, retraction, redaction, and post-deletion recalculation are fixture-tested
-- [ ] Clock-skew, unsupported-referrer, bot-prefetch, and both withdrawal timing paths are fixture-tested
-- [ ] Events requiring consent are rejected and payload-redacted after server-recognized withdrawal regardless of `occurred_at`, while consent and privacy control records remain processable
-- [ ] Lawful redaction or purge marks affected evidence and supersedes affected metric runs rather than claiming bit-identical replay
-- [ ] Difference reasons and typed external-row matching keys reproduce the same reconciliation result from the same snapshots
-- [ ] The public fraud schema and private live-policy boundary are documented
-- [ ] One documented command validates every schema and fixture
-- [ ] Running the same fixture twice produces identical canonicalized output
+- [x] Every schema validates under Draft 2020-12 and has a stable `$id` and version
+- [x] `event_name` is canonical across documents, examples, and schemas
+- [x] Raw record, delivery, logical event, correction, and derived result are separate concepts
+- [x] Tenant-scoped idempotency, duplicate delivery, and event-ID conflict are covered by fixtures
+- [x] Authoritative tenant and app scope comes from server authentication context, and a client mismatch is rejected
+- [x] Orthogonal state axes and allowed transitions are fixed in a machine-readable form or table
+- [x] Attribution requires scope, method, model, reason, policy version, and input cutoff
+- [x] Fixtures distinguish organic from unattributed
+- [x] A fixture attaching `installation_id` to an aggregate result is rejected
+- [x] `subject_scope=installation_level` is used consistently; `user_level` is not a contract value
+- [x] D0 24-hour, UTC calendar-day, and JST calendar-day metrics recalculate independently
+- [x] Currency, FX, rounding, and input watermark produce reproducible results
+- [x] High-precision source amounts survive ingestion without conversion to currency minor units
+- [x] An immutable input snapshot or ledger position fixes the exact records used by each metric run
+- [x] Correction, retraction, redaction, and post-deletion recalculation are fixture-tested
+- [x] Clock-skew, unsupported-referrer, bot-prefetch, and both withdrawal timing paths are fixture-tested
+- [x] Events requiring consent are rejected and payload-redacted after server-recognized withdrawal regardless of `occurred_at`, while consent and privacy control records remain processable
+- [x] Lawful redaction or purge marks affected evidence and supersedes affected metric runs rather than claiming bit-identical replay
+- [x] Difference reasons and typed external-row matching keys reproduce the same reconciliation result from the same snapshots
+- [x] The public fraud schema and private live-policy boundary are documented
+- [x] One documented command validates every schema and fixture
+- [x] Running the same fixture twice produces identical canonicalized output
 
 ## Out of scope
 
@@ -356,19 +375,18 @@ Live import connectivity and provider approval remain follow-up work. This packa
 
 ## Follow-up issue candidates
 
-1. Implement Contract validation CI and the reference evaluator
-2. Implement the PostgreSQL Shadow ledger
-3. Import existing MMP raw output and expose discrepancy evidence
-4. Implement the Unity C# SDK and Android Kotlin bridge
-5. Implement the Google Play Install Referrer vertical slice
-6. Connect MAX ad-revenue events to the common contract
-7. Implement privacy deletion and redaction end to end
-8. Implement the fraud rule-bundle and audit-history boundary
-9. Implement adapter support status and fixture certification
-10. Add the D1 and D7 metric catalogs
-11. Implement the Reporting API and dashboard
-12. Implement backup, restore, observability, and RBAC
-13. Define the Shadow pilot and primary-migration evidence gate
+1. Implement the PostgreSQL Shadow ledger
+2. Import existing MMP raw output and expose discrepancy evidence
+3. Implement the Unity C# SDK and Android Kotlin bridge
+4. Implement the Google Play Install Referrer vertical slice
+5. Connect MAX ad-revenue events to the common contract
+6. Implement privacy deletion and redaction end to end
+7. Implement the fraud rule-bundle and audit-history boundary
+8. Implement adapter support status and fixture certification
+9. Add the D1 and D7 metric catalogs
+10. Implement the Reporting API and dashboard
+11. Implement backup, restore, observability, and RBAC
+12. Define the Shadow pilot and primary-migration evidence gate
 
 ## Primary references
 

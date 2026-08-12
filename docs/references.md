@@ -43,6 +43,18 @@ Design implications:
 - Keep the official Apache-2.0 text unchanged and maintain attribution separately in `NOTICE`.
 - Withdrawal does not invalidate processing completed before withdrawal. For a consent-required purpose, new server processing after withdrawal recognition requires a documented legal basis; `occurred_at` alone does not authorize ingestion.
 
+## Contract standards and reference libraries
+
+- [JSON Schema Draft 2020-12](https://json-schema.org/draft/2020-12)
+- [RFC 8785: JSON Canonicalization Scheme](https://www.rfc-editor.org/rfc/rfc8785)
+- [Trail of Bits rfc8785 for Python](https://pypi.org/project/rfc8785/0.1.4/)
+
+Design implications:
+
+- Contract schemas declare Draft 2020-12 explicitly.
+- Both reference evaluators must produce the same RFC 8785 UTF-8 bytes for shared conformance vectors.
+- The Python dependency is version- and hash-pinned; fixture validation does not contact a live provider.
+
 ## Cloudflare reference deployment
 
 - [Workers](https://developers.cloudflare.com/workers/)
