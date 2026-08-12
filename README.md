@@ -16,7 +16,7 @@ This project is licensed under the [Apache License 2.0](LICENSE); attribution is
 
 ## Current status
 
-This project is currently in the design phase. The repository contains documentation only; no runtime code has been generated.
+This project contains the v0.1 contract schemas, registries, synthetic fixtures, and reference evaluators. It is not production-ready runtime ingestion software.
 
 The first product entry point is a Shadow MMP that runs alongside an existing provider. It normalizes first-party events, existing MMP exports, media cost, and revenue into a common contract, then explains neutral differences through candidate evidence, exclusion reasons, attribution windows, ID joins, and recalculation history. Difference reasons describe measurement semantics, not provider quality. It must not be treated as the primary MMP until a real shadow pilot has produced sufficient evidence.
 
@@ -68,3 +68,16 @@ This is a proposed implementation layout, not generated code.
 - [Project plan](docs/project-plan.md)
 - [Issue #1 draft](issue-drafts/001-event-metric-contract-v0.1.md)
 - [Primary references](docs/references.md)
+- [Event & Metric Contract v0.1](spec/event-metric-contract-v0.1.md)
+
+## Contract validation
+
+After installing Node.js 22.18.0 and Python 3.13.5, run:
+
+```bash
+npm ci
+python -m pip install --require-hashes --requirement requirements-contract.txt
+npm run validate
+```
+
+Validation is read-only. It checks 23 schemas, seven registries, 19 reviewed synthetic fixtures, 209 golden output artifacts, 19 scenario assertions, all 22 Issue #1 acceptance criteria, deliberate negative mutations, deterministic TypeScript output, independent Python output, and RFC 8785 conformance. See the [fixture provenance note](fixtures/v0.1/README.md).

@@ -1,0 +1,26 @@
+[
+  {
+    "contract_version": "0.1.0",
+    "logical_event_id": "logical:tenant-a:app-a:sdk-android:event:install-10a",
+    "record_id": "install-10a",
+    "tenant_id": "tenant-a",
+    "app_id": "app-a",
+    "producer": "sdk-android",
+    "event_id": "event:install-10a",
+    "event_name": "install",
+    "lifecycle": "active",
+    "timeliness": "on_time"
+  },
+  {
+    "contract_version": "0.1.0",
+    "logical_event_id": "logical:tenant-a:app-a:sdk-android:event:install-10b",
+    "record_id": "install-10b",
+    "tenant_id": "tenant-a",
+    "app_id": "app-a",
+    "producer": "sdk-android",
+    "event_id": "event:install-10b",
+    "event_name": "install",
+    "lifecycle": "active",
+    "timeliness": "on_time"
+  }
+]
