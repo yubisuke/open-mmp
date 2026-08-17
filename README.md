@@ -59,6 +59,15 @@ docs/
 
 This is a proposed implementation layout, not generated code.
 
+## Current layout (v0.1 contract artifacts)
+
+- `schemas/` — Draft 2020-12 artifact schemas, including event payloads under `schemas/events/`
+- `registries/` — versioned closed vocabularies and compatibility definitions
+- `fixtures/v0.1/` — reviewed synthetic inputs and immutable golden outputs
+- `spec/` — normative contract behavior and serialization rules
+- `tools/` — TypeScript and Python reference evaluators and contract validation
+- `issue-drafts/` — historical design and acceptance records
+
 ## Documents
 
 - [Product scope](docs/product-scope.md)
