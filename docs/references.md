@@ -1,6 +1,6 @@
 # Primary References
 
-Checked on 2026-08-12.
+Checked on 2026-08-17.
 
 ## Apple
 
@@ -74,7 +74,7 @@ Design implications:
 ## Media integration
 
 - [Google Ads App Conversion Tracking API](https://developers.google.com/app-conversion-tracking/api)
-- [AppLovin MAX S2S Impression Revenue API](https://developers.applovin.com/en/max/advanced-features/s2s-impression-level-api/)
+- [AppLovin MAX S2S Impression Revenue API](https://support.applovin.com/en/max/advanced-features/s2s-impression-level-api/)
 
 These references demonstrate possible integration paths, not completed approval or production support.
 
