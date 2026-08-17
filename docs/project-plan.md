@@ -70,7 +70,7 @@ The first goal is to explain differences between existing MMP raw output and fir
 - Unity C# SDK
 - Android Kotlin bridge
 - Google Play Install Referrer
-- Deep links
+- Deep links (not in the M2 exit gate; deferred)
 - MAX ad-revenue callback
 - Persistent queue, retry, and idempotency
 - Versioned last-click attribution
