@@ -64,21 +64,37 @@ Minimal delivery example:
 
 ```json
 {
-  "sdk_version": "0.1.0",
-  "app_id": "app_public_id",
-  "events": [
-    {
-      "event_id": "uuid",
-      "installation_id": "app_scoped_random_uuid",
-      "event_name": "install",
-      "occurred_at": "2026-08-11T00:00:00Z",
-      "install_referrer": "openmmp_click_id=..."
-    }
-  ]
+  "raw_record": {
+    "contract_version": "0.1.0",
+    "record_id": "record:example-install",
+    "tenant_id": "tenant:example",
+    "app_id": "app:example",
+    "producer": "sdk-android",
+    "producer_version": "0.1.0",
+    "event_id": "event:example-install",
+    "delivery_id": "delivery:example-install",
+    "event_name": "install",
+    "schema_version": "0.1.0",
+    "payload_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "occurred_at": "2026-08-11T00:00:00.000Z",
+    "occurred_at_source": "device",
+    "received_at": "2026-08-11T00:00:01.000Z",
+    "payload_lifecycle_status": "available",
+    "raw_payload_ref": "protected:example-install",
+    "processing_purpose_id": "purpose:attribution",
+    "consent_evaluation_policy_version": "consent-policy-0.1",
+    "consent_decision_reason_code": "consent_not_required"
+  },
+  "payload": {
+    "event_name": "install",
+    "installation_id": "installation:example",
+    "referrer_status": "none",
+    "install_type": "first_install"
+  }
 }
 ```
 
-The contract Epic will replace this illustrative payload with canonical schemas. Until then, it is not a stable API.
+The canonical schemas live in `schemas/`; this example is illustrative and validated against `schemas/raw-record.schema.json` and `schemas/events/install.schema.json`.
 
 ### Attribution Core
 
