@@ -54,8 +54,24 @@
     }
   },
   "oneOf": [
-    { "required": ["server_context", "records"], "not": { "required": ["batches"] } },
-    { "required": ["batches"], "not": { "anyOf": [{ "required": ["server_context"] }, { "required": ["records"] }] } }
+    {
+      "properties": { "server_context": {}, "records": {} },
+      "required": ["server_context", "records"],
+      "not": {
+        "properties": { "batches": {} },
+        "required": ["batches"]
+      }
+    },
+    {
+      "properties": { "batches": {} },
+      "required": ["batches"],
+      "not": {
+        "anyOf": [
+          { "properties": { "server_context": {} }, "required": ["server_context"] },
+          { "properties": { "records": {} }, "required": ["records"] }
+        ]
+      }
+    }
   ],
   "$defs": {
     "serverContext": {

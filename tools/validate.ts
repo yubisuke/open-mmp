@@ -80,7 +80,7 @@ const Ajv2020 = Ajv2020Module as unknown as new (options: Any) => {
   getSchema(id: string): (((value: unknown) => boolean) & { errors?: unknown }) | undefined;
   errorsText(errors: unknown): string;
 };
-const ajv = new Ajv2020({ allErrors: true, strict: false });
+const ajv = new Ajv2020({ allErrors: true, strict: true });
 const addFormats = addFormatsModule as unknown as (instance: unknown) => void;
 addFormats(ajv);
 for (const { value } of schemaValues) ajv.addSchema(fixRefs(value));
