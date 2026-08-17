@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import { basename, join, relative } from "node:path";
 import Ajv2020Module from "ajv/dist/2020.js";
+import addFormatsModule from "ajv-formats";
 import { canonicalize } from "json-canonicalize";
 import { evaluate, sha256 } from "./evaluator.js";
 
@@ -79,6 +80,8 @@ const Ajv2020 = Ajv2020Module as unknown as new (options: Any) => {
   errorsText(errors: unknown): string;
 };
 const ajv = new Ajv2020({ allErrors: true, strict: false });
+const addFormats = addFormatsModule as unknown as (instance: unknown) => void;
+addFormats(ajv);
 for (const { value } of schemaValues) ajv.addSchema(fixRefs(value));
 for (const id of schemaIds) check(ajv.getSchema(id), `schema did not compile: ${id}`);
 

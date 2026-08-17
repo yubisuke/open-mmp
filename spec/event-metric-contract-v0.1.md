@@ -10,6 +10,8 @@ This document is normative for the v0.1 schemas, registries, fixtures, and refer
 - Schema identifiers use `urn:open-mmp:schema:<artifact>:v0.1`.
 - Contract objects are closed. A documented `extensions` object is the only open extension point. The fixture envelope's payload container is dispatched by `event_name` and then validated by the corresponding closed event schema.
 - All contract timestamps use UTC RFC 3339 with exactly millisecond precision and a trailing `Z`, for example `2026-08-12T00:00:00.000Z`.
+- Schema validation applies both the RFC 3339 date-time format and the millisecond `Z` pattern. Evaluators additionally require a calendar round trip; an invalid value fails with `timestamp_invalid: <field>=<value>` before window, skew, or bucket evaluation.
+- String ordering in evaluator outputs is by UTF-16 code unit.
 - Payload and snapshot digests are lowercase SHA-256 over RFC 8785 JCS UTF-8 bytes.
 - Money and identifiers are never represented with floating-point JSON numbers.
 

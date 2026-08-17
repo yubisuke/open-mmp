@@ -20,6 +20,10 @@ function compareText(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
+function compositeKey(parts: readonly unknown[]): string {
+  return JSON.stringify(parts);
+}
+
 function stableId(value: Any): string {
   return String(
     value.record_id ?? value.delivery_id ?? value.logical_event_id ?? value.correction_id ??
@@ -50,15 +54,25 @@ function sortById<T extends Any>(values: T[]): T[] {
   });
 }
 
-function time(value: string | undefined): number {
-  if (!value) return Number.NaN;
-  const parsed = Date.parse(value);
-  return Number.isFinite(parsed) ? parsed : Number.NaN;
+export class TimestampInvalidError extends Error {
+  constructor(field: string, value: unknown) {
+    super(`timestamp_invalid: ${field}=${String(value)}`);
+    this.name = "TimestampInvalidError";
+  }
 }
 
-function dateAt(value: string, zone: "UTC" | "Asia/Tokyo"): string {
+function time(value: string | undefined, field: string): number {
+  if (!value) throw new TimestampInvalidError(field, value);
+  const parsed = new Date(value);
+  if (!Number.isFinite(parsed.getTime()) || parsed.toISOString() !== value) {
+    throw new TimestampInvalidError(field, value);
+  }
+  return parsed.getTime();
+}
+
+function dateAt(value: string, zone: "UTC" | "Asia/Tokyo", field: string): string {
   const offset = zone === "Asia/Tokyo" ? 9 * 3_600_000 : 0;
-  return new Date(time(value) + offset).toISOString().slice(0, 10);
+  return new Date(time(value, field) + offset).toISOString().slice(0, 10);
 }
 
 type Attempt = { server: Any; record: Any; batch_id: string };
@@ -90,11 +104,11 @@ function attemptOrder(a: Attempt, b: Attempt): number {
 
 function scopeKey(attempt: Attempt): string {
   const { server, record } = attempt;
-  return [server.tenant_id, server.app_id, record.producer, record.event_id].join("|");
+  return compositeKey([server.tenant_id, server.app_id, record.producer, record.event_id]);
 }
 
 function evidenceKey(tenantId: string, appId: string, recordId: string): string {
-  return [tenantId, appId, recordId].join("|");
+  return compositeKey([tenantId, appId, recordId]);
 }
 
 function attemptEvidenceKey(attempt: Attempt): string {
@@ -104,11 +118,11 @@ function attemptEvidenceKey(attempt: Attempt): string {
 // record_id is a server-generated global identity. Keep delivery context in
 // the evaluator key so malformed collisions cannot overwrite each other.
 function attemptDecisionKey(attempt: Attempt): string {
-  return [
+  return compositeKey([
     attempt.batch_id, attempt.server.tenant_id, attempt.server.app_id,
     attempt.record.delivery_id, attempt.record.record_id, attempt.record.schema_version,
     sha256(attempt.record),
-  ].join("|");
+  ]);
 }
 
 function decisionFor(decisions: Map<string, Any>, attempt: Attempt): Any {
@@ -194,7 +208,7 @@ function consentDecision(attempt: Attempt): Any {
   const configuredBasis = (server.alternative_legal_bases ?? []).find(
     (entry: Any) => entry.alternative_legal_basis_id === record.alternative_legal_basis_id &&
       entry.processing_purpose_id === record.processing_purpose_id &&
-      time(entry.effective_at) <= time(record.received_at),
+      time(entry.effective_at, "effective_at") <= time(record.received_at, "received_at"),
   );
   if (configuredBasis) {
     return {
@@ -251,7 +265,7 @@ function decide(attempt: Attempt, orderedAttempts: Attempt[]): Any {
     ingestion_status,
     duplicate_resolution,
     timeliness: record.late ? "late" : "on_time",
-    clock_skew_suspected: time(record.occurred_at) > time(record.received_at) + 300_000,
+    clock_skew_suspected: time(record.occurred_at, "occurred_at") > time(record.received_at, "received_at") + 300_000,
     payload_disposition: ingestion_status === "rejected" && reason_code !== "event_id_conflict" ? "discarded" : "protected",
     ...consent,
     ...(reason_code ? { reason_code } : {}),
@@ -351,8 +365,8 @@ function makeAttribution(attempt: Attempt, all: Attempt[], decisions: Map<string
   if (clickStatus !== "available" || installStatus !== "available" || !click.record.payload.redirector_click_at || !payload.install_begin_at_server) {
     return result("unattributed", "none", "none", "authoritative_time_missing");
   }
-  const delta = time(payload.install_begin_at_server) - time(click.record.payload.redirector_click_at);
-  if (!Number.isFinite(delta)) return result("unattributed", "none", "none", "authoritative_time_invalid");
+  const delta = time(payload.install_begin_at_server, "install_begin_at_server") -
+    time(click.record.payload.redirector_click_at, "redirector_click_at");
   if (delta < 0 || delta >= 7 * DAY_MS) return result("unattributed", "none", "none", "window_expired");
   return result("non_organic", "install_referrer", "last_click", "valid_install_referrer", {
     evidence_refs: [evidence(click.record.record_id), evidence(install.record_id)],
@@ -383,9 +397,9 @@ function metricRuns(input: Any, all: Attempt[], decisions: Map<string, Any>, lif
   if (!evaluations.length) return [];
   const fxPolicy = input.fx_policy;
   const metricDefinitions = [
-    { metric_name: "d0_install_to_24h_ad_revenue_usd", aggregation_time_zone: "UTC", eligible: (install: Any, revenue: Any) => time(revenue.occurred_at) >= time(install.occurred_at) && time(revenue.occurred_at) < time(install.occurred_at) + DAY_MS },
-    { metric_name: "d0_utc_install_calendar_ad_revenue_usd", aggregation_time_zone: "UTC", eligible: (install: Any, revenue: Any) => dateAt(revenue.occurred_at, "UTC") === dateAt(install.occurred_at, "UTC") },
-    { metric_name: "d0_jst_install_calendar_ad_revenue_usd", aggregation_time_zone: "Asia/Tokyo", eligible: (install: Any, revenue: Any) => dateAt(revenue.occurred_at, "Asia/Tokyo") === dateAt(install.occurred_at, "Asia/Tokyo") },
+    { metric_name: "d0_install_to_24h_ad_revenue_usd", aggregation_time_zone: "UTC", eligible: (install: Any, revenue: Any) => time(revenue.occurred_at, "occurred_at") >= time(install.occurred_at, "occurred_at") && time(revenue.occurred_at, "occurred_at") < time(install.occurred_at, "occurred_at") + DAY_MS },
+    { metric_name: "d0_utc_install_calendar_ad_revenue_usd", aggregation_time_zone: "UTC", eligible: (install: Any, revenue: Any) => dateAt(revenue.occurred_at, "UTC", "occurred_at") === dateAt(install.occurred_at, "UTC", "occurred_at") },
+    { metric_name: "d0_jst_install_calendar_ad_revenue_usd", aggregation_time_zone: "Asia/Tokyo", eligible: (install: Any, revenue: Any) => dateAt(revenue.occurred_at, "Asia/Tokyo", "occurred_at") === dateAt(install.occurred_at, "Asia/Tokyo", "occurred_at") },
   ];
   const output: Any[] = [];
   for (const evaluation of evaluations) {
