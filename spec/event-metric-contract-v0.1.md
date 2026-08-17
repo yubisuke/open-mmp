@@ -140,6 +140,7 @@ The public Shadow Import Profile is vendor-neutral. Deployment-specific provider
 Inputs contain typed matching keys, candidate rows, window status, freshness, and exclusions. The evaluator derives a versioned neutral difference reason:
 
 - `matched`
+- `candidate_missing`
 - `candidate_excluded`
 - `window_mismatch`
 - `join_key_missing`
@@ -147,6 +148,8 @@ Inputs contain typed matching keys, candidate rows, window status, freshness, an
 - `freshness_mismatch`
 - `external_row_unmatched`
 - `redaction_caused_recalculation`
+- `currency_policy_mismatch`
+- `scope_mismatch`
 
 Results record both snapshot IDs, matching keys used, candidates, exclusions, windows, joins, and freshness. Difference reasons describe measurement semantics and available evidence; they never rate provider quality.
 
