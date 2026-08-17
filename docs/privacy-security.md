@@ -69,6 +69,7 @@ Before implementation, legal and operational requirements must validate these de
 - Derived attribution and aggregates are recalculated after deletion.
 - Deletion audit records remain separate and irreversibly remove the original subject identifier.
 - Request state is `received | processing | completed | failed`.
+- Data access and export (DSAR access/portability) will be provided through the M3 reporting API; the request contract is not yet defined and is tracked as an open design item.
 
 ## Authentication and secrets
 
