@@ -1,10 +1,11 @@
 import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import { basename, join, relative } from "node:path";
+import { describe, it } from "node:test";
 import Ajv2020Module from "ajv/dist/2020.js";
 import addFormatsModule from "ajv-formats";
 import { canonicalize } from "json-canonicalize";
-import { evaluate, sha256 } from "./evaluator.js";
+import { evaluate, sha256, TimestampInvalidError } from "./evaluator.js";
 
 type Any = Record<string, any>;
 const root = process.cwd();
@@ -169,11 +170,22 @@ function reorderedInput(input: Any): Any {
   return reordered;
 }
 
-function pythonEvaluate(input: Any): Any {
-  return JSON.parse(execFileSync("python", [join(root, "tools", "python_evaluator.py"), "-"], {
-    input: JSON.stringify(input),
+type PythonBatchResult =
+  | { ok: true; output: Any }
+  | { ok: false; error: { name: string; message: string; exit_code: number } };
+
+function pythonBatch(inputs: Any[]): PythonBatchResult[] {
+  return JSON.parse(execFileSync("python", [join(root, "tools", "python_evaluator.py"), "--batch"], {
+    input: JSON.stringify(inputs),
     encoding: "utf8",
   }));
+}
+
+function pythonOutputs(inputs: Any[]): Any[] {
+  return pythonBatch(inputs).map((result, index) => {
+    if (!result.ok) fail(`Python batch item ${index} failed: ${result.error.message}`);
+    return result.output;
+  });
 }
 
 function validateMatchingKey(value: Any, label: string): void {
@@ -231,10 +243,11 @@ const fixtureDirs = readdirSync(fixtureRoot, { withFileTypes: true })
 check(fixtureDirs.length === 19, `expected 19 fixture directories, found ${fixtureDirs.length}`);
 const results = new Map<string, { input: Any; output: Any; python: Any }>();
 let outputArtifactCount = 0;
-for (const dir of fixtureDirs) {
+const fixtureInputs = fixtureDirs.map((dir) => json(join(dir, "input.json")));
+const fixturePythonOutputs = pythonOutputs(fixtureInputs);
+for (const [index, dir] of fixtureDirs.entries()) {
   const name = basename(dir);
-  const inputPath = join(dir, "input.json");
-  const input = json(inputPath);
+  const input = fixtureInputs[index];
   check(fixtureValidator(input), `fixture schema failure: ${name}: ${ajv.errorsText(fixtureValidator.errors)}`);
   for (const attempt of fixtureAttempts(input)) {
     const record = attempt.record;
@@ -267,7 +280,7 @@ for (const dir of fixtureDirs) {
   check(equal(first, second), `nondeterministic TypeScript output: ${name}`);
   check(equal(first, evaluate(reorderedInput(input))), `input reorder changed semantic output: ${name}`);
   check(equal(first, expected), `reviewed golden mismatch: ${name}`);
-  const python = JSON.parse(execFileSync("python", [join(root, "tools", "python_evaluator.py"), inputPath], { encoding: "utf8" }));
+  const python = fixturePythonOutputs[index];
   check(equal(first, python), `cross-language mismatch: ${name}`);
   results.set(name, { input, output: first, python });
 }
@@ -381,11 +394,12 @@ const scenarios: Array<[string, () => void]> = [
     check(value.reconciliation[0].difference_reason_code === "candidate_excluded", "scenario 19 reconciliation");
   }],
 ];
-for (const [name, assertion] of scenarios) {
-  assertion();
-  process.stdout.write(`SCENARIO PASS: ${name}\n`);
-}
-check(scenarios.length === 19, "scenario assertion inventory must contain 19 entries");
+describe("reviewed scenarios", () => {
+  for (const [name, assertion] of scenarios) it(name, assertion);
+  it("contains 19 scenario assertions", () => {
+    check(scenarios.length === 19, "scenario assertion inventory must contain 19 entries");
+  });
+});
 
 const rawSchema = schemaValues.find(({ value }) => value.$id === outputSchemaIds.raw_records)!.value;
 const eventEnum = rawSchema.properties.event_name.enum;
@@ -550,8 +564,9 @@ const acceptance: Array<[string, () => void]> = [
     const scopedOutput = evaluate(scoped);
     const scopedReordered = reorderedInput(scoped);
     const scopedReorderedOutput = evaluate(scopedReordered);
+    const [scopedPython, scopedReorderedPython] = pythonOutputs([scoped, scopedReordered]);
     check(equal(scopedOutput, scopedReorderedOutput), "AC24 cross-scope same-context reorder");
-    check(equal(scopedOutput, pythonEvaluate(scoped)) && equal(scopedReorderedOutput, pythonEvaluate(scopedReordered)), "AC24 cross-scope Python agreement");
+    check(equal(scopedOutput, scopedPython) && equal(scopedReorderedOutput, scopedReorderedPython), "AC24 cross-scope Python agreement");
     check(scopedOutput.deliveries.length === 2 && scopedOutput.deliveries.every((item: Any) => item.reason_code === "record_id_collision"), "AC24 cross-scope collision deliveries");
     check(scopedOutput.raw_records.length === 0 && scopedOutput.logical_events.length === 0 && scopedOutput.attributions.length === 0, "AC24 cross-scope collision no derived leakage");
   }],
@@ -572,11 +587,12 @@ const acceptance: Array<[string, () => void]> = [
     check(rejected, "AC26 self-referential reinstall anchor");
   }],
 ];
-for (const [name, assertion] of acceptance) {
-  assertion();
-  process.stdout.write(`ACCEPTANCE PASS: ${name}\n`);
-}
-check(acceptance.length === 26, "acceptance inventory must contain 26 entries");
+describe("acceptance criteria", () => {
+  for (const [name, assertion] of acceptance) it(name, assertion);
+  it("contains 26 acceptance criteria", () => {
+    check(acceptance.length === 26, "acceptance inventory must contain 26 entries");
+  });
+});
 
 // Deliberate in-memory mutations prove that the validator is not a count-only
 // or self-generated-golden check.
@@ -586,35 +602,155 @@ const validRevenue = {
   ad_unit_id: "unit-test", ad_network: "synthetic", amount_unscaled: "1", amount_scale: 18,
   currency: "USD", revenue_source: "server_verified",
 };
-check(adValidator(validRevenue), "mutation baseline event invalid");
-check(!adValidator({ ...validRevenue, amount_unscaled: "-1" }), "mutation negative ad revenue was accepted");
 const rawValidator = ajv.getSchema(outputSchemaIds.raw_records)!;
 const rawBaseline = fixture("01-valid-install-referrer").output.raw_records[0];
-check(!rawValidator({ ...rawBaseline, occurred_at: "2026-08-12T00:00:00Z" }), "mutation timestamp precision was accepted");
-check(!equal(fixture("01-valid-install-referrer").output, { ...fixture("01-valid-install-referrer").output, raw_records: [] }), "mutation golden comparison did not fail");
-check(!eventNames.includes("unknown_event"), "mutation unknown event entered registry");
-const crossTenantPrivacy = structuredClone(fixture("07-same-id-across-tenants").input);
-crossTenantPrivacy.privacy_requests.push({
-  contract_version: "0.1.0",
-  tenant_id: "tenant-a",
-  app_id: "app-a",
-  privacy_request_id: "cross-tenant-privacy",
-  deletion_subject_ref: "synthetic-subject",
-  deletion_scope: "installation",
-  requested_at: "2026-08-12T00:00:00.000Z",
-  completed_at: "2026-08-12T00:01:00.000Z",
-  status: "completed",
-  reason_code: "privacy_deletion",
-  policy_version: "privacy-v1",
-  affected_records: [{ record_id: "tenant-b-record", lifecycle_status: "redacted" }],
+describe("semantic mutations", () => {
+  it("accepts the baseline revenue event", () => {
+    check(adValidator(validRevenue), "mutation baseline event invalid");
+  });
+  it("rejects negative ad revenue", () => {
+    check(!adValidator({ ...validRevenue, amount_unscaled: "-1" }), "mutation negative ad revenue was accepted");
+  });
+  it("rejects timestamp precision drift", () => {
+    check(!rawValidator({ ...rawBaseline, occurred_at: "2026-08-12T00:00:00Z" }), "mutation timestamp precision was accepted");
+  });
+  it("detects golden output removal", () => {
+    check(!equal(fixture("01-valid-install-referrer").output, { ...fixture("01-valid-install-referrer").output, raw_records: [] }), "mutation golden comparison did not fail");
+  });
+  it("keeps unknown events out of the registry", () => {
+    check(!eventNames.includes("unknown_event"), "mutation unknown event entered registry");
+  });
+  it("rejects cross-tenant privacy references", () => {
+    const crossTenantPrivacy = structuredClone(fixture("07-same-id-across-tenants").input);
+    crossTenantPrivacy.privacy_requests.push({
+      contract_version: "0.1.0",
+      tenant_id: "tenant-a",
+      app_id: "app-a",
+      privacy_request_id: "cross-tenant-privacy",
+      deletion_subject_ref: "synthetic-subject",
+      deletion_scope: "installation",
+      requested_at: "2026-08-12T00:00:00.000Z",
+      completed_at: "2026-08-12T00:01:00.000Z",
+      status: "completed",
+      reason_code: "privacy_deletion",
+      policy_version: "privacy-v1",
+      affected_records: [{ record_id: "tenant-b-record", lifecycle_status: "redacted" }],
+    });
+    let rejected = false;
+    try { evaluate(crossTenantPrivacy); } catch { rejected = true; }
+    check(rejected, "mutation cross-tenant privacy reference was accepted");
+  });
+  it("rejects cross-tenant correction references", () => {
+    const crossTenantCorrection = structuredClone(fixture("16-correction-refund").input);
+    crossTenantCorrection.correction_inputs[0].tenant_id = "tenant-b";
+    let rejected = false;
+    try { evaluate(crossTenantCorrection); } catch { rejected = true; }
+    check(rejected, "mutation cross-tenant correction reference was accepted");
+  });
 });
-let privacyReferenceRejected = false;
-try { evaluate(crossTenantPrivacy); } catch { privacyReferenceRejected = true; }
-check(privacyReferenceRejected, "mutation cross-tenant privacy reference was accepted");
-const crossTenantCorrection = structuredClone(fixture("16-correction-refund").input);
-crossTenantCorrection.correction_inputs[0].tenant_id = "tenant-b";
-let correctionReferenceRejected = false;
-try { evaluate(crossTenantCorrection); } catch { correctionReferenceRejected = true; }
-check(correctionReferenceRejected, "mutation cross-tenant correction reference was accepted");
 
-console.log(`Validated ${schemaPaths.length} schemas, 7 registries, 19 reviewed fixtures, 209 golden output artifacts, 19 scenario assertions, 26 acceptance criteria, deterministic TypeScript, independent Python, and RFC 8785 conformance.`);
+type TimestampCase = { name: string; field: string; value: string; input: Any };
+const invalidTimestamps = [
+  "2026-02-30T00:00:00.000Z",
+  "2026-08-12T24:00:00.000Z",
+  "not-a-timestamp",
+];
+const timestampCases: TimestampCase[] = [];
+for (const field of ["occurred_at", "redirector_click_at", "install_begin_at_server"]) {
+  for (const value of invalidTimestamps) {
+    const input = structuredClone(fixture("01-valid-install-referrer").input);
+    if (field === "occurred_at") input.records[0].occurred_at = value;
+    if (field === "redirector_click_at") input.records.find((record: Any) => record.event_name === "click").payload.redirector_click_at = value;
+    if (field === "install_begin_at_server") input.records.find((record: Any) => record.event_name === "install").payload.install_begin_at_server = value;
+    timestampCases.push({ name: `${field} rejects ${value}`, field, value, input });
+  }
+}
+const pythonTimestampResults = pythonBatch(timestampCases.map((entry) => entry.input));
+describe("timestamp validation", () => {
+  for (const [index, entry] of timestampCases.entries()) {
+    it(entry.name, () => {
+      const schemaRejected = entry.field === "occurred_at"
+        ? !fixtureValidator(entry.input)
+        : (() => {
+            const eventName = entry.field === "redirector_click_at" ? "click" : "install";
+            const record = entry.input.records.find((candidate: Any) => candidate.event_name === eventName);
+            const validator = ajv.getSchema(`urn:open-mmp:schema:event-${eventName}:v0.1`)!;
+            return !validator({ ...record.payload, event_name: eventName });
+          })();
+      check(schemaRejected, `schema accepted invalid ${entry.field}`);
+      let failure: { name: string; message: string; exit_code: number } | undefined;
+      try {
+        evaluate(entry.input);
+      } catch (error) {
+        check(error instanceof TimestampInvalidError, `unexpected TypeScript error for ${entry.field}`);
+        failure = { name: error.name, message: error.message, exit_code: error.exitCode };
+      }
+      check(failure, `TypeScript accepted invalid ${entry.field}`);
+      const python = pythonTimestampResults[index];
+      check(!python.ok, `Python accepted invalid ${entry.field}`);
+      check(equal(failure, python.error), `timestamp rejection mismatch for ${entry.field}`);
+    });
+  }
+});
+
+const unicodeInput = structuredClone(fixture("01-valid-install-referrer").input);
+const unicodeReconciliation = unicodeInput.reconciliation_inputs[0];
+const unicodeKey = unicodeReconciliation.matching_keys[0];
+const unicodeValues = ["\u{10000}campaign", "campaign", "\uE000campaign"];
+unicodeReconciliation.matching_keys = unicodeValues.map((value) => ({ ...unicodeKey, value }));
+unicodeReconciliation.candidates[0].matching_keys = unicodeValues.map((value) => ({ ...unicodeKey, value }));
+const unicodeTypeScript = evaluate(unicodeInput);
+const [unicodePython] = pythonOutputs([unicodeInput]);
+describe("UTF-16 output ordering", () => {
+  it("matches the independent Python evaluator for astral text", () => {
+    check(equal(unicodeTypeScript, unicodePython), "UTF-16 cross-language mismatch");
+    check(equal(
+      unicodeTypeScript.reconciliation[0].matching_keys.map((entry: Any) => entry.value),
+      ["campaign", "\u{10000}campaign", "\uE000campaign"],
+    ), "UTF-16 matching-key order");
+  });
+});
+
+function shuffled<T>(values: T[], seed: number): T[] {
+  const output = [...values];
+  let state = seed >>> 0;
+  for (let index = output.length - 1; index > 0; index -= 1) {
+    state = (Math.imul(state, 1_664_525) + 1_013_904_223) >>> 0;
+    const selected = state % (index + 1);
+    [output[index], output[selected]] = [output[selected], output[index]];
+  }
+  return output;
+}
+
+function permutedInput(input: Any, seed: number): Any {
+  const output = structuredClone(input);
+  if (output.records) output.records = shuffled(output.records, seed);
+  if (output.batches) {
+    output.batches = shuffled(output.batches, seed);
+    output.batches.forEach((batch: Any, index: number) => {
+      batch.records = shuffled(batch.records, seed + index + 1);
+    });
+  }
+  return output;
+}
+
+const permutationCases = fixtureDirs.flatMap((dir, fixtureIndex) =>
+  Array.from({ length: 5 }, (_, permutationIndex) => {
+    const name = basename(dir);
+    return {
+      name: `${name} permutation ${permutationIndex + 1}`,
+      expected: fixture(name).output,
+      input: permutedInput(fixture(name).input, (fixtureIndex + 1) * 1_000 + permutationIndex + 1),
+    };
+  }),
+);
+const permutationPython = pythonOutputs(permutationCases.map((entry) => entry.input));
+describe("input permutations", () => {
+  for (const [index, entry] of permutationCases.entries()) {
+    it(entry.name, () => {
+      const output = evaluate(entry.input);
+      check(equal(output, entry.expected), `TypeScript permutation changed output: ${entry.name}`);
+      check(equal(output, permutationPython[index]), `Python permutation mismatch: ${entry.name}`);
+    });
+  }
+});

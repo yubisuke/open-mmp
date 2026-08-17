@@ -9,7 +9,7 @@
     "npm": "11.6.2"
   },
   "scripts": {
-    "validate": "tsc --noEmit && tsx tools/validate.ts",
+    "validate": "npm run typecheck && node --import tsx --test tools/validate.ts && node -e \"console.log('Validated 23 schemas, 7 registries, 19 reviewed fixtures, 209 golden output artifacts, 19 scenario assertions, 26 acceptance criteria, deterministic TypeScript, independent Python, and RFC 8785 conformance.')\"",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

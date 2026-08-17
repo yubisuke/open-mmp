@@ -27,6 +27,8 @@ def digest(value: Any) -> str:
 class TimestampInvalidError(ValueError):
     """A contract timestamp failed exact calendar round-trip validation."""
 
+    exit_code = 1
+
 
 def timestamp(value: str | None, field: str) -> datetime:
     if not value:
@@ -766,11 +768,34 @@ def conformance() -> None:
     print(canonical(vector))
 
 
+def batch() -> None:
+    requests = json.load(sys.stdin)
+    if not isinstance(requests, list):
+        raise ValueError("batch input must be a JSON array")
+    results: list[dict[str, Any]] = []
+    for value in requests:
+        try:
+            results.append({"ok": True, "output": evaluate(value)})
+        except TimestampInvalidError as error:
+            results.append({
+                "ok": False,
+                "error": {
+                    "name": "TimestampInvalidError",
+                    "message": str(error),
+                    "exit_code": error.exit_code,
+                },
+            })
+    print(canonical(results))
+
+
 if __name__ == "__main__":
+    sys.stdin.reconfigure(encoding="utf-8")
     sys.stdout.reconfigure(encoding="utf-8")
     try:
         if len(sys.argv) == 2 and sys.argv[1] == "--conformance":
             conformance()
+        elif len(sys.argv) == 2 and sys.argv[1] == "--batch":
+            batch()
         else:
             if sys.argv[1] == "-":
                 print(canonical(evaluate(json.load(sys.stdin))))

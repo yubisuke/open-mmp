@@ -55,6 +55,8 @@ function sortById<T extends Any>(values: T[]): T[] {
 }
 
 export class TimestampInvalidError extends Error {
+  readonly exitCode = 1;
+
   constructor(field: string, value: unknown) {
     super(`timestamp_invalid: ${field}=${String(value)}`);
     this.name = "TimestampInvalidError";
