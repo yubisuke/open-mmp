@@ -26,7 +26,7 @@
 
 - Full validation gate: `npm run validate`. It type-checks the TypeScript, compiles every schema, validates every registry and fixture, runs both the TypeScript and Python evaluators, and checks RFC 8785 canonical output. It normally completes in a few seconds. Run it after any change under `schemas/`, `registries/`, `fixtures/`, `spec/`, or `tools/`, and paste its final summary line into your report.
 - Type-check only (faster, partial signal): `npm run typecheck`.
-- `npm run validate` is strictly read-only: it never writes, regenerates, or reformats fixture files. If a change requires a new or updated golden fixture, you must hand-edit the `fixtures/v0.1/<NN-name>/expected_*.json` files yourself and explain in your report exactly how each new expected value was derived (there is currently no documented generator script or reviewed workflow for this — flag it rather than inventing a silent convention).
+- `npm run validate` is strictly read-only: it never writes, regenerates, or reformats fixture files. If a change requires a new or updated golden fixture, follow the candidate and human-review workflow in `fixtures/v0.1/README.md`, hand-edit the `fixtures/v0.1/<NN-name>/expected_*.json` files, and explain in your report exactly how each expected value was derived.
 
 ## What must not change casually
 
