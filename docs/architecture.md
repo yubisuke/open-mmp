@@ -179,7 +179,7 @@ Aggregate subjects must not contain an `installation_id`.
 
 - Existing MMP raw-export adapters and shadow reconciliation
 - Apple AdAttributionKit and SKAdNetwork postback receipt and verification
-- Android Attribution Reporting event-level and aggregatable reports
+- Google announced the retirement of Attribution Reporting (Android) on 2025-10-17 and no longer accepts enrollment; this project does not adopt it.
 - Server-to-server events
 - Role-based access control
 - Analytical storage when PostgreSQL is no longer sufficient

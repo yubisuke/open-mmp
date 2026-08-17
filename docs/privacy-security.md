@@ -42,7 +42,7 @@ The initial MVP does not collect them. A future adapter may handle one only when
 - Preserve referrer read time, device and server referrer timestamps, and validation outcome. Window evaluation uses `redirector_click_at` and Google Play server `install_begin_at_server`; device `occurred_at` is evidence only.
 - Treat an unsupported or unavailable Install Referrer path as explicit unattributed evidence (`install_referrer_unsupported` or `install_referrer_unavailable`), not as an organic assertion.
 - Never reconnect a deleted advertising ID to an earlier ID or derived profile.
-- Add Android Attribution Reporting through an isolated adapter because enrollment, API availability, and report behavior can change.
+- Google announced the retirement of Attribution Reporting (Android) on 2025-10-17 and no longer accepts enrollment; this project does not adopt it.
 
 ## Initial retention proposal
 
