@@ -73,7 +73,7 @@ This is a proposed implementation layout, not generated code.
 
 ## Contract validation
 
-After installing Node.js 22.18.0 and Python 3.13.5, run:
+Use Node.js 22.18.0 from [`.nvmrc`](.nvmrc), npm 11.6.2 from `package.json#engines`, and Python 3.13.5 from [`.python-version`](.python-version). The repository enforces the Node.js and npm engines through [`.npmrc`](.npmrc). Then run:
 
 ```bash
 npm ci

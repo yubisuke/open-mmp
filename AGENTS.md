@@ -16,7 +16,7 @@
 
 ## Running validation
 
-- Pinned tool versions: Node.js `22.18.0` / npm `11.6.2` (see `package.json` `engines`) and Python `3.13.5`. There is currently no `.nvmrc` or `.python-version` file; match these exact versions with whatever version manager is available.
+- Pinned tool versions: Node.js `22.18.0` from `.nvmrc`, npm `11.6.2` from `package.json` `engines`, and Python `3.13.5` from `.python-version`. `.npmrc` enforces the Node.js and npm engine versions.
 - Setup:
 
   ```bash
