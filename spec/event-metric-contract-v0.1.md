@@ -158,7 +158,7 @@ Production signals, IP or User-Agent values, live thresholds, model weights, wat
 
 ## Reviewed fixture and validation gate
 
-The 19 fixture directories contain synthetic input plus reviewed golden output for raw records, deliveries, logical events, corrections, privacy requests, privacy tombstones, attributions, metric runs, public fraud decisions, rejections, and reconciliation. Fixture 10 demonstrates both paid reinstall attribution and no-referrer redownload attribution. Validation also exercises reorder, install-type evidence dominance, record-ID collision, click ambiguity, and scoped-reference mutations; golden files remain committed review artifacts.
+The reviewed gate compiles 23 schemas and validates 7 registries. The 19 fixture directories contain synthetic input plus reviewed golden output for raw records, deliveries, logical events, corrections, privacy requests, privacy tombstones, attributions, metric runs, public fraud decisions, rejections, and reconciliation. Fixture 10 demonstrates both paid reinstall attribution and no-referrer redownload attribution. Validation also exercises reorder, install-type evidence dominance, record-ID collision, click ambiguity, and scoped-reference mutations; golden files remain committed review artifacts.
 
 The validation command never writes fixture files. `npm run validate`:
 
@@ -167,7 +167,7 @@ The validation command never writes fixture files. `npm run validate`:
 3. validates registry shape, uniqueness, and cross-references;
 4. validates every input event through its event schema;
 5. validates all 209 golden output artifacts;
-6. runs named assertions for all 19 scenarios and all 22 Issue #1 acceptance criteria;
+6. runs named assertions for all 19 scenarios and 26 acceptance criteria (AC01-AC26); AC23-AC26 were added by the M0.1 contract-hardening change in commit `b607b0a` to cover reinstall evidence, record-ID collisions, click ambiguity, and installation anchors beyond the original Issue #1 checklist;
 7. runs deliberate negative mutations;
 8. runs the TypeScript evaluator twice;
 9. runs the independently implemented Python evaluator;
