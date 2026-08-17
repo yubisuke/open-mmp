@@ -453,9 +453,11 @@ const acceptance: Array<[string, () => void]> = [
     tie.records[1].payload.amount_scale = 1;
     tie.records[1].payload.amount_unscaled = "5";
     const evenDown = evaluate(tie).metric_runs.find((item: Any) => item.metric_run_id.startsWith("run-08-recalculated") && item.metric_name.includes("_24h_"));
+    check(evenDown, "AC12 missing half-even down metric");
     check(evenDown.value_unscaled === "0", "AC12 half-even tie to even zero");
     tie.records[1].payload.amount_unscaled = "15";
     const evenUp = evaluate(tie).metric_runs.find((item: Any) => item.metric_run_id.startsWith("run-08-recalculated") && item.metric_name.includes("_24h_"));
+    check(evenUp, "AC12 missing half-even up metric");
     check(evenUp.value_unscaled === "2", "AC12 half-even tie to even two");
   }],
   ["AC13 high-precision source amount survives ingestion", () => {
@@ -468,13 +470,15 @@ const acceptance: Array<[string, () => void]> = [
     const { input, output } = fixture("08-late-ad-revenue");
     const initial = output.metric_runs.find((item: Any) => item.metric_run_id.startsWith("run-08-initial"));
     const recalculated = output.metric_runs.find((item: Any) => item.metric_run_id.startsWith("run-08-recalculated"));
+    check(initial && recalculated, "AC14 missing snapshot runs");
     check(initial.input_snapshot_id !== recalculated.input_snapshot_id, "AC14 cutoff snapshots");
     const reordered = structuredClone(input);
     reordered.records.reverse();
     check(equal(evaluate(reordered).metric_runs, output.metric_runs), "AC14 input ordering");
     const changed = structuredClone(input);
     changed.records[1].received_at = "2026-08-13T00:00:00.001Z";
-    check(evaluate(changed).metric_runs.find((item: Any) => item.metric_run_id.startsWith("run-08-recalculated")).input_snapshot_id !== recalculated.input_snapshot_id, "AC14 received_at binding");
+    const changedRun = evaluate(changed).metric_runs.find((item: Any) => item.metric_run_id.startsWith("run-08-recalculated"));
+    check(changedRun && changedRun.input_snapshot_id !== recalculated.input_snapshot_id, "AC14 received_at binding");
   }],
   ["AC15 correction retraction redaction and post-deletion recalculation are causal", () => {
     const corrections = fixture("16-correction-refund").output.corrections;
@@ -532,6 +536,7 @@ const acceptance: Array<[string, () => void]> = [
     const changed = structuredClone(base.input);
     changed.records.find((item: Any) => item.record_id === "install-10b").payload.install_type = "redownload";
     const attr = evaluate(changed).attributions.find((item: Any) => item.attribution_id === "attr:install-10b");
+    check(attr, "AC23 missing paid redownload attribution");
     check(attr.status === "non_organic" && attr.reason_code === "valid_install_referrer", "AC23 paid redownload");
   }],
   ["AC24 record ID collisions reject every colliding delivery", () => {

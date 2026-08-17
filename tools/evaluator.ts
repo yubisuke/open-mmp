@@ -1,8 +1,22 @@
 import { createHash } from "node:crypto";
 import { canonicalize } from "json-canonicalize";
+import type { OpenMMPEvaluationOutputV01 as EvaluationOutput } from "./generated/contract-types.js";
 
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 type Any = Record<string, any>;
+type RawRecord = EvaluationOutput["raw_records"][number];
+type Delivery = EvaluationOutput["deliveries"][number];
+type LogicalEvent = EvaluationOutput["logical_events"][number];
+type Correction = EvaluationOutput["corrections"][number];
+type PrivacyRequest = EvaluationOutput["privacy_requests"][number];
+type PrivacyTombstone = EvaluationOutput["privacy_tombstones"][number];
+type Attribution = EvaluationOutput["attributions"][number];
+type MetricRun = EvaluationOutput["metric_runs"][number];
+type FraudDecision = EvaluationOutput["fraud_decisions"][number];
+type Rejection = EvaluationOutput["rejections"][number];
+type Reconciliation = EvaluationOutput["reconciliation"][number];
+type EvidenceRef = Attribution["evidence_refs"][number];
+type LifecycleStatus = EvidenceRef["lifecycle_status"];
 
 const CONTRACT_VERSION = "0.1.0";
 const HASH = "0".repeat(64);
@@ -24,28 +38,10 @@ function compositeKey(parts: readonly unknown[]): string {
   return JSON.stringify(parts);
 }
 
-function stableId(value: Any): string {
-  return String(
-    value.record_id ?? value.delivery_id ?? value.logical_event_id ?? value.correction_id ??
-    value.privacy_request_id ?? value.attribution_id ?? value.metric_run_id ??
-    value.fraud_decision_id ?? value.reconciliation_id ?? value.candidate_id ?? "",
-  );
-}
-
-function stableOrderKey(value: Any): string[] {
-  return [
-    stableId(value),
-    String(value.tenant_id ?? ""),
-    String(value.app_id ?? ""),
-    String(value.delivery_id ?? ""),
-    sha256(value),
-  ];
-}
-
-function sortById<T extends Any>(values: T[]): T[] {
+function sortByKey<T>(values: T[], key: (value: T) => readonly string[]): T[] {
   return [...values].sort((a, b) => {
-    const aKey = stableOrderKey(a);
-    const bKey = stableOrderKey(b);
+    const aKey = [...key(a), sha256(a)];
+    const bKey = [...key(b), sha256(b)];
     for (let index = 0; index < aKey.length; index += 1) {
       const comparison = compareText(aKey[index], bKey[index]);
       if (comparison !== 0) return comparison;
@@ -285,7 +281,7 @@ function privacyIndex(input: Any): Map<string, "redacted" | "purged"> {
   return result;
 }
 
-function makeRawRecord(attempt: Attempt, lifecycle: "available" | "redacted" | "purged"): Any {
+function makeRawRecord(attempt: Attempt, lifecycle: "available" | "redacted" | "purged"): RawRecord {
   const { server, record } = attempt;
   const consent = consentDecision(attempt);
   return {
@@ -316,17 +312,22 @@ function makeRawRecord(attempt: Attempt, lifecycle: "available" | "redacted" | "
   };
 }
 
-function makeAttribution(attempt: Attempt, all: Attempt[], decisions: Map<string, Any>, lifecycle: Map<string, string>): Any {
+function makeAttribution(
+  attempt: Attempt,
+  all: Attempt[],
+  decisions: Map<string, Any>,
+  lifecycle: Map<string, LifecycleStatus>,
+): Attribution {
   const { server, record: install } = attempt;
   const payload = install.payload;
-  const evidence = (ref: string) => ({
+  const evidence = (ref: string): EvidenceRef => ({
     tenant_id: server.tenant_id,
     app_id: server.app_id,
     ref,
     lifecycle_status: lifecycle.get(evidenceKey(server.tenant_id, server.app_id, ref)) ?? "available",
     access_class: "protected",
   });
-  const base = {
+  const base: Omit<Attribution, "status" | "method" | "model" | "reason_code"> = {
     attribution_id: `attr:${install.record_id}`,
     tenant_id: server.tenant_id,
     app_id: server.app_id,
@@ -342,8 +343,13 @@ function makeAttribution(attempt: Attempt, all: Attempt[], decisions: Map<string
     rule_bundle_version: CONTRACT_VERSION,
     rule_bundle_hash: HASH,
   };
-  const result = (status: string, method: string, model: string, reason_code: string, extra: Any = {}) =>
-    ({ ...base, status, method, model, reason_code, ...extra });
+  const result = (
+    status: Attribution["status"],
+    method: Attribution["method"],
+    model: Attribution["model"],
+    reason_code: string,
+    extra: Partial<Attribution> = {},
+  ): Attribution => ({ ...base, status, method, model, reason_code, ...extra });
   if (payload.referrer_status === "none") return result("organic", "none", "none", "no_referrer");
   if (payload.referrer_status === "unsupported") return result("unattributed", "none", "none", "install_referrer_unsupported");
   if (payload.referrer_status === "unavailable") return result("unattributed", "none", "none", "install_referrer_unavailable");
@@ -394,16 +400,25 @@ function convertMoney(payload: Any, fxPolicy: Any): bigint {
   return roundHalfEven(numerator, denominator);
 }
 
-function metricRuns(input: Any, all: Attempt[], decisions: Map<string, Any>, lifecycle: Map<string, string>): Any[] {
+function metricRuns(
+  input: Any,
+  all: Attempt[],
+  decisions: Map<string, Any>,
+  lifecycle: Map<string, LifecycleStatus>,
+): MetricRun[] {
   const evaluations = input.metric_evaluations ?? [];
   if (!evaluations.length) return [];
   const fxPolicy = input.fx_policy;
-  const metricDefinitions = [
+  const metricDefinitions: Array<{
+    metric_name: MetricRun["metric_name"];
+    aggregation_time_zone: MetricRun["aggregation_time_zone"];
+    eligible: (install: Any, revenue: Any) => boolean;
+  }> = [
     { metric_name: "d0_install_to_24h_ad_revenue_usd", aggregation_time_zone: "UTC", eligible: (install: Any, revenue: Any) => time(revenue.occurred_at, "occurred_at") >= time(install.occurred_at, "occurred_at") && time(revenue.occurred_at, "occurred_at") < time(install.occurred_at, "occurred_at") + DAY_MS },
     { metric_name: "d0_utc_install_calendar_ad_revenue_usd", aggregation_time_zone: "UTC", eligible: (install: Any, revenue: Any) => dateAt(revenue.occurred_at, "UTC", "occurred_at") === dateAt(install.occurred_at, "UTC", "occurred_at") },
     { metric_name: "d0_jst_install_calendar_ad_revenue_usd", aggregation_time_zone: "Asia/Tokyo", eligible: (install: Any, revenue: Any) => dateAt(revenue.occurred_at, "Asia/Tokyo", "occurred_at") === dateAt(install.occurred_at, "Asia/Tokyo", "occurred_at") },
   ];
-  const output: Any[] = [];
+  const output: MetricRun[] = [];
   for (const evaluation of evaluations) {
     const included = all.filter((attempt) =>
       decisionFor(decisions, attempt).ingestion_status === "accepted" &&
@@ -426,7 +441,7 @@ function metricRuns(input: Any, all: Attempt[], decisions: Map<string, Any>, lif
       ? "redaction_affected"
       : affectedStates.includes("purged") ? "retention_affected" : "fully_reproducible";
     const ledger = snapshotRows.at(-1);
-    const evidence_refs = [...included].sort(attemptOrder).map((attempt) => ({
+    const evidence_refs: MetricRun["evidence_refs"] = [...included].sort(attemptOrder).map((attempt) => ({
       tenant_id: attempt.server.tenant_id,
       app_id: attempt.server.app_id,
       ref: attempt.record.record_id,
@@ -473,11 +488,11 @@ function metricRuns(input: Any, all: Attempt[], decisions: Map<string, Any>, lif
       });
     }
   }
-  return sortById(output);
+  return sortByKey(output, (run) => [run.metric_run_id]);
 }
 
-function reconciliationResults(input: Any): Any[] {
-  return sortById((input.reconciliation_inputs ?? []).map((item: Any) => {
+function reconciliationResults(input: Any): Reconciliation[] {
+  const output: Reconciliation[] = (input.reconciliation_inputs ?? []).map((item: Any): Reconciliation => {
     const normalized = (entry: Any): string => {
       if (entry.normalization === "lowercase_ascii") return entry.value.replace(/[A-Z]/g, (character: string) => character.toLowerCase());
       if (entry.normalization === "trim") return entry.value.trim();
@@ -489,7 +504,7 @@ function reconciliationResults(input: Any): Any[] {
       candidate.tenant_id === item.tenant_id && candidate.app_id === item.app_id &&
       (candidate.matching_keys ?? []).some((candidateKey: Any) => externalKeys.has(key(candidateKey))),
     );
-    let difference_reason_code = "matched";
+    let difference_reason_code: Reconciliation["difference_reason_code"] = "matched";
     if (item.privacy_effect === "redaction") difference_reason_code = "redaction_caused_recalculation";
     else if (!externalKeys.size) difference_reason_code = "join_key_missing";
     else if (!matched.length) difference_reason_code = "external_row_unmatched";
@@ -513,10 +528,11 @@ function reconciliationResults(input: Any): Any[] {
       joins: matched.map((candidate: Any) => `${sortedKeys.map(key).join(",")}=>${candidate.candidate_id}`).sort(compareText),
       freshness: matched[0]?.freshness ?? item.freshness,
     };
-  }));
+  });
+  return sortByKey(output, (result) => [result.reconciliation_id, result.tenant_id, result.app_id]);
 }
 
-export function evaluate(input: Any): Any {
+export function evaluate(input: Any): EvaluationOutput {
   const all = attempts(input).sort(attemptOrder);
   assertScopedReferences(input, all);
   const decisionsList = all.map((attempt) => decide(attempt, all));
@@ -530,8 +546,9 @@ export function evaluate(input: Any): Any {
   const conflictEvidence = all.filter((attempt) => decisionFor(decisions, attempt).reason_code === "event_id_conflict");
   const rawEvidence = [...acceptedUnique, ...conflictEvidence].filter((attempt) => !lifecycle.has(attemptEvidenceKey(attempt)));
   const logicalEvidence = acceptedUnique.filter((attempt) => !lifecycle.has(attemptEvidenceKey(attempt)));
-  const raw_records = sortById(rawEvidence.map((attempt) => makeRawRecord(attempt, "available")));
-  const deliveries = sortById(all.map((attempt) => {
+  const raw_records = sortByKey(rawEvidence.map((attempt) => makeRawRecord(attempt, "available")),
+    (record) => [record.record_id, record.tenant_id, record.app_id, record.delivery_id]);
+  const deliveries = sortByKey(all.map((attempt): Delivery => {
     const decision = decisionFor(decisions, attempt);
     return {
       contract_version: CONTRACT_VERSION,
@@ -556,8 +573,8 @@ export function evaluate(input: Any): Any {
       } : {}),
       ...(decision.reason_code ? { reason_code: decision.reason_code } : {}),
     };
-  }));
-  const logical_events = sortById(logicalEvidence.map((attempt) => ({
+  }), (delivery) => [delivery.delivery_id, delivery.record_id, delivery.tenant_id, delivery.app_id]);
+  const logical_events = sortByKey(logicalEvidence.map((attempt): LogicalEvent => ({
     contract_version: CONTRACT_VERSION,
     logical_event_id: `logical:${attempt.server.tenant_id}:${attempt.server.app_id}:${attempt.record.producer}:${attempt.record.event_id}`,
     record_id: attempt.record.record_id,
@@ -568,11 +585,12 @@ export function evaluate(input: Any): Any {
     event_name: attempt.record.event_name,
     lifecycle: "active",
     timeliness: attempt.record.late ? "late" : "on_time",
-  })));
-  const attributions = sortById(acceptedUnique
+  })), (event) => [event.logical_event_id, event.tenant_id, event.app_id]);
+  const attributions = sortByKey(acceptedUnique
     .filter((attempt) => attempt.record.event_name === "install")
-    .map((attempt) => makeAttribution(attempt, all, decisions, lifecycle)));
-  const corrections: Any[] = [...(input.correction_inputs ?? [])];
+    .map((attempt) => makeAttribution(attempt, all, decisions, lifecycle)),
+  (attribution) => [attribution.attribution_id, attribution.tenant_id, attribution.app_id]);
+  const corrections: Correction[] = [...(input.correction_inputs ?? [])];
   for (const attempt of acceptedUnique.filter((entry) => entry.record.event_name === "refund")) {
     corrections.push({
       contract_version: CONTRACT_VERSION,
@@ -600,24 +618,47 @@ export function evaluate(input: Any): Any {
       });
     }
   }
-  const privacy_requests = sortById((input.privacy_requests ?? []).map((request: Any) => ({ ...request, contract_version: CONTRACT_VERSION })));
-  const privacy_tombstones = sortById((input.privacy_requests ?? []).flatMap((request: Any) =>
-    request.status === "completed" ? (request.affected_records ?? []).map((affected: Any) => ({
-      contract_version: CONTRACT_VERSION,
-      tenant_id: request.tenant_id,
-      app_id: request.app_id,
-      privacy_request_id: request.privacy_request_id,
-      record_id: affected.record_id,
-      lifecycle_status: affected.lifecycle_status,
-      reason_digest: sha256(request.reason_code),
-      policy_digest: sha256(request.policy_version),
-      provenance_digest: sha256([request.tenant_id, request.app_id, request.privacy_request_id, affected.record_id, request.completed_at]),
-      created_at: request.completed_at,
-    })) : [],
-  ));
-  const fraud_decisions = sortById(acceptedUnique
+  const privacyRequestValues: PrivacyRequest[] = (input.privacy_requests ?? []).map((request: Any) => ({
+    contract_version: CONTRACT_VERSION,
+    tenant_id: request.tenant_id,
+    app_id: request.app_id,
+    privacy_request_id: request.privacy_request_id,
+    deletion_subject_ref: request.deletion_subject_ref,
+    deletion_scope: request.deletion_scope,
+    requested_at: request.requested_at,
+    status: request.status,
+    reason_code: request.reason_code,
+    policy_version: request.policy_version,
+    affected_records: request.affected_records,
+    ...(request.completed_at ? { completed_at: request.completed_at } : {}),
+  }));
+  const privacy_requests = sortByKey(privacyRequestValues,
+    (request) => [request.privacy_request_id, request.tenant_id, request.app_id]);
+  const privacyTombstoneValues: PrivacyTombstone[] = [];
+  for (const request of input.privacy_requests ?? []) {
+    if (request.status !== "completed") continue;
+    for (const affected of request.affected_records ?? []) {
+      privacyTombstoneValues.push({
+        contract_version: CONTRACT_VERSION,
+        tenant_id: request.tenant_id,
+        app_id: request.app_id,
+        privacy_request_id: request.privacy_request_id,
+        record_id: affected.record_id,
+        lifecycle_status: affected.lifecycle_status,
+        reason_digest: sha256(request.reason_code),
+        policy_digest: sha256(request.policy_version),
+        provenance_digest: sha256([
+          request.tenant_id, request.app_id, request.privacy_request_id, affected.record_id, request.completed_at,
+        ]),
+        created_at: request.completed_at,
+      });
+    }
+  }
+  const privacy_tombstones = sortByKey(privacyTombstoneValues,
+    (tombstone) => [tombstone.privacy_request_id, tombstone.record_id, tombstone.tenant_id, tombstone.app_id]);
+  const fraud_decisions = sortByKey(acceptedUnique
     .filter((attempt) => attempt.record.event_name === "click" && attempt.record.payload.bot_prefetch)
-    .map((attempt) => ({
+    .map((attempt): FraudDecision => ({
       fraud_decision_id: `fraud:${attempt.record.record_id}`,
       subject_ref: attempt.record.record_id,
       decision: "suspected",
@@ -634,10 +675,10 @@ export function evaluate(input: Any): Any {
       rule_bundle_version: CONTRACT_VERSION,
       rule_bundle_hash: HASH,
       evaluated_at: attempt.record.received_at,
-    })));
-  const rejections = sortById(decisionsList
+    })), (decision) => [decision.fraud_decision_id]);
+  const rejections = sortByKey(decisionsList
     .filter((decision) => decision.ingestion_status === "rejected")
-    .map((decision) => ({
+    .map((decision): Rejection => ({
       contract_version: CONTRACT_VERSION,
       delivery_id: decision.delivery_id,
       record_id: decision.record_id,
@@ -651,12 +692,14 @@ export function evaluate(input: Any): Any {
       consent_evaluation_policy_version: decision.consent_evaluation_policy_version,
       consent_decision_reason_code: decision.consent_decision_reason_code,
       ...(decision.withdrawal_recognized_at ? { withdrawal_recognized_at: decision.withdrawal_recognized_at } : {}),
-    })));
+    })), (rejection) => [rejection.delivery_id, rejection.record_id, rejection.tenant_id, rejection.app_id]);
   return {
     raw_records,
     deliveries,
     logical_events,
-    corrections: sortById(corrections),
+    corrections: sortByKey(corrections, (correction) => [
+      correction.correction_id, correction.tenant_id, correction.app_id,
+    ]),
     privacy_requests,
     privacy_tombstones,
     attributions,
