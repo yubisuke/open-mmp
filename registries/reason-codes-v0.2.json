@@ -3,12 +3,14 @@
   "attribution": [
     "valid_install_referrer", "no_referrer", "unknown_click_id", "window_expired",
     "authoritative_time_missing", "authoritative_time_invalid", "install_referrer_unsupported",
-    "install_referrer_unavailable", "ambiguous_click_id", "bot_prefetch"
+    "install_referrer_unavailable", "ambiguous_click_id", "bot_prefetch",
+    "provider_attributed", "provider_organic", "provider_unattributed",
+    "provider_time_authority_unavailable", "provider_modeled_conversion"
   ],
   "rejection": [
     "client_scope_mismatch", "consent_withdrawn",
     "aggregate_installation_join_forbidden", "event_id_conflict", "record_id_collision",
-    "timestamp_invalid"
+    "timestamp_invalid", "timestamp_stale"
   ],
   "consent_decision": [
     "consent_not_required", "consent_valid_before_withdrawal",

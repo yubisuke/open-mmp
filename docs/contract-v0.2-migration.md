@@ -32,10 +32,15 @@ The `contract-v0.1` tag points to the pre-migration `main` commit. The versionin
 | Invalid calendar timestamp | Emits `timestamp_invalid` delivery and rejection with discarded payload. | Formalizes the former evaluator exception path (B-01, R-8). |
 | Public fraud reason | Adds `replay_suspected`. | Keeps replay suspicion separate from delivery idempotency (A-12). |
 | Metric reproducibility | Retention expiry can produce `retention_affected` replacement runs without a privacy request. | Makes lawful retention effects auditable (A-14). |
+| Imported attribution | Adds `method=imported`, `model=provider_reported`, and five `provider_*` attribution reasons. | Preserves provider-reported judgment without misclassifying it as first-party Install Referrer evidence (WO-3 A1). |
+| Import context | Adds a closed optional `import_context` to click, install, session-start, and ad-revenue events. The work-order proposals `network`, `site_ref`, and `country` are implemented as the canonical closed-context fields `provider_network`, `provider_site_ref`, and `provider_country`. | Retains typed provider attribution and dimension evidence without using `extensions`, while following the WO-2 namespace convention (WO-3 A3). |
+| Producer vocabulary | Adds `sdk-ios`, `adapter:<network>`, and `postback:<kind>`; preserves `sdk-android`, `redirector`, and `import:<provider>`. | Distinguishes event origin and deployment-private adapter classes (WO-3 A4). |
+| Stale timestamp policy | Adds optional closed server-context `timestamp_stale_policy` and rejection `timestamp_stale`; stale delivery/rejection artifacts carry the server authority plus the version and digest bound to the boundary. | Separates calendar-valid evidence outside the configured retention boundary from invalid timestamps with reproducible policy provenance (WO-3 A5). |
+| Import reconciliation | Maps payload `provider_click_ref` to the existing `provider_click_id` matching-key type, derives reconciliation input from accepted imported installs, and emits only provider-namespaced SHA-256 key values with protected access classification. | Preserves the WO-2 matching-key vocabulary, prevents cross-provider key collisions and raw-reference disclosure, and removes fixture/caller-authored reconciliation as a prerequisite for Shadow import (WO-3 A2). |
 
 ## Existing fixture input migration
 
-Every input in fixtures 01 through 19 changes `contract_version` and event `schema_version` to `0.2.0`. Fixture identifiers that populate `click_id` or provider-click matching keys are lengthened to the v0.2 secure-ID shape; the affected protected payload digests consequently change. Fixture 12 now contains a lexically shaped but calendrically invalid authoritative timestamp to distinguish `authoritative_time_invalid` from missing authority. Fixture 17 replaces the completed deletion subject reference with the reviewed synthetic HMAC digest. No real or provider-derived data is introduced.
+Every input in fixtures 01 through 19 changes `contract_version` and event `schema_version` to `0.2.0`. Fixture identifiers that populate `click_id` are lengthened to the v0.2 secure-ID shape; the affected protected payload digests consequently change. Stage A further replaces provider matching-key source values in fixture inputs 01, 03, and 19 with provider-namespaced SHA-256 values plus `value_encoding=sha256` and `access_class=protected`. Fixture 12 now contains a lexically shaped but calendrically invalid authoritative timestamp to distinguish `authoritative_time_invalid` from missing authority. Fixture 17 replaces the completed deletion subject reference with the reviewed synthetic HMAC digest. No real or provider-derived data is introduced.
 
 ## Existing golden-output ledger
 
@@ -49,7 +54,7 @@ Abbreviations in the field column are exact field names: `cv=contract_version`, 
 | 01 | `expected_deliveries.json` | `cv` -> `0.2.0` | Versioned delivery contract. |
 | 01 | `expected_logical_events.json` | `cv`; `lifecycle` -> `record_lifecycle` | v0.2 version and lifecycle split. |
 | 01 | `expected_raw_records.json` | `cv`, `sv`; `payload_sha256` | v0.2 versions and secure click-ID payload. |
-| 01 | `expected_reconciliation.json` | `drv` -> `0.2.0` | Versioned reconciliation reason. |
+| 01 | `expected_reconciliation.json` | `drv` -> `0.2.0`; provider-key `value` -> namespaced SHA-256; add `value_encoding`, `access_class`; encoded join text | Versioned reconciliation reason and protected provider reference. |
 | 02 | `expected_attributions.json` | `rcv`, `rbv` | Versioned attribution contract. |
 | 02 | `expected_deliveries.json` | `cv` | Versioned delivery contract. |
 | 02 | `expected_logical_events.json` | `cv`; `lifecycle` -> `record_lifecycle` | Lifecycle split. |
@@ -58,7 +63,7 @@ Abbreviations in the field column are exact field names: `cv=contract_version`, 
 | 03 | `expected_deliveries.json` | `cv` | Versioned delivery contract. |
 | 03 | `expected_logical_events.json` | `cv`; `lifecycle` -> `record_lifecycle` | Lifecycle split. |
 | 03 | `expected_raw_records.json` | `cv`, `sv`, `payload_sha256` | Versions and secure click-ID-shaped evidence. |
-| 03 | `expected_reconciliation.json` | `drv`; matching-key `value` | v0.2 reason version and secure provider-click key shape. |
+| 03 | `expected_reconciliation.json` | `drv`; provider-key `value` -> namespaced SHA-256; add `value_encoding`, `access_class` | v0.2 reason version and protected provider-click reference. |
 | 04 | `expected_attributions.json` | `rcv`, `rbv` | Versioned attribution contract. |
 | 04 | `expected_deliveries.json` | `cv` | Versioned delivery contract. |
 | 04 | `expected_logical_events.json` | `cv`; `lifecycle` -> `record_lifecycle` | Lifecycle split. |
@@ -127,33 +132,40 @@ Abbreviations in the field column are exact field names: `cv=contract_version`, 
 | 19 | `expected_fraud_decisions.json` | `reason_code_version`, `rbv` | Versioned public fraud contract. |
 | 19 | `expected_logical_events.json` | `cv`; `lifecycle` -> `record_lifecycle` | Lifecycle split. |
 | 19 | `expected_raw_records.json` | `cv`, `sv`, `payload_sha256` | Versions and secure click-ID payload. |
-| 19 | `expected_reconciliation.json` | `drv`, matching-key `value`, join text | v0.2 reason version and secure click-ID join. |
+| 19 | `expected_reconciliation.json` | `drv`; provider-key `value` -> namespaced SHA-256; add `value_encoding`, `access_class`; encoded join text | v0.2 reason version and protected provider-click reference. |
 
 ## New fixture and golden ledger
 
 Each row below adds `input.json` and all 12 reviewed golden files: `expected_raw_records.json`, `expected_deliveries.json`, `expected_logical_events.json`, `expected_corrections.json`, `expected_privacy_requests.json`, `expected_privacy_tombstones.json`, `expected_attributions.json`, `expected_metric_definitions.json`, `expected_metric_runs.json`, `expected_fraud_decisions.json`, `expected_rejections.json`, and `expected_reconciliation.json`. Empty arrays are explicit expected results.
 
+Stage A also hardens the provider-key inputs introduced with fixtures 21 through 23: fixtures 21 and 23 change their reconciliation golden as described below, while fixture 22 changes only its unmatched candidate input and therefore has no golden change. The exact synthetic source-to-digest calculations for fixtures 01, 03, 19, 21, 22, 23, and 28 through 31 are listed in `fixtures/v0.2/README.md`.
+
 | Fixture | Meaningful non-empty golden fields | Authority |
 | --- | --- | --- |
 | 20 `timestamp-invalid` | Delivery/rejection `reason_code=timestamp_invalid`, `payload_disposition=discarded`, retained non-identifying metadata; all evidence/derived arrays empty. | B-01, R-8. |
-| 21 `reconciliation-window-mismatch` | Accepted organic install plus reconciliation `difference_reason_code=window_mismatch`, typed key, candidate, join, out-of-window state, current freshness. | A-11. |
+| 21 `reconciliation-window-mismatch` | Accepted organic install plus reconciliation `difference_reason_code=window_mismatch`, protected SHA-256 key, candidate, encoded join, out-of-window state, current freshness. | A-11 and WO-3 A2 provider-key hardening. |
 | 22 `reconciliation-join-key-missing` | Accepted organic install plus reconciliation `difference_reason_code=join_key_missing` with empty key/candidate/join sets. | A-11. |
-| 23 `reconciliation-freshness-mismatch` | Accepted organic install plus reconciliation `difference_reason_code=freshness_mismatch`, joined in-window candidate, stale freshness. | A-11. |
+| 23 `reconciliation-freshness-mismatch` | Accepted organic install plus reconciliation `difference_reason_code=freshness_mismatch`, protected SHA-256 key, joined in-window candidate, stale freshness. | A-11 and WO-3 A2 provider-key hardening. |
 | 24 `attribution-supersession` | Redaction correction/tombstone and replacement attribution with `supersedes_attribution_id` and `finality=superseded`. | A-10. |
 | 25 `replay-suspected` | Unique accepted click plus public fraud `reason_code=replay_suspected`, protected categorical evidence, and exclude action. | A-12. |
 | 26 `retention-affected` | Retention tombstone, no privacy request, and three immutable replacement metric runs with `retention_affected`, zero value, purged revenue evidence, and supersession IDs. | A-14. |
 | 27 `ad-impression-revenue-link` | Accepted install/impression/revenue evidence and three metric runs of `3000000` scale-6 USD citing the shared impression evidence. | A-19. |
+| 28 `imported-provider-attributed` | Imported non-organic provider judgment plus namespaced SHA-256 provider install/click matching keys, a single normalized candidate, `not_applicable` first-party window, and `matched` reconciliation. | WO-3 A1, A2, A3, A6(a). |
+| 29 `imported-provider-organic` | Imported organic provider judgment, matched provider-install reconciliation, imported session context, and accepted `sdk-ios` producer evidence. | WO-3 A1, A3, A4, A6(b). |
+| 30 `imported-time-authority-unavailable` | Imported non-organic judgment with `provider_time_authority_unavailable`, imported ad-revenue context, and accepted `postback:synthetic-kind` evidence. | WO-3 A1, A3, A4, A6(c). |
+| 31 `imported-reconciliation-derived` | Empty authored reconciliation input; evaluator-derived `matched` and `join_key_missing` rows, plus `provider_modeled_conversion`, `provider_unattributed`, and accepted `adapter:synthetic-network` evidence. | WO-3 A1, A2, A4, A6(d). |
+| 32 `timestamp-stale` | Rejected delivery/rejection with `timestamp_stale`, server-authoritative policy version/digest provenance, discarded payload, and no raw/logical evidence. | WO-3 A5. |
 
 ## Inventory reconciliation
 
-The v0.2 fixture tree contains 27 `input.json` files and `27 * 12 = 324` golden output files, plus this README: 352 paths in the resulting tree. The migration changes every fixture-tree path because the version directory moves from v0.1 to v0.2; Git may display unchanged files as renames. Because this README was rewritten beyond Git's rename-similarity threshold, `git diff --stat contract-v0.1..HEAD -- fixtures/` reports its old deletion and new addition separately, for 353 changed paths. Use:
+The v0.2 fixture tree contains 32 `input.json` files and `32 * 12 = 384` golden output files, plus this README: 417 paths in the resulting tree. The base migration changes every inherited fixture-tree path because the version directory moves from v0.1 to v0.2; Git may display unchanged files as renames. Relative to the completed WO-2 tree, WO-3 Stage A adds five inputs and 60 reviewed golden files, and content-updates exactly five existing reconciliation goldens: fixtures 01, 03, 19, 21, and 23. Use:
 
 ```bash
 git diff --name-status --find-renames contract-v0.1..HEAD -- fixtures/
 git diff --stat contract-v0.1..HEAD -- fixtures/
 ```
 
-The expected new-side inventory is 27 inputs, 324 golden files, and one README. The tables above account for every content-changed inherited golden and every new golden; all remaining inherited goldens are path-only moves.
+The expected new-side inventory is 32 inputs, 384 golden files, and one README. The tables above account for every content-changed inherited golden and every new golden; all remaining inherited goldens are path-only moves.
 
 ## Consumer migration
 

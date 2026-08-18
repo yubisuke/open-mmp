@@ -10,11 +10,13 @@
     "matching_keys": [
       {
         "type": "provider_install_id",
-        "value": "synthetic-install-1",
+        "value": "27622e88bcca94a096fd6690d4fb25d606e65ffe74418ea09f333bbcca877436",
         "scope": "tenant_app",
         "normalization": "identity",
         "cardinality": "one_to_one",
-        "protected": true
+        "protected": true,
+        "value_encoding": "sha256",
+        "access_class": "protected"
       }
     ],
     "candidates": [
@@ -25,7 +27,7 @@
       "install-1:in_window"
     ],
     "joins": [
-      "provider_install_id:synthetic-install-1=>install-1"
+      "provider_install_id:sha256:27622e88bcca94a096fd6690d4fb25d606e65ffe74418ea09f333bbcca877436=>install-1"
     ],
     "freshness": "current"
   }

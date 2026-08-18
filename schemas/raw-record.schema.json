@@ -15,7 +15,7 @@
     "record_id": { "$ref": "common.schema.json#/$defs/id" },
     "tenant_id": { "$ref": "common.schema.json#/$defs/id" },
     "app_id": { "$ref": "common.schema.json#/$defs/id" },
-    "producer": { "type": "string", "pattern": "^(sdk-android|redirector|import:[a-z0-9-]+)$" },
+    "producer": { "type": "string", "pattern": "^(sdk-android|sdk-ios|redirector|import:[a-z0-9-]+|adapter:[a-z0-9-]+|postback:[a-z0-9-]+)$" },
     "producer_version": { "type": "string", "minLength": 1 },
     "event_id": { "$ref": "common.schema.json#/$defs/id" },
     "delivery_id": { "$ref": "common.schema.json#/$defs/id" },

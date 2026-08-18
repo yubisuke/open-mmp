@@ -180,8 +180,29 @@ const correctionReasons = new Set<string>(registries.reasons.correction ?? []);
 const fraudReasons = new Set<string>(registries.reasons.fraud_public_categories ?? []);
 const differenceReasons = new Set<string>(registries.differences.reasons ?? []);
 const producerValues: string[] = (registries.producers.values ?? []).map((entry: Any) => entry.value);
-const producerAllowed = (value: string) =>
-  producerValues.includes(value) || (/^import:[a-z0-9-]+$/.test(value) && producerValues.includes("import:<provider>"));
+const producerMatches = (registered: string, value: string) => {
+  if (registered === value) return true;
+  if (registered === "import:<provider>") return /^import:[a-z0-9-]+$/.test(value);
+  if (registered === "adapter:<network>") return /^adapter:[a-z0-9-]+$/.test(value);
+  if (registered === "postback:<kind>") return /^postback:[a-z0-9-]+$/.test(value);
+  return false;
+};
+const producerAllowed = (value: string) => producerValues.some((registered) => producerMatches(registered, value));
+
+function validateSyntheticImportContext(context: Any, label: string): void {
+  check(context.provider.startsWith("synthetic-"), `non-synthetic provider alias in public fixture: ${label}`);
+  if (context.provider_network !== undefined) {
+    check(context.provider_network.startsWith("synthetic-"), `non-synthetic network alias in public fixture: ${label}`);
+  }
+  for (const field of [
+    "provider_install_ref", "provider_click_ref", "provider_campaign_ref",
+    "provider_adgroup_ref", "provider_creative_ref", "provider_site_ref",
+  ]) {
+    if (context[field] !== undefined) {
+      check(/^(provider|synthetic)-/.test(context[field]), `non-synthetic provider reference in public fixture: ${label}.${field}`);
+    }
+  }
+}
 const matchingDefinitions = new Map<string, Any>((registries.matchingKeys.types ?? []).map((entry: Any) => [entry.type, entry]));
 const stateAxes = registries.states.axes ?? {};
 const compatibility = registries.compatibility.attribution ?? [];
@@ -244,8 +265,13 @@ function pythonOutputs(inputs: Any[]): Any[] {
 function validateMatchingKey(value: Any, label: string): void {
   const definition = matchingDefinitions.get(value.type);
   check(definition, `unknown matching key in ${label}: ${value.type}`);
-  for (const field of ["scope", "normalization", "cardinality", "protected"]) {
+  for (const field of ["scope", "normalization", "cardinality", "protected", "value_encoding", "access_class"]) {
+    if (definition[field] === undefined) continue;
     check(value[field] === definition[field], `matching-key metadata mismatch in ${label}: ${value.type}.${field}`);
+  }
+  if (["provider_install_id", "provider_click_id"].includes(value.type)) {
+    check(/^[a-f0-9]{64}$/.test(value.value), `provider matching key is not a SHA-256 digest in ${label}`);
+    check(value.value_encoding === "sha256" && value.access_class === "protected", `provider matching key classification mismatch in ${label}`);
   }
 }
 
@@ -489,15 +515,15 @@ if (!summaryOnly) {
           const event = { ...record.payload, event_name: record.event_name };
           check(validator(event), `event schema failure: ${state.name}/${record.record_id}: ${ajv.errorsText(validator.errors)}`);
         }
-        for (const item of input.reconciliation_inputs) {
+        for (const item of input.reconciliation_inputs ?? []) {
           item.matching_keys.forEach((entry: Any) => validateMatchingKey(entry, state.name));
           item.candidates.flatMap((candidate: Any) => candidate.matching_keys)
             .forEach((entry: Any) => validateMatchingKey(entry, state.name));
         }
       });
     }
-    it("contains 27 fixture directories", () => {
-      check(fixtureDirs.length === 27, `expected 27 fixture directories, found ${fixtureDirs.length}`);
+    it("contains 32 fixture directories", () => {
+      check(fixtureDirs.length === 32, `expected 32 fixture directories, found ${fixtureDirs.length}`);
     });
   });
 
@@ -693,12 +719,184 @@ const scenarios: Array<[string, () => void]> = [
     check(impression.payload.impression_id === revenue.payload.impression_id, "scenario 27 impression link");
     check(value.output.raw_records.length === 3 && value.output.metric_runs.every((item: Any) => item.value_unscaled === "3000000"), "scenario 27 outputs");
   }],
+  ["28 imported provider-attributed install", () => {
+    const value = fixture("28-imported-provider-attributed").output;
+    const attribution = value.attributions[0];
+    check(attribution.status === "non_organic" && attribution.method === "imported" && attribution.model === "provider_reported" && attribution.reason_code === "provider_attributed", "scenario 28 attribution");
+    check(value.reconciliation.length === 1 && value.reconciliation[0].difference_reason_code === "matched", "scenario 28 reconciliation");
+  }],
+  ["29 imported provider-organic install", () => {
+    const value = fixture("29-imported-provider-organic").output;
+    check(value.attributions[0].status === "organic" && value.attributions[0].reason_code === "provider_organic", "scenario 29 attribution");
+    check(value.raw_records.some((record: Any) => record.producer === "sdk-ios"), "scenario 29 sdk-ios producer");
+  }],
+  ["30 imported attribution without provider time authority", () => {
+    const value = fixture("30-imported-time-authority-unavailable").output;
+    check(value.attributions[0].status === "non_organic" && value.attributions[0].reason_code === "provider_time_authority_unavailable", "scenario 30 attribution");
+    check(value.raw_records.some((record: Any) => record.producer === "postback:synthetic-kind"), "scenario 30 postback producer");
+  }],
+  ["31 imported reconciliation is derived from records", () => {
+    const value = fixture("31-imported-reconciliation-derived");
+    const reasons = new Set(value.output.attributions.map((item: Any) => item.reason_code));
+    const differences = new Set(value.output.reconciliation.map((item: Any) => item.difference_reason_code));
+    check(value.input.reconciliation_inputs.length === 0 && differences.has("matched") && differences.has("join_key_missing"), "scenario 31 automatic reconciliation");
+    check(reasons.has("provider_modeled_conversion") && reasons.has("provider_unattributed"), "scenario 31 attribution reasons");
+    check(value.output.raw_records.some((record: Any) => record.producer === "adapter:synthetic-network"), "scenario 31 adapter producer");
+  }],
+  ["32 calendar-valid evidence older than the configured threshold", () => {
+    const value = fixture("32-timestamp-stale").output;
+    check(value.rejections.length === 1 && value.rejections[0].reason_code === "timestamp_stale", "scenario 32 stale rejection");
+    check(value.raw_records.length === 0 && value.logical_events.length === 0, "scenario 32 payload discarded");
+  }],
 ];
 if (!summaryOnly) {
   describe("reviewed scenarios", () => {
     for (const [name, assertion] of scenarios) it(name, assertion);
-    it("contains 27 scenario assertions", () => {
-      check(scenarios.length === 27, "scenario assertion inventory must contain 27 entries");
+    it("contains 32 scenario assertions", () => {
+      check(scenarios.length === 32, "scenario assertion inventory must contain 32 entries");
+    });
+  });
+
+  describe("WO-3 Stage A contract extensions", () => {
+    it("exercises every registered producer vocabulary form", () => {
+      const observed = fixtureStates.flatMap((state) => {
+        if (!state.input.ok) return [];
+        return fixtureAttempts(state.input.value).map((attempt: Any) => attempt.record.producer);
+      });
+      for (const registered of producerValues) {
+        check(observed.some((producer) => producerMatches(registered, producer)), `producer vocabulary is not exercised: ${registered}`);
+      }
+    });
+    it("exercises every Stage A attribution and rejection reason", () => {
+      const attribution = new Set([...results.values()].flatMap(({ output }) => output.attributions.map((item: Any) => item.reason_code)));
+      const rejection = new Set([...results.values()].flatMap(({ output }) => output.rejections.map((item: Any) => item.reason_code)));
+      for (const reason of ["provider_attributed", "provider_organic", "provider_unattributed", "provider_time_authority_unavailable", "provider_modeled_conversion"]) {
+        check(attribution.has(reason), `Stage A attribution reason is not exercised: ${reason}`);
+      }
+      check(rejection.has("timestamp_stale"), "Stage A rejection reason is not exercised: timestamp_stale");
+    });
+    it("exercises every status in the imported compatibility row", () => {
+      const imported = [...results.values()].flatMap(({ output }) => output.attributions)
+        .filter((item: Any) => item.method === "imported" && item.model === "provider_reported");
+      check(equal([...new Set(imported.map((item: Any) => item.status))].sort(), ["non_organic", "organic", "unattributed"]), "imported compatibility status coverage");
+    });
+    it("keeps import context closed on every supported event schema", () => {
+      const exercised = new Set<string>();
+      for (const name of ["28-imported-provider-attributed", "29-imported-provider-organic", "30-imported-time-authority-unavailable"]) {
+        for (const attempt of fixtureAttempts(fixture(name).input)) {
+          if (!attempt.record.payload.import_context) continue;
+          exercised.add(attempt.record.event_name);
+          const validator = validatorFor(`urn:open-mmp:schema:event-${attempt.record.event_name.replaceAll("_", "-")}:v0.2`);
+          const event = { ...attempt.record.payload, event_name: attempt.record.event_name };
+          check(validator(event), `Stage A import context baseline failed: ${name}/${attempt.record.record_id}`);
+          check(!validator({ ...event, import_context: { ...event.import_context, unexpected: "forbidden" } }), `open import_context accepted: ${name}/${attempt.record.record_id}`);
+          for (const reserved of ["provider", "provider_click_ref", "import", "imported"]) {
+            check(!validator({ ...event, extensions: { [reserved]: "forbidden-bypass" } }), `reserved import field escaped through extensions: ${name}/${attempt.record.record_id}/${reserved}`);
+          }
+        }
+      }
+      check(equal([...exercised].sort(), ["ad_revenue", "click", "install", "session_start"]), "import context event coverage");
+    });
+    it("derives reconciliation without fixture-authored reconciliation inputs", () => {
+      const value = fixture("31-imported-reconciliation-derived");
+      check(value.input.reconciliation_inputs.length === 0 && value.output.reconciliation.length === 2, "automatic import reconciliation inventory");
+      check(value.output.reconciliation.some((item: Any) => item.matching_keys.some((key: Any) => key.type === "provider_install_id")), "provider_install_id derivation");
+      check(fixture("28-imported-provider-attributed").output.reconciliation[0].matching_keys.some((key: Any) => key.type === "provider_click_id"), "provider_click_ref to provider_click_id derivation");
+      const omitted = structuredClone(value.input);
+      delete omitted.reconciliation_inputs;
+      const validator = validatorFor("urn:open-mmp:schema:fixture-input:v0.2");
+      check(validator(omitted), `reconciliation_inputs must be optional: ${ajv.errorsText(validator.errors)}`);
+      check(equal(evaluate(omitted), value.output), "omitting reconciliation_inputs changed automatic output");
+      const missingContext = structuredClone(omitted);
+      delete missingContext.records.find((record: Any) => record.record_id === "import-unattributed-31").payload.import_context;
+      const missingOutput = evaluate(missingContext);
+      const missingAttribution = missingOutput.attributions.find((item: Any) => item.attribution_id === "attr:import-unattributed-31");
+      const missingReconciliation = missingOutput.reconciliation.find((item: Any) => item.reconciliation_id === "reconciliation:import:import-unattributed-31");
+      check(missingAttribution?.method === "imported" && missingAttribution.reason_code === "provider_unattributed", "missing import context fell through to first-party attribution");
+      check(missingReconciliation?.difference_reason_code === "join_key_missing", "missing import context did not fail reconciliation closed");
+    });
+    it("hashes and provider-namespaces protected reconciliation references", () => {
+      const baseline = fixture("28-imported-provider-attributed");
+      const rawRefs = fixtureAttempts(baseline.input).flatMap((attempt: Any) => {
+        const context = attempt.record.payload.import_context ?? {};
+        return [context.provider_install_ref, context.provider_click_ref].filter(Boolean);
+      });
+      const rendered = canonicalize(baseline.output.reconciliation);
+      for (const rawRef of rawRefs) check(!rendered.includes(rawRef), `raw provider reference leaked to reconciliation output: ${rawRef}`);
+      for (const result of baseline.output.reconciliation) {
+        for (const key of result.matching_keys) validateMatchingKey(key, "Stage A imported reconciliation");
+      }
+
+      const otherProvider = structuredClone(baseline.input);
+      for (const attempt of fixtureAttempts(otherProvider)) {
+        if (!attempt.record.producer.startsWith("import:")) continue;
+        attempt.record.producer = "import:synthetic-provider-two";
+        attempt.record.payload.import_context.provider = "synthetic-provider-two";
+      }
+      const otherOutput = evaluate(otherProvider);
+      check(
+        otherOutput.reconciliation[0].matching_keys[0].value !== baseline.output.reconciliation[0].matching_keys[0].value,
+        "provider namespace did not change the protected matching-key digest",
+      );
+
+      for (const [fixtureName, recordId] of [
+        ["28-imported-provider-attributed", "import-click-28"],
+        ["28-imported-provider-attributed", "import-install-28"],
+        ["29-imported-provider-organic", "import-session-29"],
+        ["30-imported-time-authority-unavailable", "import-revenue-30"],
+      ]) {
+        const mismatchedProvider = structuredClone(fixture(fixtureName).input);
+        mismatchedProvider.records.find((record: Any) => record.record_id === recordId).payload.import_context.provider = "synthetic-provider-two";
+        check(!capture(() => evaluate(mismatchedProvider)).ok, `TypeScript accepted mismatched import provider: ${fixtureName}/${recordId}`);
+        check(!capture(() => pythonOutputs([mismatchedProvider])).ok, `Python accepted mismatched import provider: ${fixtureName}/${recordId}`);
+      }
+    });
+    it("keeps public producer aliases synthetic and treats registry patterns as syntax only", () => {
+      for (const state of fixtureStates) {
+        if (!state.input.ok) continue;
+        for (const attempt of fixtureAttempts(state.input.value)) {
+          const producer = attempt.record.producer;
+          if (/^(import|adapter|postback):/.test(producer)) {
+            check(producer.split(":", 2)[1].startsWith("synthetic-"), `non-synthetic producer alias in public fixture: ${state.name}`);
+          }
+          const context = attempt.record.payload.import_context;
+          if (context) validateSyntheticImportContext(context, `${state.name}/${attempt.record.record_id}`);
+        }
+      }
+      for (const { output } of results.values()) {
+        for (const record of output.raw_records) {
+          if (/^(import|adapter|postback):/.test(record.producer)) {
+            check(record.producer.split(":", 2)[1].startsWith("synthetic-"), "non-synthetic producer alias in public golden output");
+          }
+        }
+      }
+      const vendorMutation = structuredClone(fixture("30-imported-time-authority-unavailable").input);
+      const mutatedContext = vendorMutation.records.find((record: Any) => record.record_id === "import-install-30").payload.import_context;
+      mutatedContext.provider_network = "named-vendor";
+      check(!capture(() => validateSyntheticImportContext(mutatedContext, "vendor mutation")).ok, "non-synthetic provider network passed the public fixture guard");
+    });
+    it("treats the stale threshold as an exclusive lower bound", () => {
+      const boundary = structuredClone(fixture("32-timestamp-stale").input);
+      boundary.records[0].occurred_at = boundary.server_context.timestamp_stale_policy.before;
+      const output = evaluate(boundary);
+      check(output.rejections.length === 0 && output.raw_records.length === 1, "timestamp equal to stale threshold must be accepted");
+
+      const disabled = structuredClone(fixture("32-timestamp-stale").input);
+      delete disabled.server_context.timestamp_stale_policy;
+      const disabledOutput = evaluate(disabled);
+      check(disabledOutput.rejections.length === 0 && disabledOutput.raw_records.length === 1, "absent stale policy must be explicitly disabled");
+
+      const fixtureValidator = validatorFor("urn:open-mmp:schema:fixture-input:v0.2");
+      const legacy = structuredClone(disabled);
+      legacy.server_context.timestamp_stale_before = "2026-08-01T00:00:00.000Z";
+      check(!fixtureValidator(legacy), "legacy flat stale threshold was accepted");
+      const incomplete = structuredClone(fixture("32-timestamp-stale").input);
+      delete incomplete.server_context.timestamp_stale_policy.authority;
+      check(!fixtureValidator(incomplete), "incomplete stale policy was accepted");
+      const mismatchedDigest = structuredClone(fixture("32-timestamp-stale").input);
+      mismatchedDigest.server_context.timestamp_stale_policy.policy_digest = "0".repeat(64);
+      check(fixtureValidator(mismatchedDigest), `well-formed stale policy mutation failed schema: ${ajv.errorsText(fixtureValidator.errors)}`);
+      check(!capture(() => evaluate(mismatchedDigest)).ok, "stale policy digest was not bound to canonical policy fields");
     });
   });
 }
@@ -792,7 +990,7 @@ const acceptance: Array<[string, () => void]> = [
     check(corrections.some((item: Any) => item.correction_type === "retraction"), "AC15 retraction");
     check(fixture("17-redaction-recalculation").output.metric_runs.some((item: Any) => item.supersedes_metric_run_id), "AC15 redaction");
   }],
-  ["AC16 clock referrer prefetch and withdrawal fixtures pass", () => check(scenarios.length === 27 && fixture("11-clock-skew").output.deliveries.some((item: Any) => item.clock_skew_suspected) && fixture("13-referrer-unsupported").output.attributions.length === 2 && fixture("19-bot-prefetch").output.fraud_decisions.length === 1 && fixture("20-timestamp-invalid").output.rejections.some((item: Any) => item.reason_code === "timestamp_invalid"), "AC16")],
+  ["AC16 clock referrer prefetch and withdrawal fixtures pass", () => check(scenarios.length === 32 && fixture("11-clock-skew").output.deliveries.some((item: Any) => item.clock_skew_suspected) && fixture("13-referrer-unsupported").output.attributions.length === 2 && fixture("19-bot-prefetch").output.fraud_decisions.length === 1 && fixture("20-timestamp-invalid").output.rejections.some((item: Any) => item.reason_code === "timestamp_invalid"), "AC16")],
   ["AC17 server-recognized withdrawal rejects and redacts payload", () => {
     for (const name of ["14-withdrawal-after-occurrence", "15-event-after-withdrawal"]) {
       const value = fixture(name).output;
@@ -832,7 +1030,7 @@ const acceptance: Array<[string, () => void]> = [
     for (const forbidden of ["threshold", "model_weight", "watchlist", "ip_address", "user_agent", "response_timing"]) check(!schemaText.includes(forbidden), `AC20 ${forbidden}`);
     check(specText.includes("remain private"), "AC20 private boundary");
   }],
-  ["AC21 one command validates every schema registry fixture and golden", () => check(schemaPaths.length === 22 && Object.keys(registries).length === 7 && fixtureDirs.length === 27 && outputArtifactCount === 27 * 12, "AC21")],
+  ["AC21 one command validates every schema registry fixture and golden", () => check(schemaPaths.length === 22 && Object.keys(registries).length === 7 && fixtureDirs.length === 32 && outputArtifactCount === 32 * 12, "AC21")],
   ["AC22 repeated and independent evaluators produce identical JCS", () => {
     for (const { output, python } of results.values()) check(equal(output, python), "AC22 evaluator mismatch");
     const vector = { numbers: [333333333.33333329, 1e30, 4.50, 2e-3, 1e-27, -0], string: "€$\u000f\nA'B\"\\\"/" };

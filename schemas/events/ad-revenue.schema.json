@@ -16,6 +16,7 @@
     "amount_scale": {},
     "currency": {},
     "revenue_source": { "enum": ["client_estimated", "server_verified", "imported_reported"] },
-    "extensions": { "type": "object", "additionalProperties": true }
+    "import_context": { "$ref": "../common.schema.json#/$defs/importContext" },
+    "extensions": { "type": "object", "propertyNames": { "not": { "pattern": "^(import($|_)|imported($|_)|provider($|_))" } }, "additionalProperties": true }
   }
 }

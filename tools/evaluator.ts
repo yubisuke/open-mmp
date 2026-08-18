@@ -85,6 +85,16 @@ function attempts(input: Any): Attempt[] {
   return input.records.map((record: Any) => ({ server: input.server_context, record, batch_id: "batch-default" }));
 }
 
+function assertImportProviderContexts(all: Attempt[]): void {
+  for (const attempt of all) {
+    const context = attempt.record.payload.import_context;
+    if (!attempt.record.producer.startsWith("import:") || !context) continue;
+    if (attempt.record.producer !== `import:${context.provider}`) {
+      throw new Error("import_context.provider must match the authenticated import producer");
+    }
+  }
+}
+
 function attemptOrder(a: Attempt, b: Attempt): number {
   const aKey = [
     a.record.received_at, a.record.record_id, a.record.delivery_id,
@@ -260,6 +270,16 @@ function timestampInvalidDecision(attempt: Attempt): Any {
 
 function decide(attempt: Attempt, orderedAttempts: Attempt[]): Any {
   const { server, record } = attempt;
+  if (server.timestamp_stale_policy) {
+    const expectedDigest = sha256({
+      before: server.timestamp_stale_policy.before,
+      authority: server.timestamp_stale_policy.authority,
+      policy_version: server.timestamp_stale_policy.policy_version,
+    });
+    if (server.timestamp_stale_policy.policy_digest !== expectedDigest) {
+      throw new Error("timestamp_stale_policy.policy_digest does not match its canonical policy fields");
+    }
+  }
   const sameRecordId = orderedAttempts.filter((candidate) => candidate.record.record_id === record.record_id);
   const sameKey = orderedAttempts.filter((candidate) => scopeKey(candidate) === scopeKey(attempt));
   const first = sameKey[0];
@@ -282,6 +302,10 @@ function decide(attempt: Attempt, orderedAttempts: Attempt[]): Any {
   } else if (!consent.allowed) {
     ingestion_status = "rejected";
     reason_code = "consent_withdrawn";
+  } else if (server.timestamp_stale_policy &&
+    time(record.occurred_at, "occurred_at") < time(server.timestamp_stale_policy.before, "timestamp_stale_policy.before")) {
+    ingestion_status = "rejected";
+    reason_code = "timestamp_stale";
   } else if (record.subject_scope === "aggregate" && record.payload?.installation_id) {
     ingestion_status = "rejected";
     reason_code = "aggregate_installation_join_forbidden";
@@ -305,6 +329,11 @@ function decide(attempt: Attempt, orderedAttempts: Attempt[]): Any {
     clock_skew_suspected: time(record.occurred_at, "occurred_at") > time(record.received_at, "received_at") + 300_000,
     payload_disposition: ingestion_status === "rejected" && reason_code !== "event_id_conflict" ? "discarded" : "protected",
     ...consent,
+    ...(reason_code === "timestamp_stale" ? {
+      staleness_policy_version: server.timestamp_stale_policy.policy_version,
+      staleness_policy_digest: server.timestamp_stale_policy.policy_digest,
+      staleness_authority: server.timestamp_stale_policy.authority,
+    } : {}),
     ...(reason_code ? { reason_code } : {}),
   };
 }
@@ -401,6 +430,24 @@ function makeAttribution(
       supersedes_attribution_id: base.attribution_id,
     };
   };
+  const importedProducer = install.producer.startsWith("import:");
+  const imported = importedProducer ? payload.import_context : undefined;
+  if (importedProducer) {
+    if (!imported) return result("unattributed", "imported", "provider_reported", "provider_unattributed");
+    if (imported.provider_attributed) {
+      if (imported.provider_attribution_strategy === "modeled") {
+        return result("non_organic", "imported", "provider_reported", "provider_modeled_conversion");
+      }
+      if (!imported.provider_confirmed_at) {
+        return result("non_organic", "imported", "provider_reported", "provider_time_authority_unavailable");
+      }
+      return result("non_organic", "imported", "provider_reported", "provider_attributed");
+    }
+    if (imported.provider_attribution_strategy === "organic") {
+      return result("organic", "imported", "provider_reported", "provider_organic");
+    }
+    return result("unattributed", "imported", "provider_reported", "provider_unattributed");
+  }
   if (payload.referrer_status === "none") return result("organic", "none", "none", "no_referrer");
   if (payload.referrer_status === "unsupported") return result("unattributed", "none", "none", "install_referrer_unsupported");
   if (payload.referrer_status === "unavailable") return result("unattributed", "none", "none", "install_referrer_unavailable");
@@ -560,14 +607,60 @@ function metricRuns(
   return sortByKey(output, (run) => [run.metric_run_id]);
 }
 
-function reconciliationResults(input: Any): Reconciliation[] {
-  const output: Reconciliation[] = (input.reconciliation_inputs ?? []).map((item: Any): Reconciliation => {
+function importedReconciliationInputs(accepted: Attempt[]): Any[] {
+  return accepted
+    .filter((attempt) => attempt.record.event_name === "install" && attempt.record.producer.startsWith("import:"))
+    .map((attempt) => {
+      const context = attempt.record.payload.import_context ?? {};
+      const providerKey = (type: "provider_install_id" | "provider_click_id", value: string): Any => ({
+        type,
+        value: sha256({ provider: context.provider, type, value }),
+        scope: "tenant_app",
+        normalization: "identity",
+        cardinality: "one_to_one",
+        protected: true,
+        value_encoding: "sha256",
+        access_class: "protected",
+      });
+      const matching_keys: Any[] = [];
+      if (context.provider_install_ref) {
+        matching_keys.push(providerKey("provider_install_id", context.provider_install_ref));
+      }
+      if (context.provider_click_ref) {
+        matching_keys.push(providerKey("provider_click_id", context.provider_click_ref));
+      }
+      return {
+        reconciliation_id: `reconciliation:import:${attempt.record.record_id}`,
+        tenant_id: attempt.server.tenant_id,
+        app_id: attempt.server.app_id,
+        input_snapshot_id: `snapshot:internal:${attempt.record.record_id}`,
+        external_snapshot_id: `snapshot:provider:${attempt.record.record_id}`,
+        matching_keys,
+        candidates: matching_keys.length ? [{
+          candidate_id: attempt.record.record_id,
+          tenant_id: attempt.server.tenant_id,
+          app_id: attempt.server.app_id,
+          matching_keys,
+          window_status: "not_applicable",
+          freshness: "current",
+          excluded: false,
+        }] : [],
+        freshness: "current",
+      };
+    });
+}
+
+function reconciliationResults(input: Any, accepted: Attempt[]): Reconciliation[] {
+  const reconciliationInputs = [...(input.reconciliation_inputs ?? []), ...importedReconciliationInputs(accepted)];
+  const identities = reconciliationInputs.map((item: Any) => compositeKey([item.tenant_id, item.app_id, item.reconciliation_id]));
+  if (new Set(identities).size !== identities.length) throw new Error("duplicate reconciliation identity");
+  const output: Reconciliation[] = reconciliationInputs.map((item: Any): Reconciliation => {
     const normalized = (entry: Any): string => {
       if (entry.normalization === "lowercase_ascii") return entry.value.replace(/[A-Z]/g, (character: string) => character.toLowerCase());
       if (entry.normalization === "trim") return entry.value.trim();
       return entry.value;
     };
-    const key = (entry: Any) => `${entry.type}:${normalized(entry)}`;
+    const key = (entry: Any) => `${entry.type}:${entry.value_encoding ? `${entry.value_encoding}:` : ""}${normalized(entry)}`;
     const externalKeys = new Set((item.matching_keys ?? []).map(key));
     const matched = (item.candidates ?? []).filter((candidate: Any) =>
       candidate.tenant_id === item.tenant_id && candidate.app_id === item.app_id &&
@@ -603,6 +696,7 @@ function reconciliationResults(input: Any): Reconciliation[] {
 
 export function evaluate(input: Any): EvaluationOutput {
   const all = attempts(input).sort(attemptOrder);
+  assertImportProviderContexts(all);
   assertScopedReferences(input, all);
   const decisionsList = all.map((attempt) => {
     try {
@@ -648,6 +742,11 @@ export function evaluate(input: Any): EvaluationOutput {
         alternative_legal_basis_policy_version: decision.alternative_legal_basis_policy_version,
       } : {}),
       ...(decision.reason_code ? { reason_code: decision.reason_code } : {}),
+      ...(decision.reason_code === "timestamp_stale" ? {
+        staleness_policy_version: decision.staleness_policy_version,
+        staleness_policy_digest: decision.staleness_policy_digest,
+        staleness_authority: decision.staleness_authority,
+      } : {}),
     };
   }), (delivery) => [delivery.delivery_id, delivery.record_id, delivery.tenant_id, delivery.app_id]);
   const logical_events = sortByKey(logicalEvidence.map((attempt): LogicalEvent => ({
@@ -772,6 +871,11 @@ export function evaluate(input: Any): EvaluationOutput {
       consent_evaluation_policy_version: decision.consent_evaluation_policy_version,
       consent_decision_reason_code: decision.consent_decision_reason_code,
       ...(decision.withdrawal_recognized_at ? { withdrawal_recognized_at: decision.withdrawal_recognized_at } : {}),
+      ...(decision.reason_code === "timestamp_stale" ? {
+        staleness_policy_version: decision.staleness_policy_version,
+        staleness_policy_digest: decision.staleness_policy_digest,
+        staleness_authority: decision.staleness_authority,
+      } : {}),
     })), (rejection) => [rejection.delivery_id, rejection.record_id, rejection.tenant_id, rejection.app_id]);
   return {
     raw_records,
@@ -787,6 +891,6 @@ export function evaluate(input: Any): EvaluationOutput {
     metric_runs: metricRuns(input, all, decisions, lifecycle),
     fraud_decisions,
     rejections,
-    reconciliation: reconciliationResults(input),
+    reconciliation: reconciliationResults(input, acceptedUnique),
   };
 }

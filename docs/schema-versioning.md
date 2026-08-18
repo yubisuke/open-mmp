@@ -2,6 +2,8 @@
 
 Open MMP publishes one active contract tree while the project has no runtime users. The Git tag `contract-v0.1` preserves the complete v0.1 contract; the working tree contains v0.2 in place.
 
+The v0.2 tree remains a pre-release composition while its ordered contract work orders are being reviewed on the designated review branch. Those work orders may complete the same `0.2.0` schema set before it is accepted into the public release baseline. After v0.2 is accepted as a release baseline, any change classified as breaking below requires a new minor line; this composition exception no longer applies.
+
 ## Version identifiers
 
 - A schema `$id` ends in the contract minor line, for example `urn:open-mmp:schema:raw-record:v0.2`.

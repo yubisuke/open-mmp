@@ -92,4 +92,4 @@ python -m pip install --require-hashes --requirement requirements-contract.txt
 npm run validate
 ```
 
-Validation is read-only. It checks 22 schemas, 7 registries, 27 reviewed synthetic fixtures, 324 golden output artifacts across 12 classes, 27 scenario assertions, 26 acceptance criteria, semantic and metamorphic mutations, deterministic TypeScript output, independent Python output, and RFC 8785 conformance. See the [fixture provenance note](fixtures/v0.2/README.md).
+Validation is read-only. It checks 22 schemas, 7 registries, 32 reviewed synthetic fixtures, 384 golden output artifacts across 12 classes, 32 scenario assertions, 26 acceptance criteria, semantic and metamorphic mutations, deterministic TypeScript output, independent Python output, and RFC 8785 conformance. See the [fixture provenance note](fixtures/v0.2/README.md).

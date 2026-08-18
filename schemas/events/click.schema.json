@@ -14,6 +14,7 @@
     "redirector_time_status": { "enum": ["available", "missing", "invalid"] },
     "bot_prefetch": { "type": "boolean" },
     "replay_suspected": { "type": "boolean" },
-    "extensions": { "type": "object", "additionalProperties": true }
+    "import_context": { "$ref": "../common.schema.json#/$defs/importContext" },
+    "extensions": { "type": "object", "propertyNames": { "not": { "pattern": "^(import($|_)|imported($|_)|provider($|_))" } }, "additionalProperties": true }
   }
 }

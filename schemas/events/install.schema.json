@@ -20,7 +20,8 @@
     "install_begin_at_server_status": { "enum": ["available", "missing", "invalid"] },
     "referrer_read_at": { "$ref": "../common.schema.json#/$defs/dateTime" },
     "occurred_at_device": { "$ref": "../common.schema.json#/$defs/dateTime" },
-    "extensions": { "type": "object", "additionalProperties": true }
+    "import_context": { "$ref": "../common.schema.json#/$defs/importContext" },
+    "extensions": { "type": "object", "propertyNames": { "not": { "pattern": "^(import($|_)|imported($|_)|provider($|_))" } }, "additionalProperties": true }
   },
   "allOf": [
     {

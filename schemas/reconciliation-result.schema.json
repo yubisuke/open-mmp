@@ -29,8 +29,24 @@
           "scope": { "enum": ["tenant", "tenant_app"] },
           "normalization": { "enum": ["identity", "lowercase_ascii", "trim"] },
           "cardinality": { "enum": ["one_to_one", "one_to_many"] },
-          "protected": { "type": "boolean" }
-        }
+          "protected": { "type": "boolean" },
+          "value_encoding": { "enum": ["plain", "sha256"] },
+          "access_class": { "enum": ["public", "protected", "private"] }
+        },
+        "allOf": [
+          {
+            "if": { "properties": { "type": { "enum": ["provider_install_id", "provider_click_id"] } }, "required": ["type"] },
+            "then": {
+              "required": ["value_encoding", "access_class"],
+              "properties": {
+                "value": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+                "protected": { "const": true },
+                "value_encoding": { "const": "sha256" },
+                "access_class": { "const": "protected" }
+              }
+            }
+          }
+        ]
       }
     },
     "candidates": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/id" } },

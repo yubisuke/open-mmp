@@ -10,11 +10,13 @@
     "matching_keys": [
       {
         "type": "provider_click_id",
-        "value": "click-prefetch_0000000000000000",
+        "value": "1352815ec02b9a8553d72598200066cc5f5ca95bef8ec29cb25447db9bb4561a",
         "scope": "tenant_app",
         "normalization": "identity",
         "cardinality": "one_to_one",
-        "protected": true
+        "protected": true,
+        "value_encoding": "sha256",
+        "access_class": "protected"
       }
     ],
     "candidates": [
@@ -27,7 +29,7 @@
       "prefetch-click:in_window"
     ],
     "joins": [
-      "provider_click_id:click-prefetch_0000000000000000=>prefetch-click"
+      "provider_click_id:sha256:1352815ec02b9a8553d72598200066cc5f5ca95bef8ec29cb25447db9bb4561a=>prefetch-click"
     ],
     "freshness": "current"
   }

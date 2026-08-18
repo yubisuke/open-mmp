@@ -33,6 +33,32 @@
         "access_class": { "enum": ["public", "protected", "private"] }
       }
     },
-    "aggregationTimeZone": { "enum": ["UTC", "Asia/Tokyo"] }
+    "aggregationTimeZone": { "enum": ["UTC", "Asia/Tokyo"] },
+    "importContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "provider_attributed", "provider_attribution_strategy"],
+      "properties": {
+        "provider": { "type": "string", "pattern": "^[a-z0-9-]{1,64}$" },
+        "provider_attributed": { "type": "boolean" },
+        "provider_attribution_strategy": { "enum": ["click_through", "view_through", "modeled", "organic", "unattributed"] },
+        "provider_install_ref": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "provider_click_ref": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "provider_campaign_ref": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "provider_adgroup_ref": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "provider_creative_ref": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "provider_network": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "provider_site_ref": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "provider_country": { "type": "string", "pattern": "^[A-Z]{2}$" },
+        "provider_confirmed_at": { "$ref": "#/$defs/dateTime" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "provider_attributed": { "const": true } }, "required": ["provider_attributed"] },
+          "then": { "properties": { "provider_attribution_strategy": { "enum": ["click_through", "view_through", "modeled"] } } },
+          "else": { "properties": { "provider_attribution_strategy": { "enum": ["organic", "unattributed"] } } }
+        }
+      ]
+    }
   }
 }

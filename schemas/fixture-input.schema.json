@@ -4,7 +4,7 @@
   "title": "Open MMP Contract Fixture Input v0.2",
   "type": "object",
   "additionalProperties": false,
-  "required": ["contract_version", "fx_policy", "metric_evaluations", "reconciliation_inputs", "privacy_requests"],
+  "required": ["contract_version", "fx_policy", "metric_evaluations", "privacy_requests"],
   "properties": {
     "contract_version": { "const": "0.2.0" },
     "server_context": { "$ref": "#/$defs/serverContext" },
@@ -127,6 +127,17 @@
               "effective_at": { "$ref": "common.schema.json#/$defs/dateTime" }
             }
           }
+        },
+        "timestamp_stale_policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["before", "authority", "policy_version", "policy_digest"],
+          "properties": {
+            "before": { "$ref": "common.schema.json#/$defs/dateTime" },
+            "authority": { "const": "server" },
+            "policy_version": { "type": "string", "minLength": 1 },
+            "policy_digest": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+          }
         }
       }
     },
@@ -144,7 +155,7 @@
         "delivery_id": { "$ref": "common.schema.json#/$defs/id" },
         "tenant_id": { "$ref": "common.schema.json#/$defs/id" },
         "app_id": { "$ref": "common.schema.json#/$defs/id" },
-        "producer": { "type": "string", "pattern": "^(sdk-android|redirector|import:[a-z0-9-]+)$" },
+        "producer": { "type": "string", "pattern": "^(sdk-android|sdk-ios|redirector|import:[a-z0-9-]+|adapter:[a-z0-9-]+|postback:[a-z0-9-]+)$" },
         "producer_version": { "type": "string", "minLength": 1 },
         "event_id": { "$ref": "common.schema.json#/$defs/id" },
         "event_name": { "enum": ["click", "install", "session_start", "ad_impression", "ad_revenue", "purchase", "refund", "consent_changed"] },
@@ -191,8 +202,24 @@
         "scope": { "enum": ["tenant", "tenant_app"] },
         "normalization": { "enum": ["identity", "lowercase_ascii", "trim"] },
         "cardinality": { "enum": ["one_to_one", "one_to_many"] },
-        "protected": { "type": "boolean" }
-      }
+        "protected": { "type": "boolean" },
+        "value_encoding": { "enum": ["plain", "sha256"] },
+        "access_class": { "enum": ["public", "protected", "private"] }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "enum": ["provider_install_id", "provider_click_id"] } }, "required": ["type"] },
+          "then": {
+            "required": ["value_encoding", "access_class"],
+            "properties": {
+              "value": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+              "protected": { "const": true },
+              "value_encoding": { "const": "sha256" },
+              "access_class": { "const": "protected" }
+            }
+          }
+        }
+      ]
     },
     "reconciliationInput": {
       "type": "object",

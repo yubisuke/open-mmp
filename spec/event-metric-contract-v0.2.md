@@ -11,6 +11,7 @@ This document is normative for the v0.2 schemas, registries, fixtures, and refer
 - Contract objects are closed. A documented `extensions` object is the only open extension point. The fixture envelope's payload container is dispatched by `event_name` and then validated by the corresponding closed event schema.
 - Accepted contract timestamps use UTC RFC 3339 with exactly millisecond precision and a trailing `Z`, for example `2026-08-12T00:00:00.000Z`.
 - Ingress timestamp strings first pass the millisecond-`Z` syntax boundary. Evaluators then require a real UTC calendar instant. A syntactically shaped but calendrically invalid value follows the formal `timestamp_invalid` rejection path before window, skew, or bucket evaluation; its payload is discarded and only non-identifying delivery/rejection metadata is emitted. Accepted output timestamps also satisfy the schema `date-time` format.
+- A server context may set the closed `timestamp_stale_policy` object. Its server-authoritative `before` boundary, `policy_version`, and `authority=server` are bound by `policy_digest=SHA-256(JCS({authority,before,policy_version}))`. A calendar-valid event whose `occurred_at` is strictly earlier than `before` follows the `timestamp_stale` rejection path; equality is accepted. The policy does not compare `provider_confirmed_at`. Absence of the object explicitly disables stale rejection. A stale rejection carries the policy version, digest, and authority, discards the payload, and remains distinct from `timestamp_invalid`.
 - String ordering in evaluator outputs is by UTF-16 code unit.
 - Payload and snapshot digests are lowercase SHA-256 over RFC 8785 JCS UTF-8 bytes.
 - Money and identifiers are never represented with floating-point JSON numbers.
@@ -57,6 +58,19 @@ For `duplicate_delivery` and `event_id_conflict`, `canonical_record_id` is the `
 
 Canonical event names are defined by `registries/event-names-v0.2.json`. Each payload is validated by the event-specific schema selected from that registry.
 
+Producer values are closed by `registries/producer-values-v0.2.json`:
+
+| Producer | Contract purpose |
+| --- | --- |
+| `sdk-android` | Android SDK event delivery. |
+| `sdk-ios` | iOS SDK event delivery. |
+| `redirector` | First-party redirector evidence. |
+| `import:<provider>` | Deployment-private raw-export importer. The public placeholder does not name an incumbent provider. |
+| `adapter:<network>` | Deployment-private media API adapter, including cost collection in later Stage B work. |
+| `postback:<kind>` | S2S or platform postback receiver, including later SKAN or AdAttributionKit work. |
+
+The provider, network, and postback-kind suffixes are deployment-private mappings. Registry patterns validate syntax only; they do not authorize a source. An M1 runtime must enforce a tenant-scoped private allowlist before contract evaluation. Public fixtures and their golden outputs use only synthetic suffixes.
+
 For Install Referrer attribution:
 
 - `redirector_click_at` is the authoritative click time.
@@ -92,6 +106,21 @@ Every attribution result records:
 `subject_scope` is `installation_level` or `aggregate`. An aggregate result cannot contain installation identity. Compatibility is closed by `registries/compatibility-v0.2.json`.
 
 `organic` means required evidence shows no paid candidate. `unattributed` means evidence is missing, conflicting, expired, unavailable, unsupported, or excluded.
+
+### Imported provider attribution
+
+An accepted install produced by `import:<provider>` may carry the closed `import_context` object. Imported attribution records the provider-reported judgment with `method=imported` and `model=provider_reported`; it never reinterprets that judgment as first-party Install Referrer evidence.
+
+- `provider_attributed=true` produces `non_organic/provider_attributed` when `provider_confirmed_at` is present.
+- A provider-attributed modeled conversion produces `non_organic/provider_modeled_conversion`.
+- A provider-attributed row without `provider_confirmed_at` produces `non_organic/provider_time_authority_unavailable`; it does not fall through to first-party `authoritative_time_missing`.
+- `provider_attributed=false` with strategy `organic` produces `organic/provider_organic`.
+- `provider_attributed=false` with strategy `unattributed` produces `unattributed/provider_unattributed`.
+- An imported install without `import_context` fails closed as `unattributed/imported/provider_reported/provider_unattributed`; it never falls through to first-party referrer logic.
+
+`import_context` is optional on `click`, `install`, `session_start`, and `ad_revenue`. It preserves the provider name, provider attribution flag and strategy, opaque provider install/click references, opaque campaign/ad-group/creative/site references, network, country, and provider confirmation time. It is closed and protected as raw evidence. The four event schemas reserve and reject `import`, `imported`, `import_*`, `imported_*`, `provider`, and `provider_*` names inside `extensions`; extension values never create imported attribution or reconciliation semantics. `provider_install_ref` is the provider-side install reference used to derive the existing `provider_install_id` matching key. For an imported record, `import_context.provider` must equal the authenticated `import:<provider>` producer suffix.
+
+The canonical provider dimension field names are `provider_network`, `provider_site_ref`, and `provider_country`. They implement the Stage A work-order proposals `network`, `site_ref`, and `country` while preserving the v0.2 closed-context namespace.
 
 ## Money, FX, and D0 metrics
 
@@ -163,6 +192,18 @@ Inputs contain typed matching keys, candidate rows, window status, freshness, an
 
 Results record both snapshot IDs, matching keys used, candidates, exclusions, windows, joins, and freshness. Difference reasons describe measurement semantics and available evidence; they never rate provider quality.
 
+For each accepted unique imported install, the evaluator also derives reconciliation input without requiring fixture- or caller-authored `reconciliation_inputs`; that fixture-envelope field is optional:
+
+1. `provider_install_ref`, when present, becomes a protected, tenant/app-scoped, one-to-one `provider_install_id` key.
+2. `provider_click_ref`, when present, maps to the existing protected, tenant/app-scoped, one-to-one `provider_click_id` matching-key type. The payload field keeps the opaque-reference name, while the WO-2 matching-key vocabulary remains canonical.
+3. The normalized imported install is the candidate for the provider row and carries the same typed keys. Candidate identity is the accepted `record_id`.
+4. Provider-reported attribution does not claim a first-party seven-day window, so the derived candidate window is `not_applicable`; freshness is `current` at import evaluation.
+5. At least one derived key yields `matched`. No provider install or click reference yields `join_key_missing`.
+
+Provider install and click key values never expose the source reference. Both automatically derived and manually supplied provider keys require `value_encoding=sha256`, `access_class=protected`, and a lowercase 64-character digest. The digest is `SHA-256(JCS({provider,type,value}))`, where `provider` is the deployment-private provider alias, `type` is the canonical matching-key type, and `value` is the raw opaque provider reference. This provider namespace prevents equal raw references from colliding across providers. Comparison, ordering, and rendered join evidence include `value_encoding`; raw references remain only in protected event evidence. Hashing prevents direct disclosure in reconciliation output but is not a secrecy guarantee for low-entropy source values.
+
+Manually supplied reconciliation input remains supported for other synthetic contract scenarios and must apply the same provider-key digest rule before evaluation. A manual and derived row may not reuse the same tenant/app/reconciliation identity.
+
 ## Public fraud envelope
 
 The public contract exposes only the decision, action, high-level reason category, evidence type/digest/access class, rule-bundle digest, and evaluation time. Synthetic `bot_prefetch` and `replay_suspected` fixtures demonstrate this envelope. Replay suspicion is a fraud-decision category, not a substitute for `duplicate_delivery` or idempotency classification.
@@ -171,7 +212,7 @@ Production signals, IP or User-Agent values, live thresholds, model weights, wat
 
 ## Reviewed fixture and validation gate
 
-The reviewed gate compiles 22 schemas and validates 7 registries. The 27 fixture directories contain synthetic input plus 12 reviewed golden output classes: raw records, deliveries, logical events, corrections, privacy requests, privacy tombstones, attributions, metric definitions, metric runs, public fraud decisions, rejections, and reconciliation. Fixture 10 demonstrates both paid reinstall attribution and no-referrer redownload attribution. Validation also exercises invalid calendar timestamps, reconciliation reasons, attribution supersession, replay suspicion, retention expiry, impression-to-revenue evidence, reorder invariance, install-type evidence dominance, record-ID collision, click ambiguity, and scoped-reference mutations; golden files remain committed review artifacts.
+The reviewed gate compiles 22 schemas and validates 7 registries. The 32 fixture directories contain synthetic input plus 12 reviewed golden output classes: raw records, deliveries, logical events, corrections, privacy requests, privacy tombstones, attributions, metric definitions, metric runs, public fraud decisions, rejections, and reconciliation. Fixture 10 demonstrates both paid reinstall attribution and no-referrer redownload attribution. Fixtures 28 through 32 exercise imported attribution, automatically derived reconciliation, every registered producer form, and stale-evidence rejection. Validation also exercises invalid calendar timestamps, reconciliation reasons, attribution supersession, replay suspicion, retention expiry, impression-to-revenue evidence, reorder invariance, install-type evidence dominance, record-ID collision, click ambiguity, and scoped-reference mutations; golden files remain committed review artifacts.
 
 The validation command never writes fixture files. `npm run validate`:
 
@@ -179,8 +220,8 @@ The validation command never writes fixture files. `npm run validate`:
 2. compiles every Draft 2020-12 schema;
 3. validates registry shape, uniqueness, and cross-references;
 4. validates every input event through its event schema;
-5. validates all 324 golden output artifacts;
-6. runs named assertions for all 27 scenarios and 26 acceptance criteria (AC01-AC26);
+5. validates all 384 golden output artifacts;
+6. runs named assertions for all 32 scenarios and 26 acceptance criteria (AC01-AC26);
 7. runs deliberate negative mutations;
 8. runs the TypeScript evaluator twice;
 9. runs the independently implemented Python evaluator;
@@ -198,4 +239,5 @@ Environment setup is `npm ci` and `python -m pip install --require-hashes --requ
 - Secure redirector click IDs require a base64url-compatible value of at least 22 characters. Relevant identifier fields use common ID definitions.
 - `canonical_record_id`, invalid timestamp rejection, completed privacy-subject HMAC handling, tombstone provenance, and retention-expiry recalculation are defined explicitly.
 - Metric definitions are reviewed fixture outputs. Eight additional required scenarios cover invalid timestamps, three reconciliation differences, attribution supersession, replay suspicion, retention expiry, and impression-to-revenue linkage.
+- Stage A of the v0.2 extension adds provider-reported attribution as a separate imported method, closed import context, automatic import reconciliation, explicit producer forms, and `timestamp_stale`; none of these changes name or rate an incumbent provider.
 - Full migration details and the golden-change ledger are in `docs/contract-v0.2-migration.md`.

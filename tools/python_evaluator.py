@@ -119,6 +119,16 @@ def flatten_attempts(value: dict[str, Any]) -> list[dict[str, Any]]:
     ))
 
 
+def assert_import_provider_contexts(attempts: list[dict[str, Any]]) -> None:
+    for attempt in attempts:
+        record = attempt["record"]
+        context = record["payload"].get("import_context")
+        if not record["producer"].startswith("import:") or not context:
+            continue
+        if record["producer"] != f"import:{context['provider']}":
+            raise ValueError("import_context.provider must match the authenticated import producer")
+
+
 def scope_key(attempt: dict[str, Any]) -> tuple[str, str, str, str]:
     server, record = attempt["server"], attempt["record"]
     return server["tenant_id"], server["app_id"], record["producer"], record["event_id"]
@@ -306,6 +316,15 @@ def timestamp_invalid_decision(attempt: dict[str, Any]) -> dict[str, Any]:
 
 def decide(attempt: dict[str, Any], attempts: list[dict[str, Any]]) -> dict[str, Any]:
     server, record = attempt["server"], attempt["record"]
+    if server.get("timestamp_stale_policy"):
+        policy = server["timestamp_stale_policy"]
+        expected_digest = digest({
+            "before": policy["before"],
+            "authority": policy["authority"],
+            "policy_version": policy["policy_version"],
+        })
+        if policy["policy_digest"] != expected_digest:
+            raise ValueError("timestamp_stale_policy.policy_digest does not match its canonical policy fields")
     same_record_id = [candidate for candidate in attempts if candidate["record"]["record_id"] == record["record_id"]]
     matches = [candidate for candidate in attempts if scope_key(candidate) == scope_key(attempt)]
     first = matches[0]
@@ -325,6 +344,8 @@ def decide(attempt: dict[str, Any], attempts: list[dict[str, Any]]) -> dict[str,
         status, reason = "rejected", "record_id_collision"
     elif not consent["allowed"]:
         status, reason = "rejected", "consent_withdrawn"
+    elif server.get("timestamp_stale_policy") and timestamp(record["occurred_at"], "occurred_at") < timestamp(server["timestamp_stale_policy"]["before"], "timestamp_stale_policy.before"):
+        status, reason = "rejected", "timestamp_stale"
     elif record.get("subject_scope") == "aggregate" and record["payload"].get("installation_id"):
         status, reason = "rejected", "aggregate_installation_join_forbidden"
     elif duplicate == "event_id_conflict":
@@ -348,6 +369,12 @@ def decide(attempt: dict[str, Any], attempts: list[dict[str, Any]]) -> dict[str,
         result["canonical_record_id"] = canonical_record_id
     if reason:
         result["reason_code"] = reason
+    if reason == "timestamp_stale":
+        result.update({
+            "staleness_policy_version": server["timestamp_stale_policy"]["policy_version"],
+            "staleness_policy_digest": server["timestamp_stale_policy"]["policy_digest"],
+            "staleness_authority": server["timestamp_stale_policy"]["authority"],
+        })
     return result
 
 
@@ -438,6 +465,21 @@ def attribution(
             "finality": "superseded",
             "supersedes_attribution_id": base["attribution_id"],
         }
+
+    imported_producer = install["producer"].startswith("import:")
+    imported = payload.get("import_context") if imported_producer else None
+    if imported_producer:
+        if not imported:
+            return result("unattributed", "imported", "provider_reported", "provider_unattributed")
+        if imported["provider_attributed"]:
+            if imported["provider_attribution_strategy"] == "modeled":
+                return result("non_organic", "imported", "provider_reported", "provider_modeled_conversion")
+            if not imported.get("provider_confirmed_at"):
+                return result("non_organic", "imported", "provider_reported", "provider_time_authority_unavailable")
+            return result("non_organic", "imported", "provider_reported", "provider_attributed")
+        if imported["provider_attribution_strategy"] == "organic":
+            return result("organic", "imported", "provider_reported", "provider_organic")
+        return result("unattributed", "imported", "provider_reported", "provider_unattributed")
 
     if payload["referrer_status"] == "none":
         return result("organic", "none", "none", "no_referrer")
@@ -649,9 +691,61 @@ def metric_runs(
     return sort_by_key(output, metric_run_sort_key)
 
 
-def reconciliation_results(value: dict[str, Any]) -> list[dict[str, Any]]:
+def imported_reconciliation_inputs(accepted: list[dict[str, Any]]) -> list[dict[str, Any]]:
     output: list[dict[str, Any]] = []
-    for item in value.get("reconciliation_inputs", []):
+    for attempt in accepted:
+        record = attempt["record"]
+        if record["event_name"] != "install" or not record["producer"].startswith("import:"):
+            continue
+        context = record["payload"].get("import_context", {})
+        def provider_key(key_type: str, raw_value: str) -> dict[str, Any]:
+            return {
+                "type": key_type,
+                "value": digest({"provider": context["provider"], "type": key_type, "value": raw_value}),
+                "scope": "tenant_app",
+                "normalization": "identity",
+                "cardinality": "one_to_one",
+                "protected": True,
+                "value_encoding": "sha256",
+                "access_class": "protected",
+            }
+
+        matching_keys: list[dict[str, Any]] = []
+        if context.get("provider_install_ref"):
+            matching_keys.append(provider_key("provider_install_id", context["provider_install_ref"]))
+        if context.get("provider_click_ref"):
+            matching_keys.append(provider_key("provider_click_id", context["provider_click_ref"]))
+        item: dict[str, Any] = {
+            "reconciliation_id": f"reconciliation:import:{record['record_id']}",
+            "tenant_id": attempt["server"]["tenant_id"],
+            "app_id": attempt["server"]["app_id"],
+            "input_snapshot_id": f"snapshot:internal:{record['record_id']}",
+            "external_snapshot_id": f"snapshot:provider:{record['record_id']}",
+            "matching_keys": matching_keys,
+            "candidates": [],
+            "freshness": "current",
+        }
+        if matching_keys:
+            item["candidates"] = [{
+                "candidate_id": record["record_id"],
+                "tenant_id": attempt["server"]["tenant_id"],
+                "app_id": attempt["server"]["app_id"],
+                "matching_keys": matching_keys,
+                "window_status": "not_applicable",
+                "freshness": "current",
+                "excluded": False,
+            }]
+        output.append(item)
+    return output
+
+
+def reconciliation_results(value: dict[str, Any], accepted: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    output: list[dict[str, Any]] = []
+    reconciliation_inputs = [*value.get("reconciliation_inputs", []), *imported_reconciliation_inputs(accepted)]
+    identities = [(item["tenant_id"], item["app_id"], item["reconciliation_id"]) for item in reconciliation_inputs]
+    if len(set(identities)) != len(identities):
+        raise ValueError("duplicate reconciliation identity")
+    for item in reconciliation_inputs:
         def normalized(entry: dict[str, Any]) -> str:
             if entry["normalization"] == "lowercase_ascii":
                 return "".join(character.lower() if "A" <= character <= "Z" else character for character in entry["value"])
@@ -659,7 +753,7 @@ def reconciliation_results(value: dict[str, Any]) -> list[dict[str, Any]]:
                 return entry["value"].strip()
             return entry["value"]
 
-        key = lambda entry: f"{entry['type']}:{normalized(entry)}"
+        key = lambda entry: f"{entry['type']}:{entry.get('value_encoding') + ':' if entry.get('value_encoding') else ''}{normalized(entry)}"
         external = {key(entry) for entry in item.get("matching_keys", [])}
         matched = [
             candidate for candidate in item.get("candidates", [])
@@ -704,6 +798,7 @@ def reconciliation_results(value: dict[str, Any]) -> list[dict[str, Any]]:
 
 def evaluate(value: dict[str, Any]) -> dict[str, Any]:
     attempts = flatten_attempts(value)
+    assert_import_provider_contexts(attempts)
     assert_scoped_references(value, attempts)
     decisions_list: list[dict[str, Any]] = []
     for attempt in attempts:
@@ -750,7 +845,7 @@ def evaluate(value: dict[str, Any]) -> dict[str, Any]:
                 "processing_purpose_id", "consent_evaluation_policy_version",
                 "consent_decision_reason_code", "withdrawal_recognized_at",
                 "alternative_legal_basis_id", "alternative_legal_basis_policy_version",
-                "reason_code",
+                "reason_code", "staleness_policy_version", "staleness_policy_digest", "staleness_authority",
             )
             if decision_for(decisions, attempt).get(key) is not None
         }
@@ -868,7 +963,10 @@ def evaluate(value: dict[str, Any]) -> dict[str, Any]:
         }
         | {
             key: decision[key]
-            for key in ("processing_purpose_id", "withdrawal_recognized_at")
+            for key in (
+                "processing_purpose_id", "withdrawal_recognized_at",
+                "staleness_policy_version", "staleness_policy_digest", "staleness_authority",
+            )
             if decision.get(key) is not None
         }
         for decision in decisions_list if decision["ingestion_status"] == "rejected"
@@ -885,7 +983,7 @@ def evaluate(value: dict[str, Any]) -> dict[str, Any]:
         "metric_runs": metric_runs(value, attempts, decisions, lifecycle),
         "fraud_decisions": fraud,
         "rejections": rejections,
-        "reconciliation": reconciliation_results(value),
+        "reconciliation": reconciliation_results(value, accepted),
     }
 
 
