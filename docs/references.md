@@ -1,6 +1,6 @@
 # Primary References
 
-Checked on 2026-08-12.
+Checked on 2026-08-17.
 
 ## Apple
 
@@ -21,15 +21,15 @@ Design implications:
 - [Google Play Install Referrer](https://developer.android.com/google/play/installreferrer)
 - [Install Referrer API fields](https://developer.android.com/google/play/installreferrer/igetinstallreferrerservice)
 - [Android Auto Backup](https://developer.android.com/identity/data/autobackup)
-- [Attribution Reporting for mobile](https://privacysandbox.google.com/private-advertising/attribution-reporting/android)
-- [Attribution Reporting API integration guide](https://privacysandbox.google.com/private-advertising/attribution-reporting/android/integration-guide)
+- [Update on plans for Privacy Sandbox technologies](https://privacysandbox.google.com/blog/update-on-plans-for-privacy-sandbox-technologies)
+- [Privacy Sandbox enrollment](https://privacysandbox.google.com/private-advertising/enrollment)
 - [Advertising ID policy](https://support.google.com/googleplay/android-developer/answer/6048248)
 - [Google Play User Data policy](https://support.google.com/googleplay/android-developer/answer/10144311)
 
 Design implications:
 
 - Android Phase 1 uses the referrer URL and timing evidence from Install Referrer.
-- Privacy Sandbox event-level and aggregatable reports remain distinct data series.
+- Google announced the retirement of Attribution Reporting (Android) on 2025-10-17 and no longer accepts enrollment; this project does not adopt it.
 - The initial MVP does not collect Advertising ID.
 - SDK providers and app developers remain responsible for identifier and user-data policy compliance.
 
@@ -74,7 +74,7 @@ Design implications:
 ## Media integration
 
 - [Google Ads App Conversion Tracking API](https://developers.google.com/app-conversion-tracking/api)
-- [AppLovin MAX S2S Impression Revenue API](https://developers.applovin.com/en/max/advanced-features/s2s-impression-level-api/)
+- [AppLovin MAX S2S Impression Revenue API](https://support.applovin.com/en/max/advanced-features/s2s-impression-level-api/)
 
 These references demonstrate possible integration paths, not completed approval or production support.
 
@@ -82,4 +82,4 @@ Before starting the Google Ads third-party provider flow, verify whether a provi
 
 ## Change warning
 
-Android Attribution Reporting documentation states that the design may change. Recheck enrollment requirements, available API versions, reporting limits, and testing procedures immediately before implementation and again before release.
+Google announced the retirement of Attribution Reporting (Android) on 2025-10-17 and no longer accepts enrollment; this project does not adopt it. Recheck the cited retirement and enrollment pages before changing this decision.

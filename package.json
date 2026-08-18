@@ -9,13 +9,14 @@
     "npm": "11.6.2"
   },
   "scripts": {
+    "postinstall": "node scripts/repair-json-canonicalize.mjs",
     "validate": "tsc --noEmit && tsx tools/validate.ts",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@types/node": "22.15.3",
     "ajv": "8.20.0",
-    "json-canonicalize": "2.0.0",
+    "json-canonicalize": "2.0.1",
     "tsx": "4.19.3",
     "typescript": "5.8.3"
   }
