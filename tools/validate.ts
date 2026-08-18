@@ -194,6 +194,7 @@ const outputSchemaIds: Record<string, string> = {
   privacy_requests: "urn:open-mmp:schema:privacy-request:v0.2",
   privacy_tombstones: "urn:open-mmp:schema:privacy-tombstone:v0.2",
   attributions: "urn:open-mmp:schema:attribution-result:v0.2",
+  metric_definitions: "urn:open-mmp:schema:metric-definition:v0.2",
   metric_runs: "urn:open-mmp:schema:metric-run:v0.2",
   fraud_decisions: "urn:open-mmp:schema:fraud-decision:v0.2",
   rejections: "urn:open-mmp:schema:rejection:v0.2",
@@ -275,6 +276,10 @@ function validateRegistryReferences(output: Any, label: string): void {
     for (const evidence of run.evidence_refs) {
       check(typeof evidence.tenant_id === "string" && typeof evidence.app_id === "string", `unqualified metric evidence in ${label}`);
     }
+  }
+  for (const definition of output.metric_definitions) {
+    check(definition.metric_definition_version === "0.2.0", `wrong metric definition version in ${label}`);
+    check(["UTC", "Asia/Tokyo"].includes(definition.aggregation_time_zone), `unknown metric definition time zone in ${label}`);
   }
   for (const rejection of output.rejections) {
     check(rejectionReasons.has(rejection.reason_code), `unknown rejection reason in ${label}`);
@@ -491,8 +496,8 @@ if (!summaryOnly) {
         }
       });
     }
-    it("contains 19 fixture directories", () => {
-      check(fixtureDirs.length === 19, `expected 19 fixture directories, found ${fixtureDirs.length}`);
+    it("contains 20 fixture directories", () => {
+      check(fixtureDirs.length === 20, `expected 20 fixture directories, found ${fixtureDirs.length}`);
     });
   });
 
@@ -648,12 +653,19 @@ const scenarios: Array<[string, () => void]> = [
     check(value.attributions[0].reason_code === "bot_prefetch" && value.fraud_decisions[0].reason_code === "bot_prefetch", "scenario 19 classification");
     check(value.reconciliation[0].difference_reason_code === "candidate_excluded", "scenario 19 reconciliation");
   }],
+  ["20 calendar-invalid ingestion timestamp", () => {
+    const value = fixture("20-timestamp-invalid").output;
+    check(value.deliveries.length === 1 && value.deliveries[0].reason_code === "timestamp_invalid", "scenario 20 delivery");
+    check(value.rejections.length === 1 && value.rejections[0].reason_code === "timestamp_invalid", "scenario 20 rejection");
+    check(value.rejections[0].payload_disposition === "discarded" && value.rejections[0].retained === "non_identifying_metadata", "scenario 20 disposition");
+    check(value.raw_records.length === 0 && value.logical_events.length === 0 && value.attributions.length === 0, "scenario 20 no derived evidence");
+  }],
 ];
 if (!summaryOnly) {
   describe("reviewed scenarios", () => {
     for (const [name, assertion] of scenarios) it(name, assertion);
-    it("contains 19 scenario assertions", () => {
-      check(scenarios.length === 19, "scenario assertion inventory must contain 19 entries");
+    it("contains 20 scenario assertions", () => {
+      check(scenarios.length === 20, "scenario assertion inventory must contain 20 entries");
     });
   });
 }
@@ -670,7 +682,7 @@ const acceptance: Array<[string, () => void]> = [
     for (const name of eventNames) validatorFor(`urn:open-mmp:schema:event-${name.replaceAll("_", "-")}:v0.2`);
   }],
   ["AC03 raw delivery logical correction and derived artifacts are separate", () => {
-    check(Object.keys(outputSchemaIds).length === 11 && Object.values(expectedFiles).every((name) => name.startsWith("expected_")), "AC03");
+    check(Object.keys(outputSchemaIds).length === 12 && Object.values(expectedFiles).every((name) => name.startsWith("expected_")), "AC03");
   }],
   ["AC04 tenant-scoped idempotency duplicate and conflict fixtures pass", () => {
     check(fixture("05-duplicate-delivery").output.deliveries.some((item: Any) => item.duplicate_resolution === "duplicate_delivery"), "AC04 duplicate");
@@ -703,7 +715,7 @@ const acceptance: Array<[string, () => void]> = [
   }],
   ["AC12 currency FX rounding and watermark are reproducible", () => {
     const runs = fixture("08-late-ad-revenue").output.metric_runs;
-    check(runs.every((item: Any) => item.fx_rate && item.fx_rate_source && item.fx_rate_as_of && item.fx_rate_snapshot_id && item.fx_policy_version === "fx-v0.1" && item.rounding_mode === "half_even" && item.input_received_at_watermark), "AC12");
+    check(runs.every((item: Any) => item.fx_rate_unscaled && Number.isInteger(item.fx_rate_scale) && item.fx_rate_source && item.fx_rate_as_of && item.fx_rate_snapshot_id && item.fx_policy_version === "fx-v0.1" && item.rounding_mode === "half_even" && item.input_received_at_watermark), "AC12");
     const tie = structuredClone(fixture("08-late-ad-revenue").input);
     tie.fx_policy = {
       policy_version: "fx-half-even-test", target_currency: "USD", target_scale: 0,
@@ -747,7 +759,7 @@ const acceptance: Array<[string, () => void]> = [
     check(corrections.some((item: Any) => item.correction_type === "retraction"), "AC15 retraction");
     check(fixture("17-redaction-recalculation").output.metric_runs.some((item: Any) => item.supersedes_metric_run_id), "AC15 redaction");
   }],
-  ["AC16 clock referrer prefetch and withdrawal fixtures pass", () => check(scenarios.length === 19 && fixture("11-clock-skew").output.deliveries.some((item: Any) => item.clock_skew_suspected) && fixture("13-referrer-unsupported").output.attributions.length === 2 && fixture("19-bot-prefetch").output.fraud_decisions.length === 1, "AC16")],
+  ["AC16 clock referrer prefetch and withdrawal fixtures pass", () => check(scenarios.length === 20 && fixture("11-clock-skew").output.deliveries.some((item: Any) => item.clock_skew_suspected) && fixture("13-referrer-unsupported").output.attributions.length === 2 && fixture("19-bot-prefetch").output.fraud_decisions.length === 1 && fixture("20-timestamp-invalid").output.rejections.some((item: Any) => item.reason_code === "timestamp_invalid"), "AC16")],
   ["AC17 server-recognized withdrawal rejects and redacts payload", () => {
     for (const name of ["14-withdrawal-after-occurrence", "15-event-after-withdrawal"]) {
       const value = fixture(name).output;
@@ -787,7 +799,7 @@ const acceptance: Array<[string, () => void]> = [
     for (const forbidden of ["threshold", "model_weight", "watchlist", "ip_address", "user_agent", "response_timing"]) check(!schemaText.includes(forbidden), `AC20 ${forbidden}`);
     check(specText.includes("remain private"), "AC20 private boundary");
   }],
-  ["AC21 one command validates every schema registry fixture and golden", () => check(schemaPaths.length === 22 && Object.keys(registries).length === 7 && fixtureDirs.length === 19 && outputArtifactCount === 19 * 11, "AC21")],
+  ["AC21 one command validates every schema registry fixture and golden", () => check(schemaPaths.length === 22 && Object.keys(registries).length === 7 && fixtureDirs.length === 20 && outputArtifactCount === 20 * 12, "AC21")],
   ["AC22 repeated and independent evaluators produce identical JCS", () => {
     for (const { output, python } of results.values()) check(equal(output, python), "AC22 evaluator mismatch");
     const vector = { numbers: [333333333.33333329, 1e30, 4.50, 2e-3, 1e-27, -0], string: "€$\u000f\nA'B\"\\\"/" };
@@ -988,6 +1000,18 @@ if (!summaryOnly) {
             const validator = validatorFor(`urn:open-mmp:schema:event-${eventName}:v0.2`);
             return !validator({ ...record.payload, event_name: eventName });
           })();
+      if (entry.field === "occurred_at") {
+        if (entry.value !== "not-a-timestamp") {
+          check(!schemaRejected, "ingress syntax schema rejected the calendar-invalid timestamp before formal evaluation");
+        } else {
+          check(schemaRejected, `ingress syntax schema accepted malformed ${entry.field}`);
+        }
+        const output = evaluate(input);
+        check(output.deliveries[0].reason_code === "timestamp_invalid", "TypeScript did not emit timestamp_invalid delivery");
+        check(output.rejections[0].reason_code === "timestamp_invalid" && output.rejections[0].payload_disposition === "discarded", "TypeScript did not emit the formal timestamp rejection");
+        check(entry.python?.ok && equal(output, entry.python.output), "Python did not match the formal timestamp rejection");
+        return;
+      }
       check(schemaRejected, `schema accepted invalid ${entry.field}`);
       let failure: { name: string; message: string; exit_code: number } | undefined;
       try {

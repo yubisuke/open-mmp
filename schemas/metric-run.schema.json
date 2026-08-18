@@ -8,7 +8,7 @@
     "metric_run_id", "metric_name", "metric_definition_version", "input_snapshot_id",
     "input_received_at_watermark", "input_ledger_position", "computed_at", "data_freshness",
     "aggregation_time_zone", "rule_bundle_id", "rule_bundle_version", "rule_bundle_hash",
-    "fx_rate", "fx_rate_source", "fx_rate_as_of", "fx_rate_snapshot_id",
+    "fx_rate_unscaled", "fx_rate_scale", "fx_rate_source", "fx_rate_as_of", "fx_rate_snapshot_id",
     "fx_policy_version", "rounding_mode", "reproducibility_status", "value_unscaled",
     "amount_scale", "currency", "evidence_refs"
   ],
@@ -25,7 +25,8 @@
     "rule_bundle_id": { "$ref": "common.schema.json#/$defs/id" },
     "rule_bundle_version": { "type": "string", "minLength": 1 },
     "rule_bundle_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
-    "fx_rate": { "type": "string", "minLength": 1 },
+    "fx_rate_unscaled": { "type": "string", "pattern": "^[0-9]+$" },
+    "fx_rate_scale": { "type": "integer", "minimum": 0, "maximum": 18 },
     "fx_rate_source": { "type": "string", "minLength": 1 },
     "fx_rate_as_of": { "$ref": "common.schema.json#/$defs/dateTime" },
     "fx_rate_snapshot_id": { "type": "string", "pattern": "^[a-f0-9]{64}$" },

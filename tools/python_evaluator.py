@@ -256,6 +256,51 @@ def consent_decision(attempt: dict[str, Any]) -> dict[str, Any]:
     return base | {"allowed": False, "consent_decision_reason_code": "consent_withdrawn"}
 
 
+def timestamp_invalid_decision(attempt: dict[str, Any]) -> dict[str, Any]:
+    server, record = attempt["server"], attempt["record"]
+    purpose = next(
+        (entry for entry in server.get("processing_purposes", [])
+         if entry["processing_purpose_id"] == record.get("processing_purpose_id")),
+        None,
+    )
+    withdrawal = next(
+        (entry for entry in server.get("withdrawals", [])
+         if entry["processing_purpose_id"] == record.get("processing_purpose_id")),
+        None,
+    )
+    if (
+        not record.get("processing_purpose_id")
+        or not purpose
+        or not purpose["consent_required"]
+        or record["event_name"] in ("consent_changed", "privacy_control")
+    ):
+        consent_reason = "consent_not_required"
+    elif not withdrawal or int(record["processing_sequence"]) < int(withdrawal["withdrawal_recognized_sequence"]):
+        consent_reason = "consent_valid_before_withdrawal"
+    else:
+        consent_reason = "consent_withdrawn"
+    result: dict[str, Any] = {
+        "record_id": record["record_id"],
+        "delivery_id": record["delivery_id"],
+        "event_name": record["event_name"],
+        "tenant_id": server["tenant_id"],
+        "app_id": server["app_id"],
+        "ingestion_status": "rejected",
+        "duplicate_resolution": "unique",
+        "timeliness": "on_time",
+        "clock_skew_suspected": False,
+        "payload_disposition": "discarded",
+        "consent_evaluation_policy_version": purpose["policy_version"] if purpose else "not-applicable",
+        "consent_decision_reason_code": consent_reason,
+        "reason_code": "timestamp_invalid",
+    }
+    if record.get("processing_purpose_id"):
+        result["processing_purpose_id"] = record["processing_purpose_id"]
+    if withdrawal and withdrawal.get("withdrawal_recognized_at"):
+        result["withdrawal_recognized_at"] = withdrawal["withdrawal_recognized_at"]
+    return result
+
+
 def decide(attempt: dict[str, Any], attempts: list[dict[str, Any]]) -> dict[str, Any]:
     server, record = attempt["server"], attempt["record"]
     same_record_id = [candidate for candidate in attempts if candidate["record"]["record_id"] == record["record_id"]]
@@ -281,9 +326,11 @@ def decide(attempt: dict[str, Any], attempts: list[dict[str, Any]]) -> dict[str,
         status, reason = "rejected", "aggregate_installation_join_forbidden"
     elif duplicate == "event_id_conflict":
         status, reason = "rejected", "event_id_conflict"
+    canonical_record_id = None if duplicate == "record_id_collision" else (
+        record["record_id"] if duplicate == "unique" else first["record"]["record_id"]
+    )
     result = {
         "record_id": record["record_id"],
-        "canonical_record_id": record["record_id"] if duplicate in ("unique", "record_id_collision") else first["record"]["record_id"],
         "delivery_id": record["delivery_id"],
         "event_name": record["event_name"],
         "tenant_id": server["tenant_id"],
@@ -294,6 +341,8 @@ def decide(attempt: dict[str, Any], attempts: list[dict[str, Any]]) -> dict[str,
         "clock_skew_suspected": timestamp(record["occurred_at"], "occurred_at") > timestamp(record["received_at"], "received_at") + timedelta(minutes=5),
         "payload_disposition": "discarded" if status == "rejected" and reason != "event_id_conflict" else "protected",
     } | {key: value for key, value in consent.items() if key != "allowed" and value is not None}
+    if canonical_record_id:
+        result["canonical_record_id"] = canonical_record_id
     if reason:
         result["reason_code"] = reason
     return result
@@ -451,6 +500,25 @@ def day(value: str, zone: str, field: str) -> str:
     return result.date().isoformat()
 
 
+def metric_definitions() -> list[dict[str, Any]]:
+    return [
+        {
+            "metric_name": metric_name,
+            "aggregation_time_zone": zone,
+            "metric_definition_version": CONTRACT_VERSION,
+            "anchor_event": "install",
+            "rule_bundle_id": "metric-default",
+            "rule_bundle_version": CONTRACT_VERSION,
+            "rule_bundle_hash": ZERO_HASH,
+        }
+        for metric_name, zone in (
+            ("d0_install_to_24h_ad_revenue_usd", "UTC"),
+            ("d0_utc_install_calendar_ad_revenue_usd", "UTC"),
+            ("d0_jst_install_calendar_ad_revenue_usd", "Asia/Tokyo"),
+        )
+    ]
+
+
 def metric_runs(
     value: dict[str, Any],
     attempts: list[dict[str, Any]],
@@ -520,7 +588,9 @@ def metric_runs(
             for attempt in included
         ]
         ledger = snapshot_rows[-1] if snapshot_rows else None
-        only_rate = policy["rates"][0] if len(policy["rates"]) == 1 else None
+        if len(policy["rates"]) != 1:
+            raise ValueError("v0.2 metric runs require exactly one structured FX rate")
+        only_rate = policy["rates"][0]
         for metric_name, zone, eligible in definitions:
             amount = 0
             for item in revenue:
@@ -548,9 +618,10 @@ def metric_runs(
                 "rule_bundle_id": "metric-default",
                 "rule_bundle_version": CONTRACT_VERSION,
                 "rule_bundle_hash": ZERO_HASH,
-                "fx_rate": f"{only_rate['rate_unscaled']}e-{only_rate['rate_scale']}" if only_rate else "snapshot",
-                "fx_rate_source": only_rate["source"] if only_rate else "fixture-rate-snapshot",
-                "fx_rate_as_of": only_rate["as_of"] if only_rate else evaluation["computed_at"],
+                "fx_rate_unscaled": only_rate["rate_unscaled"],
+                "fx_rate_scale": only_rate["rate_scale"],
+                "fx_rate_source": only_rate["source"],
+                "fx_rate_as_of": only_rate["as_of"],
                 "fx_rate_snapshot_id": digest(policy["rates"]),
                 "fx_policy_version": policy["policy_version"],
                 "rounding_mode": policy["rounding_mode"],
@@ -622,7 +693,12 @@ def reconciliation_results(value: dict[str, Any]) -> list[dict[str, Any]]:
 def evaluate(value: dict[str, Any]) -> dict[str, Any]:
     attempts = flatten_attempts(value)
     assert_scoped_references(value, attempts)
-    decisions_list = [decide(attempt, attempts) for attempt in attempts]
+    decisions_list: list[dict[str, Any]] = []
+    for attempt in attempts:
+        try:
+            decisions_list.append(decide(attempt, attempts))
+        except TimestampInvalidError:
+            decisions_list.append(timestamp_invalid_decision(attempt))
     decisions = {attempt_decision_key(attempt): decision for attempt, decision in zip(attempts, decisions_list)}
     assert_installation_anchors(attempts, decisions)
     lifecycle = lifecycle_index(value)
@@ -642,11 +718,10 @@ def evaluate(value: dict[str, Any]) -> dict[str, Any]:
     logical_evidence = [attempt for attempt in accepted if attempt_evidence_key(attempt) not in lifecycle]
     raw = sort_by_key([raw_record(attempt, "available") for attempt in raw_evidence], raw_record_sort_key)
     deliveries = sort_by_key([
-        {
+        ({
             "contract_version": CONTRACT_VERSION,
             "delivery_id": attempt["record"]["delivery_id"],
             "record_id": attempt["record"]["record_id"],
-            "canonical_record_id": decision_for(decisions, attempt)["canonical_record_id"],
             "tenant_id": attempt["server"]["tenant_id"],
             "app_id": attempt["server"]["app_id"],
             "received_at": attempt["record"]["received_at"],
@@ -655,7 +730,8 @@ def evaluate(value: dict[str, Any]) -> dict[str, Any]:
             "timeliness": decision_for(decisions, attempt)["timeliness"],
             "clock_skew_suspected": decision_for(decisions, attempt)["clock_skew_suspected"],
             "payload_disposition": decision_for(decisions, attempt)["payload_disposition"],
-        }
+        } | ({"canonical_record_id": decision_for(decisions, attempt)["canonical_record_id"]}
+             if decision_for(decisions, attempt).get("canonical_record_id") else {}))
         | {
             key: decision_for(decisions, attempt)[key]
             for key in (
@@ -726,8 +802,8 @@ def evaluate(value: dict[str, Any]) -> dict[str, Any]:
             "privacy_request_id": request["privacy_request_id"],
             "record_id": affected["record_id"],
             "lifecycle_status": affected["lifecycle_status"],
-            "reason_digest": digest(request["reason_code"]),
-            "policy_digest": digest(request["policy_version"]),
+            "reason_code": request["reason_code"],
+            "policy_version": request["policy_version"],
             "provenance_digest": digest([
                 request["tenant_id"], request["app_id"], request["privacy_request_id"],
                 affected["record_id"], request["completed_at"],
@@ -789,6 +865,7 @@ def evaluate(value: dict[str, Any]) -> dict[str, Any]:
         "privacy_requests": privacy_requests,
         "privacy_tombstones": tombstones,
         "attributions": attributions,
+        "metric_definitions": metric_definitions(),
         "metric_runs": metric_runs(value, attempts, decisions, lifecycle),
         "fraud_decisions": fraud,
         "rejections": rejections,

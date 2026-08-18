@@ -145,7 +145,7 @@
         "event_id": { "$ref": "common.schema.json#/$defs/id" },
         "event_name": { "enum": ["click", "install", "session_start", "ad_impression", "ad_revenue", "purchase", "refund", "consent_changed"] },
         "schema_version": { "const": "0.2.0" },
-        "occurred_at": { "$ref": "common.schema.json#/$defs/dateTime" },
+        "occurred_at": { "$ref": "#/$defs/ingressDateTimeSyntax" },
         "occurred_at_source": { "enum": ["device", "server", "import"] },
         "received_at": { "$ref": "common.schema.json#/$defs/dateTime" },
         "payload": {
@@ -159,6 +159,10 @@
         "processing_sequence": { "type": "integer", "minimum": 0 },
         "alternative_legal_basis_id": { "$ref": "common.schema.json#/$defs/id" }
       }
+    },
+    "ingressDateTimeSyntax": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
     },
     "matchingKey": {
       "type": "object",

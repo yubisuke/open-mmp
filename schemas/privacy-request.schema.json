@@ -4,13 +4,14 @@
   "title": "Open MMP Privacy Request v0.2",
   "type": "object",
   "additionalProperties": false,
-  "required": ["contract_version", "tenant_id", "app_id", "privacy_request_id", "deletion_subject_ref", "deletion_scope", "requested_at", "status", "reason_code", "policy_version", "affected_records"],
+  "required": ["contract_version", "tenant_id", "app_id", "privacy_request_id", "deletion_scope", "requested_at", "status", "reason_code", "policy_version", "affected_records"],
   "properties": {
     "contract_version": { "const": "0.2.0" },
     "tenant_id": { "$ref": "common.schema.json#/$defs/id" },
     "app_id": { "$ref": "common.schema.json#/$defs/id" },
     "privacy_request_id": { "$ref": "common.schema.json#/$defs/id" },
     "deletion_subject_ref": { "$ref": "common.schema.json#/$defs/id" },
+    "deletion_subject_digest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
     "deletion_scope": { "enum": ["installation", "app", "tenant"] },
     "requested_at": { "$ref": "common.schema.json#/$defs/dateTime" },
     "completed_at": { "$ref": "common.schema.json#/$defs/dateTime" },
@@ -34,9 +35,11 @@
     {
       "if": { "properties": { "status": { "const": "completed" } } },
       "then": {
-        "properties": { "completed_at": {} },
-        "required": ["completed_at"]
-      }
+        "properties": { "completed_at": {}, "deletion_subject_digest": {} },
+        "required": ["completed_at", "deletion_subject_digest"],
+        "not": { "properties": { "deletion_subject_ref": {} }, "required": ["deletion_subject_ref"] }
+      },
+      "else": { "properties": { "deletion_subject_ref": {} }, "required": ["deletion_subject_ref"] }
     }
   ]
 }

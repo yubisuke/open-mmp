@@ -7,7 +7,8 @@ export type OpenMMPPrivacyRequestV02 = {
   tenant_id: string;
   app_id: string;
   privacy_request_id: string;
-  deletion_subject_ref: string;
+  deletion_subject_ref?: string;
+  deletion_subject_digest?: string;
   deletion_scope: "installation" | "app" | "tenant";
   requested_at: string;
   completed_at?: string;
@@ -61,6 +62,7 @@ export interface OpenMMPEvaluationOutputV02 {
   privacy_requests: OpenMMPPrivacyRequestV02[];
   privacy_tombstones: OpenMMPPrivacyTombstoneV02[];
   attributions: OpenMMPAttributionResultV02[];
+  metric_definitions: OpenMMPMetricDefinitionV02[];
   metric_runs: OpenMMPMetricRunV02[];
   fraud_decisions: OpenMMPFraudDecisionV02[];
   rejections: OpenMMPRejectionV02[];
@@ -99,7 +101,7 @@ export interface OpenMMPEventDeliveryV02 {
   contract_version: "0.2.0";
   delivery_id: string;
   record_id: string;
-  canonical_record_id: string;
+  canonical_record_id?: string;
   tenant_id: string;
   app_id: string;
   received_at: string;
@@ -113,7 +115,8 @@ export interface OpenMMPEventDeliveryV02 {
     | "consent_withdrawn"
     | "aggregate_installation_join_forbidden"
     | "event_id_conflict"
-    | "record_id_collision";
+    | "record_id_collision"
+    | "timestamp_invalid";
   processing_purpose_id?: string;
   consent_evaluation_policy_version: string;
   consent_decision_reason_code:
@@ -155,8 +158,8 @@ export interface OpenMMPPrivacyTombstoneV02 {
   privacy_request_id: string;
   record_id: string;
   lifecycle_status: "redacted" | "purged";
-  reason_digest: string;
-  policy_digest: string;
+  reason_code: "privacy_deletion" | "retention_expiry";
+  policy_version: string;
   provenance_digest: string;
   created_at: string;
 }
@@ -166,6 +169,18 @@ export interface EvidenceRef {
   ref: string;
   lifecycle_status: "available" | "redacted" | "purged";
   access_class: "public" | "protected" | "private";
+}
+export interface OpenMMPMetricDefinitionV02 {
+  metric_name:
+    | "d0_install_to_24h_ad_revenue_usd"
+    | "d0_utc_install_calendar_ad_revenue_usd"
+    | "d0_jst_install_calendar_ad_revenue_usd";
+  metric_definition_version: "0.2.0";
+  anchor_event: "install";
+  aggregation_time_zone: "UTC" | "Asia/Tokyo";
+  rule_bundle_id: string;
+  rule_bundle_version: string;
+  rule_bundle_hash: string;
 }
 export interface OpenMMPMetricRunV02 {
   metric_run_id: string;
@@ -183,7 +198,8 @@ export interface OpenMMPMetricRunV02 {
   rule_bundle_id: string;
   rule_bundle_version: string;
   rule_bundle_hash: string;
-  fx_rate: string;
+  fx_rate_unscaled: string;
+  fx_rate_scale: number;
   fx_rate_source: string;
   fx_rate_as_of: string;
   fx_rate_snapshot_id: string;
@@ -226,7 +242,8 @@ export interface OpenMMPRejectionV02 {
     | "consent_withdrawn"
     | "aggregate_installation_join_forbidden"
     | "event_id_conflict"
-    | "record_id_collision";
+    | "record_id_collision"
+    | "timestamp_invalid";
   reason_code_version: "0.2.0";
   payload_disposition: "discarded" | "protected";
   retained: "non_identifying_metadata" | "protected_conflict_evidence";

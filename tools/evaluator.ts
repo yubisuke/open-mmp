@@ -11,6 +11,7 @@ type Correction = EvaluationOutput["corrections"][number];
 type PrivacyRequest = EvaluationOutput["privacy_requests"][number];
 type PrivacyTombstone = EvaluationOutput["privacy_tombstones"][number];
 type Attribution = EvaluationOutput["attributions"][number];
+type MetricDefinition = EvaluationOutput["metric_definitions"][number];
 type MetricRun = EvaluationOutput["metric_runs"][number];
 type FraudDecision = EvaluationOutput["fraud_decisions"][number];
 type Rejection = EvaluationOutput["rejections"][number];
@@ -220,6 +221,38 @@ function consentDecision(attempt: Attempt): Any {
   return { ...base, allowed: false, consent_decision_reason_code: "consent_withdrawn" };
 }
 
+function timestampInvalidDecision(attempt: Attempt): Any {
+  const { server, record } = attempt;
+  const purpose = (server.processing_purposes ?? []).find(
+    (entry: Any) => entry.processing_purpose_id === record.processing_purpose_id,
+  );
+  const withdrawal = (server.withdrawals ?? []).find(
+    (entry: Any) => entry.processing_purpose_id === record.processing_purpose_id,
+  );
+  const consentReason = !record.processing_purpose_id || !purpose?.consent_required || isControlEvent(record)
+    ? "consent_not_required"
+    : !withdrawal || Number(record.processing_sequence) < Number(withdrawal.withdrawal_recognized_sequence)
+      ? "consent_valid_before_withdrawal"
+      : "consent_withdrawn";
+  return {
+    record_id: record.record_id,
+    delivery_id: record.delivery_id,
+    event_name: record.event_name,
+    tenant_id: server.tenant_id,
+    app_id: server.app_id,
+    ingestion_status: "rejected",
+    duplicate_resolution: "unique",
+    timeliness: "on_time",
+    clock_skew_suspected: false,
+    payload_disposition: "discarded",
+    processing_purpose_id: record.processing_purpose_id,
+    consent_evaluation_policy_version: purpose?.policy_version ?? "not-applicable",
+    consent_decision_reason_code: consentReason,
+    ...(withdrawal?.withdrawal_recognized_at ? { withdrawal_recognized_at: withdrawal.withdrawal_recognized_at } : {}),
+    reason_code: "timestamp_invalid",
+  };
+}
+
 function decide(attempt: Attempt, orderedAttempts: Attempt[]): Any {
   const { server, record } = attempt;
   const sameRecordId = orderedAttempts.filter((candidate) => candidate.record.record_id === record.record_id);
@@ -251,11 +284,12 @@ function decide(attempt: Attempt, orderedAttempts: Attempt[]): Any {
     ingestion_status = "rejected";
     reason_code = "event_id_conflict";
   }
-  const canonical_record_id = duplicate_resolution === "unique" || duplicate_resolution === "record_id_collision"
-    ? record.record_id : first.record.record_id;
+  const canonical_record_id = duplicate_resolution === "record_id_collision"
+    ? undefined
+    : duplicate_resolution === "unique" ? record.record_id : first.record.record_id;
   return {
     record_id: record.record_id,
-    canonical_record_id,
+    ...(canonical_record_id ? { canonical_record_id } : {}),
     delivery_id: record.delivery_id,
     event_name: record.event_name,
     tenant_id: server.tenant_id,
@@ -392,6 +426,22 @@ function roundHalfEven(numerator: bigint, denominator: bigint): bigint {
   return negative ? -quotient : quotient;
 }
 
+function metricDefinitions(): MetricDefinition[] {
+  const definitions: Array<Pick<MetricDefinition, "metric_name" | "aggregation_time_zone">> = [
+    { metric_name: "d0_install_to_24h_ad_revenue_usd", aggregation_time_zone: "UTC" },
+    { metric_name: "d0_utc_install_calendar_ad_revenue_usd", aggregation_time_zone: "UTC" },
+    { metric_name: "d0_jst_install_calendar_ad_revenue_usd", aggregation_time_zone: "Asia/Tokyo" },
+  ];
+  return definitions.map((definition): MetricDefinition => ({
+    ...definition,
+    metric_definition_version: CONTRACT_VERSION,
+    anchor_event: "install",
+    rule_bundle_id: "metric-default",
+    rule_bundle_version: CONTRACT_VERSION,
+    rule_bundle_hash: HASH,
+  }));
+}
+
 function convertMoney(payload: Any, fxPolicy: Any): bigint {
   const rate = (fxPolicy.rates ?? []).find((candidate: Any) => candidate.currency === payload.currency);
   if (!rate) throw new Error(`missing FX rate for ${payload.currency}`);
@@ -448,7 +498,8 @@ function metricRuns(
       lifecycle_status: evaluation.privacy_state === "after" ? (lifecycle.get(attemptEvidenceKey(attempt)) ?? "available") : "available",
       access_class: "protected",
     }));
-    const fxRate = fxPolicy.rates.length === 1 ? fxPolicy.rates[0] : undefined;
+    if (fxPolicy.rates.length !== 1) throw new Error("v0.2 metric runs require exactly one structured FX rate");
+    const fxRate = fxPolicy.rates[0];
     for (const definition of metricDefinitions) {
       let value = 0n;
       for (const item of revenue) {
@@ -471,9 +522,10 @@ function metricRuns(
         rule_bundle_id: "metric-default",
         rule_bundle_version: CONTRACT_VERSION,
         rule_bundle_hash: HASH,
-        fx_rate: fxRate ? `${fxRate.rate_unscaled}e-${fxRate.rate_scale}` : "snapshot",
-        fx_rate_source: fxRate?.source ?? "fixture-rate-snapshot",
-        fx_rate_as_of: fxRate?.as_of ?? evaluation.computed_at,
+        fx_rate_unscaled: fxRate.rate_unscaled,
+        fx_rate_scale: fxRate.rate_scale,
+        fx_rate_source: fxRate.source,
+        fx_rate_as_of: fxRate.as_of,
         fx_rate_snapshot_id: sha256(fxPolicy.rates),
         fx_policy_version: fxPolicy.policy_version,
         rounding_mode: fxPolicy.rounding_mode,
@@ -535,7 +587,14 @@ function reconciliationResults(input: Any): Reconciliation[] {
 export function evaluate(input: Any): EvaluationOutput {
   const all = attempts(input).sort(attemptOrder);
   assertScopedReferences(input, all);
-  const decisionsList = all.map((attempt) => decide(attempt, all));
+  const decisionsList = all.map((attempt) => {
+    try {
+      return decide(attempt, all);
+    } catch (error) {
+      if (error instanceof TimestampInvalidError) return timestampInvalidDecision(attempt);
+      throw error;
+    }
+  });
   const decisions = new Map(all.map((attempt, index) => [attemptDecisionKey(attempt), decisionsList[index]]));
   assertInstallationAnchors(all, decisions);
   const lifecycle = privacyIndex(input);
@@ -554,7 +613,7 @@ export function evaluate(input: Any): EvaluationOutput {
       contract_version: CONTRACT_VERSION,
       delivery_id: attempt.record.delivery_id,
       record_id: attempt.record.record_id,
-      canonical_record_id: decision.canonical_record_id,
+      ...(decision.canonical_record_id ? { canonical_record_id: decision.canonical_record_id } : {}),
       tenant_id: attempt.server.tenant_id,
       app_id: attempt.server.app_id,
       received_at: attempt.record.received_at,
@@ -623,7 +682,8 @@ export function evaluate(input: Any): EvaluationOutput {
     tenant_id: request.tenant_id,
     app_id: request.app_id,
     privacy_request_id: request.privacy_request_id,
-    deletion_subject_ref: request.deletion_subject_ref,
+    ...(request.deletion_subject_ref ? { deletion_subject_ref: request.deletion_subject_ref } : {}),
+    ...(request.deletion_subject_digest ? { deletion_subject_digest: request.deletion_subject_digest } : {}),
     deletion_scope: request.deletion_scope,
     requested_at: request.requested_at,
     status: request.status,
@@ -645,8 +705,8 @@ export function evaluate(input: Any): EvaluationOutput {
         privacy_request_id: request.privacy_request_id,
         record_id: affected.record_id,
         lifecycle_status: affected.lifecycle_status,
-        reason_digest: sha256(request.reason_code),
-        policy_digest: sha256(request.policy_version),
+        reason_code: request.reason_code,
+        policy_version: request.policy_version,
         provenance_digest: sha256([
           request.tenant_id, request.app_id, request.privacy_request_id, affected.record_id, request.completed_at,
         ]),
@@ -703,6 +763,7 @@ export function evaluate(input: Any): EvaluationOutput {
     privacy_requests,
     privacy_tombstones,
     attributions,
+    metric_definitions: metricDefinitions(),
     metric_runs: metricRuns(input, all, decisions, lifecycle),
     fraud_decisions,
     rejections,

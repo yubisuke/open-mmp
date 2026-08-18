@@ -132,6 +132,7 @@
         "referrer_status": "available",
         "click_id": "click-a_0000000000000000",
         "install_begin_at_server_status": "invalid",
+        "install_begin_at_server": "2026-02-30T00:00:00.000Z",
         "protected_referrer_evidence_ref": "protected:referrer:install-invalid-authority"
       }
     }

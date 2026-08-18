@@ -7,7 +7,8 @@
   ],
   "rejection": [
     "client_scope_mismatch", "consent_withdrawn",
-    "aggregate_installation_join_forbidden", "event_id_conflict", "record_id_collision"
+    "aggregate_installation_join_forbidden", "event_id_conflict", "record_id_collision",
+    "timestamp_invalid"
   ],
   "consent_decision": [
     "consent_not_required", "consent_valid_before_withdrawal",
