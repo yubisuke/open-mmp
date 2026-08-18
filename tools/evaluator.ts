@@ -782,9 +782,10 @@ function matchesGrouping(attempt: Attempt, grouping: Any): boolean {
   const payload = attempt.record.payload;
   const campaign = payload.campaign_id ?? payload.import_context?.provider_campaign_ref;
   const network = payload.network ?? payload.ad_network ?? payload.import_context?.provider_network;
+  const country = payload.country ?? payload.import_context?.provider_country;
   if (grouping.campaign_id !== undefined && campaign !== grouping.campaign_id) return false;
   if (grouping.network !== undefined && network !== grouping.network) return false;
-  if (grouping.country !== undefined && payload.country !== grouping.country && payload.import_context?.provider_country !== grouping.country) return false;
+  if (grouping.country !== undefined && country !== grouping.country) return false;
   if (grouping.cohort_date !== undefined && attempt.record.event_name === "install" &&
       dateAt(attempt.record.occurred_at, "UTC", "occurred_at") !== grouping.cohort_date) return false;
   return true;

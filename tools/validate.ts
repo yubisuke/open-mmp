@@ -973,6 +973,27 @@ if (!summaryOnly) {
       delete money.currency;
       check(!validator(money), "money metric accepted missing currency");
     });
+    it("uses the session-start retention default when activity_events is omitted", () => {
+      const value = fixture("33-stage-b-cohort-metrics");
+      const mutated = structuredClone(value.input);
+      const retention = mutated.metric_definitions.find((definition: Any) => definition.metric_name === "retention_d1");
+      delete retention.activity_events;
+      const validator = validatorFor("urn:open-mmp:schema:metric-definition:v0.2");
+      check(validator(retention), `Stage B retention default schema: ${ajv.errorsText(validator.errors)}`);
+      const typescript = evaluate(mutated);
+      const [python] = pythonOutputs([mutated]);
+      check(equal(typescript, python), "Stage B retention default cross-language mismatch");
+      check(typescript.metric_runs.find((run: Any) => run.metric_name === "retention_d1")?.value_unscaled === "1000000", "Stage B retention default result");
+    });
+    it("gives a normalized direct country precedence over imported country evidence", () => {
+      const mutated = structuredClone(fixture("33-stage-b-cohort-metrics").input);
+      mutated.records.find((record: Any) => record.record_id === "install-33").payload.country = "US";
+      mutated.metric_evaluations[0].metric_names = ["d1_roas"];
+      const typescript = evaluate(mutated);
+      const [python] = pythonOutputs([mutated]);
+      check(equal(typescript, python), "Stage B direct/imported country precedence mismatch");
+      check(typescript.metric_runs.find((run: Any) => run.metric_name === "d1_roas")?.value_unscaled === "0", "Stage B direct country did not exclude conflicting imported evidence");
+    });
     it("rounds each revenue event half-even before exact summation", () => {
       const value = fixture("33-stage-b-cohort-metrics");
       const source = value.input.records.filter((record: Any) => record.record_id.startsWith("revenue-33-"));

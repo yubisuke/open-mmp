@@ -34,7 +34,7 @@
         "cost_basis": { "const": "cohort_acquisition_day_current_snapshot" }
       }
     },
-    "activity_events": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+    "activity_events": { "type": "array", "minItems": 1, "uniqueItems": true, "default": ["session_start"], "items": { "type": "string", "minLength": 1 } },
     "rule_bundle_id": { "$ref": "common.schema.json#/$defs/id" },
     "rule_bundle_version": { "type": "string" },
     "rule_bundle_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
@@ -79,7 +79,6 @@
         "required": ["definition"]
       },
       "then": {
-        "required": ["activity_events"],
         "properties": {
           "activity_events": {},
           "value_type": { "const": "ratio" },
