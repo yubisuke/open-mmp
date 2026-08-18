@@ -15,7 +15,7 @@
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
-    "@types/node": "22.15.3",
+    "@types/node": "26.2.0",
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1",
     "json-canonicalize": "2.0.1",
