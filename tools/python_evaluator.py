@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sys
+from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -48,25 +49,57 @@ def utf16_key(value: str) -> tuple[int, ...]:
     return tuple(encoded[index] | (encoded[index + 1] << 8) for index in range(0, len(encoded), 2))
 
 
-def identifier(value: dict[str, Any]) -> str:
-    for key in (
-        "record_id", "delivery_id", "logical_event_id", "correction_id",
-        "privacy_request_id", "attribution_id", "metric_run_id",
-        "fraud_decision_id", "reconciliation_id", "candidate_id",
-    ):
-        if value.get(key) is not None:
-            return str(value[key])
-    return ""
+SortKey = Callable[[dict[str, Any]], tuple[str, ...]]
 
 
-def ordered(values: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return sorted(values, key=lambda value: (
-        utf16_key(identifier(value)),
-        utf16_key(str(value.get("tenant_id", ""))),
-        utf16_key(str(value.get("app_id", ""))),
-        utf16_key(str(value.get("delivery_id", ""))),
-        utf16_key(digest(value)),
+def sort_by_key(values: list[dict[str, Any]], key: SortKey) -> list[dict[str, Any]]:
+    return sorted(values, key=lambda value: tuple(
+        utf16_key(part) for part in (*key(value), digest(value))
     ))
+
+
+def raw_record_sort_key(value: dict[str, Any]) -> tuple[str, ...]:
+    return value["record_id"], value["tenant_id"], value["app_id"], value["delivery_id"]
+
+
+def delivery_sort_key(value: dict[str, Any]) -> tuple[str, ...]:
+    return value["delivery_id"], value["record_id"], value["tenant_id"], value["app_id"]
+
+
+def logical_event_sort_key(value: dict[str, Any]) -> tuple[str, ...]:
+    return value["logical_event_id"], value["tenant_id"], value["app_id"]
+
+
+def correction_sort_key(value: dict[str, Any]) -> tuple[str, ...]:
+    return value["correction_id"], value["tenant_id"], value["app_id"]
+
+
+def privacy_request_sort_key(value: dict[str, Any]) -> tuple[str, ...]:
+    return value["privacy_request_id"], value["tenant_id"], value["app_id"]
+
+
+def privacy_tombstone_sort_key(value: dict[str, Any]) -> tuple[str, ...]:
+    return value["privacy_request_id"], value["record_id"], value["tenant_id"], value["app_id"]
+
+
+def attribution_sort_key(value: dict[str, Any]) -> tuple[str, ...]:
+    return value["attribution_id"], value["tenant_id"], value["app_id"]
+
+
+def metric_run_sort_key(value: dict[str, Any]) -> tuple[str, ...]:
+    return (value["metric_run_id"],)
+
+
+def fraud_decision_sort_key(value: dict[str, Any]) -> tuple[str, ...]:
+    return (value["fraud_decision_id"],)
+
+
+def rejection_sort_key(value: dict[str, Any]) -> tuple[str, ...]:
+    return value["delivery_id"], value["record_id"], value["tenant_id"], value["app_id"]
+
+
+def reconciliation_sort_key(value: dict[str, Any]) -> tuple[str, ...]:
+    return value["reconciliation_id"], value["tenant_id"], value["app_id"]
 
 
 def flatten_attempts(value: dict[str, Any]) -> list[dict[str, Any]]:
@@ -530,7 +563,7 @@ def metric_runs(
             if evaluation.get("supersedes_metric_run_id_prefix"):
                 run["supersedes_metric_run_id"] = f"{evaluation['supersedes_metric_run_id_prefix']}:{metric_name}"
             output.append(run)
-    return ordered(output)
+    return sort_by_key(output, metric_run_sort_key)
 
 
 def reconciliation_results(value: dict[str, Any]) -> list[dict[str, Any]]:
@@ -583,7 +616,7 @@ def reconciliation_results(value: dict[str, Any]) -> list[dict[str, Any]]:
             "joins": sorted((f"{','.join(key(entry) for entry in matching_keys)}=>{candidate['candidate_id']}" for candidate in matched), key=utf16_key),
             "freshness": matched[0]["freshness"] if matched else item["freshness"],
         })
-    return ordered(output)
+    return sort_by_key(output, reconciliation_sort_key)
 
 
 def evaluate(value: dict[str, Any]) -> dict[str, Any]:
@@ -607,8 +640,8 @@ def evaluate(value: dict[str, Any]) -> dict[str, Any]:
         if attempt_evidence_key(attempt) not in lifecycle
     ]
     logical_evidence = [attempt for attempt in accepted if attempt_evidence_key(attempt) not in lifecycle]
-    raw = ordered([raw_record(attempt, "available") for attempt in raw_evidence])
-    deliveries = ordered([
+    raw = sort_by_key([raw_record(attempt, "available") for attempt in raw_evidence], raw_record_sort_key)
+    deliveries = sort_by_key([
         {
             "contract_version": CONTRACT_VERSION,
             "delivery_id": attempt["record"]["delivery_id"],
@@ -634,8 +667,8 @@ def evaluate(value: dict[str, Any]) -> dict[str, Any]:
             if decision_for(decisions, attempt).get(key) is not None
         }
         for attempt in attempts
-    ])
-    logical = ordered([
+    ], delivery_sort_key)
+    logical = sort_by_key([
         {
             "contract_version": CONTRACT_VERSION,
             "logical_event_id": f"logical:{attempt['server']['tenant_id']}:{attempt['server']['app_id']}:{attempt['record']['producer']}:{attempt['record']['event_id']}",
@@ -649,11 +682,11 @@ def evaluate(value: dict[str, Any]) -> dict[str, Any]:
             "timeliness": "late" if attempt["record"].get("late") else "on_time",
         }
         for attempt in logical_evidence
-    ])
-    attributions = ordered([
+    ], logical_event_sort_key)
+    attributions = sort_by_key([
         attribution(attempt, attempts, decisions, lifecycle)
         for attempt in accepted if attempt["record"]["event_name"] == "install"
-    ])
+    ], attribution_sort_key)
     corrections: list[dict[str, Any]] = list(value.get("correction_inputs", []))
     for attempt in accepted:
         if attempt["record"]["event_name"] == "refund":
@@ -681,8 +714,11 @@ def evaluate(value: dict[str, Any]) -> dict[str, Any]:
                 "correction_reason": request["reason_code"],
                 "effective_at": request["completed_at"],
             })
-    privacy_requests = ordered([request | {"contract_version": CONTRACT_VERSION} for request in value.get("privacy_requests", [])])
-    tombstones = ordered([
+    privacy_requests = sort_by_key(
+        [request | {"contract_version": CONTRACT_VERSION} for request in value.get("privacy_requests", [])],
+        privacy_request_sort_key,
+    )
+    tombstones = sort_by_key([
         {
             "contract_version": CONTRACT_VERSION,
             "tenant_id": request["tenant_id"],
@@ -701,8 +737,8 @@ def evaluate(value: dict[str, Any]) -> dict[str, Any]:
         for request in value.get("privacy_requests", [])
         if request["status"] == "completed"
         for affected in request.get("affected_records", [])
-    ])
-    fraud = ordered([
+    ], privacy_tombstone_sort_key)
+    fraud = sort_by_key([
         {
             "fraud_decision_id": f"fraud:{attempt['record']['record_id']}",
             "subject_ref": attempt["record"]["record_id"],
@@ -723,8 +759,8 @@ def evaluate(value: dict[str, Any]) -> dict[str, Any]:
         }
         for attempt in accepted
         if attempt["record"]["event_name"] == "click" and attempt["record"]["payload"].get("bot_prefetch")
-    ])
-    rejections = ordered([
+    ], fraud_decision_sort_key)
+    rejections = sort_by_key([
         {
             "contract_version": CONTRACT_VERSION,
             "delivery_id": decision["delivery_id"],
@@ -744,12 +780,12 @@ def evaluate(value: dict[str, Any]) -> dict[str, Any]:
             if decision.get(key) is not None
         }
         for decision in decisions_list if decision["ingestion_status"] == "rejected"
-    ])
+    ], rejection_sort_key)
     return {
         "raw_records": raw,
         "deliveries": deliveries,
         "logical_events": logical,
-        "corrections": ordered(corrections),
+        "corrections": sort_by_key(corrections, correction_sort_key),
         "privacy_requests": privacy_requests,
         "privacy_tombstones": tombstones,
         "attributions": attributions,
