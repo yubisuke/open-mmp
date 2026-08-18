@@ -44,7 +44,7 @@ The initial MVP does not collect them. A future adapter may handle one only when
 
 ## Android
 
-- Phase 1 uses Google Play Install Referrer.
+- M2 Android, Unity, and redirector uses Google Play Install Referrer.
 - Preserve referrer read time, device and server referrer timestamps, and validation outcome. Window evaluation uses `redirector_click_at` and Google Play server `install_begin_at_server`; device `occurred_at` is evidence only.
 - Treat an unsupported or unavailable Install Referrer path as explicit unattributed evidence (`install_referrer_unsupported` or `install_referrer_unavailable`), not as an organic assertion.
 - Never reconnect a deleted advertising ID to an earlier ID or derived profile.
@@ -88,6 +88,14 @@ Before implementation, legal and operational requirements must validate these de
 - Record privileged management operations in an audit log.
 - Include the tenant boundary in every query and uniqueness constraint.
 
+## Encryption
+
+- Production transport uses TLS 1.2 or later. Local Docker Compose networking is a development convenience, not evidence of production transport security.
+- Encryption at rest for PostgreSQL volumes, object storage, backups, and logs is a deployment responsibility and must use the controls of the selected host or storage layer. The project does not claim that community PostgreSQL provides transparent data encryption.
+- Protected raw payloads use project-level envelope encryption with an authenticated cipher such as AES-256-GCM. Each encrypted object records a key identifier; key material enters through a secret-management port and is never stored in fixtures, logs, or the public repository.
+- Backups and logs that contain protected metadata remain encrypted, access-controlled, and covered by retention policy.
+- Encryption keys and signing secrets remain deployment-private, are access-controlled, support rotation, and are separable from encrypted data. Docker Compose defaults are not production key-management evidence.
+
 ## Open-core fraud boundary
 
 Public:
@@ -112,7 +120,7 @@ Each decision records its reason, evidence references, policy digest, evaluation
 
 ## Release gates
 
-The initial public [threat model](threat-model.md) maps the M0 Contract v0.2 controls and the residual risks that only a runtime release can address.
+The initial public [threat model](threat-model.md) maps the M0.2 Contract v0.2 controls and the residual risks that only a runtime release can address.
 
 - Threat model
 - Complete SDK field inventory
@@ -126,8 +134,11 @@ Gate ownership follows the canonical [roadmap](roadmap.md):
 
 | Gate | Required milestone |
 | --- | --- |
-| Initial threat model, retention/redaction contract, and replay/conflict/redaction fixtures | M0 Contract v0.2 |
-| Private vulnerability-reporting path, ledger isolation tests, deletion recalculation, and an SBOM for every runtime artifact | M1 Shadow ledger and every later runtime milestone |
-| Complete Android SDK field inventory, Google Play Data safety mapping, consent-queue tests, and backup/restore exclusion for `installation_id` | M2 Android and Unity SDK |
-| Apple Privacy Manifest and App Privacy Details mapping | M4 iOS privacy-preserving measurement |
-| Final threat-model review, production SBOM, tenant-isolation/replay/deletion exercises, and backup/restore evidence | M5 Production and fraud boundary |
+| Initial threat model, retention/redaction contract, and replay/conflict/redaction fixtures | M0.2 Contract v0.2 |
+| Private vulnerability-reporting path, TLS 1.2-or-later transport evidence, ledger isolation tests, deletion recalculation, envelope-encryption evidence, and an SBOM for every runtime artifact | M1a Shadow ledger and import foundation |
+| Complete Android SDK field inventory, Google Play Data safety mapping, consent-queue tests, and backup/restore exclusion for `installation_id` | M2 Android, Unity, and redirector |
+| Apple Privacy Manifest and App Privacy Details mapping | M4a iOS first-party measurement |
+| Aggregate-postback signature, replay, and series-separation evidence | M4b Apple aggregate attribution |
+| Final threat-model review, production SBOM, tenant-isolation/replay/deletion exercises, and backup/restore evidence | M5 Production and limited adapter boundary |
+
+The M1a runtime gates continue to apply to every later runtime milestone.

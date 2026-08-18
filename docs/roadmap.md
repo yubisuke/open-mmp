@@ -4,94 +4,112 @@ This is the canonical milestone sequence. `docs/project-plan.md` is a phase summ
 
 | Canonical roadmap milestone | Project-plan phase | Scope relationship |
 | --- | --- | --- |
-| M0 Contract | Phase 0 | Contract, registries, fixtures, and evaluator |
-| M1 Shadow ledger | Phase 1 | Received-evidence ledger and shadow reconciliation |
-| M2 Android and Unity SDK | Phase 2 | Native deterministic vertical slice |
-| M3 Minimal dashboard | Phase 3 | Reporting surface over the same definitions |
-| M4 iOS privacy-preserving measurement | Phase 4 | Separate aggregate privacy-preserving series |
-| M5 Production and fraud boundary | Phase 5 | Trust boundary, approved media adapters, and production pilot |
+| M0.2 Contract v0.2 | Phase 0.2 | Contract, registries, fixtures, and evaluators |
+| M1a Shadow ledger and import foundation | Phase 1a | Received-evidence ledger, three import paths, and runtime security foundation |
+| M1b Cohort metrics and difference audit | Phase 1b | Recalculable decision metrics and neutral reconciliation |
+| M1.5 Continuation decision gate | Phase 1.5 | Owner decision based on operator-run validation; no code deliverable |
+| M2 Android, Unity, and redirector | Phase 2 | Native deterministic vertical slice and optional edge redirector |
+| M3 Metrics dashboard | Phase 3 | Reporting surface over the same definitions |
+| M4a iOS first-party measurement | Phase 4a | Swift SDK, revenue, and Apple Ads first-party evidence |
+| M4b Apple aggregate attribution | Phase 4b | Separate SKAdNetwork and AdAttributionKit aggregate series |
+| M5 Production and limited adapter boundary | Phase 5 | Production controls, fraud boundary, and deliberately limited adapters |
 
-## Milestone 0: Event & Metric Contract v0.2
+## M0.2 Contract v0.2
 
-### M0 Contract v0.2
-
-Contract v0.2 is complete and the full local contract validation suite passes. It retains the M0.1 hardening and adds vocabulary/schema equality, secure identifiers, explicit privacy provenance, formal invalid-timestamp rejection, versioned metric definitions, reconciliation coverage, supersession, replay, retention, and impression-to-revenue evidence. The contract remains a reference implementation; M1 Shadow Ledger is next, not a runtime release. The immutable v0.1 baseline is the `contract-v0.1` Git tag.
+Contract v0.2 is complete and the full local contract validation suite passes. It retains the M0.1 hardening and adds imported provider-reported attribution, automatic neutral reconciliation, reporting dimensions, cost and cohort metrics, Apple aggregate envelopes, a minimal verified Meta envelope, and a closed processing-purpose catalog. The contract remains a reference implementation; M1a is next, not a runtime release. The immutable v0.1 baseline is the `contract-v0.1` Git tag.
 
 - Versioned event envelope and raw-record contract
-- Attribution result, reason codes, and state transitions
-- Retraction, redaction, and privacy-request contracts
-- D0 24-hour, UTC calendar-day, and JST calendar-day definitions
-- Synthetic duplicate, conflict, late, missing, and aggregate fixtures
+- Attribution result, reason codes, state transitions, and reconciliation
+- Retraction, redaction, privacy-request, and processing-purpose contracts
+- D0, ROAS, retention, and cohort metric definitions
+- Synthetic duplicate, conflict, late, missing, import, aggregate, and platform fixtures
 - Public fraud-evidence schema and private live-policy boundary
-- Pure reference evaluator
-- Apache-2.0 licensing is complete; name/trademark clearance remains a release prerequisite owned by the project maintainer before the first public release
-- A public `SECURITY.md` and a maintainer-approved private reporting path are required before M1 accepts runtime code
+- Independently implemented TypeScript and Python evaluators
+- Apache-2.0 licensing is complete; name and trademark clearance remains a release prerequisite owned by the project maintainer before the first public release
+- A public `SECURITY.md` and a maintainer-approved private reporting path are required before M1a accepts runtime code
 
-Evidence gate: An independently authored evaluator, or a separately implemented evaluator in another language with separate review, can reproduce the expected canonical outputs from the same fixtures and policy versions.
+Evidence gate: Independently implemented evaluators reproduce the same reviewed canonical outputs from the same synthetic fixtures and policy versions.
 
-## Milestone 1: Shadow ledger
+## M1a Shadow ledger and import foundation
 
-- PostgreSQL append-only received-evidence layer
-- Lawful correction and redaction records
-- Existing MMP and media-output import through the public Shadow Import Profile and synthetic fixtures; provider mappings and certification remain deployment-private
-- Normalization and deterministic recalculation
-- Difference-audit API for candidates, exclusions, windows, joins, and freshness
-- Docker Compose and automated tests
-- Private vulnerability reporting, ledger isolation tests, deletion recalculation tests, and an SBOM for each runtime artifact
+- PostgreSQL append-only received-evidence ledger with lawful correction and redaction records
+- Docker Compose, Node.js API and worker services, and automated migrations and tests
+- Public Shadow Import Profile for existing MMP exports, a media-cost import, and an advertising-revenue import or postback path; provider mappings and certification remain deployment-private
+- Normalized logical records, authenticated tenant scope, idempotent import, and protected payload envelope encryption
+- Request payload and batch limits plus application-level rate limiting for every runtime ingestion and import endpoint
+- Runtime replay of the reviewed synthetic contract fixtures through the real ingestion and import paths
+- Private vulnerability reporting, TLS 1.2-or-later transport evidence, ledger-isolation tests, deletion recalculation tests, and an SBOM for every runtime artifact
 
-Evidence gate: The same inputs and policy versions reproduce the same aggregate and the same difference reasons.
+Evidence gate: A clean Docker Compose startup ingests the synthetic fixtures through runtime paths and reproduces the reviewed contract artifacts without using real data or external credentials.
 
-## Milestone 2: Android and Unity SDK
+## M1b Cohort metrics and difference audit
+
+- Recalculable D0, ROAS, retention, and cohort-LTV metric engine
+- Cost and revenue snapshots with versioned FX, grouping, and watermarks
+- Difference-audit API for candidates, exclusions, windows, joins, freshness, and neutral reason codes
+- Operator-facing real-data validation checklist whose outputs remain outside the public repository
+
+Evidence gate: The same inputs and policy versions reproduce the same aggregates and difference reasons, and synthetic runtime results remain canonically equal to contract goldens.
+
+## M1.5 Continuation decision gate
+
+This milestone has no code deliverable. The owner reviews the operator-run validation record, implementation and operating cost, unresolved platform limitations, and the evidence from M1a/M1b. The recorded decision is to continue as an audit layer, proceed toward a first-party measurement layer, or stop further expansion. Real exports, credentials, campaign values, and validation results remain outside this public repository.
+
+Evidence gate: A dated owner decision identifies the selected path and the evidence used, without publishing protected or provider-confidential data.
+
+## M2 Android, Unity, and redirector
 
 - Unity C# SDK and Android Kotlin bridge
-- Google Play Install Referrer client
-- Offline queue, retry, and batch delivery
-- SDK disablement and identifier reset
-- Sample application
-- MAX ad-revenue callback
-- Device and Play internal-testing validation procedure
+- Google Play Install Referrer client and deterministic first-party attribution
+- Portable Node.js redirector; a Cloudflare Workers redirector may be offered as an optional adapter
+- Meta Install Referrer decryption after primary-source field verification
+- Offline queue, retry, batch delivery, SDK disablement, and identifier reset
+- Advertising-revenue callback, sample application, and device and Play internal-testing procedure
 - Complete Android SDK field inventory, Google Play Data safety mapping, consent-queue tests, and backup/restore exclusion for `installation_id`
 
-Evidence gate: A Google Play first launch retrieves the click evidence and produces one non-conflicting install record.
+Evidence gate: A Google Play first launch retrieves synthetic click evidence through the portable runtime and produces one non-conflicting install record; device validation remains separately labeled until performed.
 
-## Milestone 3: Minimal dashboard
+## M3 Metrics dashboard
 
-- App registration
-- Measurement-link creation
-- Daily clicks and installs
-- Organic, non-organic, and unattributed breakdown
+- App registration and measurement-link creation
+- ROAS, retention, cohort, and attribution breakdowns
 - CSV export
-- Attribution method, policy version, and data-freshness display
+- Attribution method, policy version, grouping, and data-freshness display
+- Authentication established before exposing any dashboard data
 
 Evidence gate: Raw records, reporting API, and dashboard match under identical filters and definitions.
 
-## Milestone 4: iOS privacy-preserving measurement
+## M4a iOS first-party measurement
 
-- AdAttributionKit and SKAdNetwork postback receipt
-- Signature and transaction-ID verification
-- Conversion-tag and value policy
-- Aggregate reporting
-- UI that does not mix aggregate iOS reports with deterministic Android attribution
+- Swift SDK and Unity iOS bridge
+- First-party events, persistent delivery queue, consent controls, and advertising-revenue evidence
+- Apple AdServices token collection and server lookup after current primary-source verification
 - Apple Privacy Manifest and App Privacy Details mapping
+
+Evidence gate: An iOS test application delivers synthetic install, event, and revenue evidence to the ledger; real-device and Apple Ads validation remain separately labeled until performed.
+
+## M4b Apple aggregate attribution
+
+- SKAdNetwork and AdAttributionKit developer postback-copy receipt
+- Signature and transaction-ID verification and replay rejection
+- Versioned conversion-tag and value policy
+- Aggregate reporting that never mixes the aggregate series with deterministic installation-level attribution
 
 Evidence gate: Apple test procedures produce verified, replay-resistant postbacks and aggregate results.
 
-## Milestone 5: Production and fraud boundary
+## M5 Production and limited adapter boundary
 
 - Tenant isolation and RBAC
-- Rate limiting
-- Backup and restore
-- Deletion-request end-to-end flow
-- OpenTelemetry and load tests
-- SDK distribution and compatibility policy
+- Full production rate policy, backup and restore, and deletion-request end-to-end flow
+- OpenTelemetry, load tests, SDK distribution, and compatibility policy
 - Play Integrity and App Attest integration
 - Rule-bundle versions, digests, and supersession history
-- Signed, least-privilege media adapters with fixture certification
-- Google Ads provider and Apple postback prerequisites revalidated from primary sources immediately before work; the adapter owner records the result before implementation
+- Signed, least-privilege adapters limited to first-party links, Meta, and Apple Ads, with primary-source revalidation and fixture certification before implementation
+- Other media-network adapters are outside the current roadmap unless a later owner decision and primary-source evidence explicitly add them
 - Final threat-model review, production SBOM, and tenant-isolation, replay, deletion, and backup/restore evidence
 
 Evidence gate: A production pilot completes backup restoration, deletion, replay, failure, and shadow-reconciliation exercises with documented evidence.
 
 ## Immediate next step
 
-Begin M1 Shadow Ledger planning and implementation. The Contract v0.2 validation evidence is recorded; M1 remains separate from runtime-release and production evidence. This step requires no external service or GitHub access.
+Plan and implement M1a Shadow ledger and import foundation. Contract validation evidence is recorded; runtime, operator-run real-data validation, device validation, platform approval, and production evidence remain separate states.

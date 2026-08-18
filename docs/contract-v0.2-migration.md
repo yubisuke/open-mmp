@@ -190,7 +190,7 @@ Stage C does not change any fixture 01-33 input or golden file. Fixture 34 adds 
 
 ### Stage D golden-change ledger
 
-This ledger is exhaustive relative to the Stage C audit-fix commit `924f97d`.
+This ledger is exhaustive relative to the final Stage C commit `d3eb86b`.
 
 | Fixture | Input change | Golden change |
 | --- | --- | --- |

@@ -8,7 +8,7 @@ Independent measurement systems can produce totals that need transparent evidenc
 
 The project focuses on auditable, open event and metric contracts that independent implementations can reproduce from synthetic fixtures. Deployment-specific data, credentials, and live fraud defenses remain private. It is designed to make measurement more transparent without enabling device fingerprinting or cross-app tracking.
 
-This is an early design-stage project, not a production-ready MMP.
+This is an early contract-stage project, not a production-ready MMP.
 
 ## License
 
@@ -16,7 +16,7 @@ This project is licensed under the [Apache License 2.0](LICENSE); attribution is
 
 ## Current status
 
-This project contains the v0.2 contract schemas, registries, synthetic fixtures, and executable reference evaluators. The in-place v0.2 consistency migration is complete, the local validation gate passes, and M1 Shadow Ledger is next. It is not production-ready runtime ingestion software or a runtime release. The immutable v0.1 baseline is available at the `contract-v0.1` Git tag.
+This project contains the v0.2 contract schemas, registries, synthetic fixtures, and executable reference evaluators. The in-place v0.2 consistency migration and Stages A-D of the v0.2 extension are complete, the local validation gate passes, and M1a Shadow Ledger and import foundation is next. It is not production-ready runtime ingestion software or a runtime release. The immutable v0.1 baseline is available at the `contract-v0.1` Git tag.
 
 The first product entry point is a Shadow MMP that runs alongside an existing provider. It normalizes first-party events, existing MMP exports, media cost, and revenue into a common contract, then explains neutral differences through candidate evidence, exclusion reasons, attribution windows, ID joins, and recalculation history. Difference reasons describe measurement semantics, not provider quality. It must not be treated as the primary MMP until a real shadow pilot has produced sufficient evidence.
 
@@ -92,4 +92,4 @@ python -m pip install --require-hashes --requirement requirements-contract.txt
 npm run validate
 ```
 
-Validation is read-only. It checks 22 schemas, 7 registries, 32 reviewed synthetic fixtures, 384 golden output artifacts across 12 classes, 32 scenario assertions, 26 acceptance criteria, semantic and metamorphic mutations, deterministic TypeScript output, independent Python output, and RFC 8785 conformance. See the [fixture provenance note](fixtures/v0.2/README.md).
+Validation is read-only. It checks 26 schemas, 8 registries, 34 reviewed synthetic fixtures, 442 golden output artifacts across 13 classes, 34 scenario assertions, 26 acceptance criteria, semantic and metamorphic mutations, deterministic TypeScript output, independent Python output, and RFC 8785 conformance. See the [fixture provenance note](fixtures/v0.2/README.md).

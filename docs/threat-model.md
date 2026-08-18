@@ -1,6 +1,6 @@
 # Initial Threat Model
 
-This is the public M0 Contract v0.2 threat model for the contract and its reference evaluators. It describes security properties and release gates, not live defenses, incident response timing, credentials, or personal data.
+This is the public M0.2 Contract v0.2 threat model for the contract and its reference evaluators. It describes security properties and release gates, not live defenses, incident response timing, credentials, or personal data.
 
 ## Assets and trust boundaries
 
@@ -12,7 +12,7 @@ This is the public M0 Contract v0.2 threat model for the contract and its refere
 
 Untrusted inputs cross the SDK, redirector, import, and fixture boundaries. The PostgreSQL ledger is the authoritative received-evidence store in the future runtime architecture. Edge delivery may be deployed close to users, but must preserve the same authenticated scope, immutable ledger semantics, and portable contract behavior.
 
-## M0 Contract v0.2 threats and contract controls
+## M0.2 Contract v0.2 threats and contract controls
 
 | Threat | Contract control | Evidence |
 | --- | --- | --- |
@@ -29,6 +29,9 @@ Untrusted inputs cross the SDK, redirector, import, and fixture boundaries. The 
 | A malformed calendar timestamp reaches attribution or metrics | Calendar-invalid ingress is rejected as `timestamp_invalid`, its payload is discarded, and only non-identifying metadata remains. | Fixture 20 and timestamp mutations. |
 | Replay suspicion is confused with ordinary retry delivery | Replay suspicion produces a public fraud-decision category while duplicate delivery remains an independent ingestion classification. | Fixture 25. |
 | Retention expiry silently changes historical metrics | Expired evidence produces a tombstone and an immutable replacement run marked `retention_affected`. | Fixture 26. |
+| A provider-reported judgment is mistaken for first-party deterministic attribution | Imported attribution uses the separate `imported` method and `provider_reported` model, with neutral reconciliation reasons. | Fixtures 28-31. |
+| An unregistered processing purpose bypasses policy evaluation | Purpose IDs are closed by a registry and schema equality checks; every registered purpose is exercised synthetically. | Fixtures 25, 33, and 34 plus the unknown-purpose mutation. |
+| An aggregate Apple postback is presented as installation-level evidence | SKAdNetwork and AdAttributionKit use aggregate subjects, separate methods, explicit signature status, and aggregate-only compatibility rows. | Fixture 34. |
 | Public artifacts expose operational defenses | The public envelope contains categories, references, and digests only. Live thresholds, models, watchlists, keys, and response timing remain private. | Schema and text scan. |
 
 ## Deterministic selection policy
@@ -37,6 +40,6 @@ Contract v0.2 does not select among multiple accepted clicks with one `click_id`
 
 ## Residual risk and release gates
 
-Contract v0.2 has no network service, credentials, tenant database, or production fraud controls. It cannot prove runtime authentication, authorization, retention execution, availability, backup recovery, or protection against live abuse. Those remain release gates.
+Contract v0.2 has no network service, credentials, tenant database, envelope-encryption implementation, or production fraud controls. It cannot prove runtime authentication, authorization, transport security, encryption at rest, retention execution, availability, backup recovery, or protection against live abuse. Those remain release gates.
 
-The M0 Contract v0.2 gate requires the complete fixture and mutation suite, the [privacy and security release-gate crosswalk](privacy-security.md#release-gates), and the [roadmap contract status](roadmap.md#milestone-0-event--metric-contract-v02). Before M1 accepts runtime code, a private vulnerability-reporting path, ledger-isolation tests, deletion recalculation, and an SBOM for every runtime artifact are required.
+The M0.2 Contract v0.2 gate requires the complete fixture and mutation suite, the [privacy and security release-gate crosswalk](privacy-security.md#release-gates), and the [roadmap contract status](roadmap.md). Before M1a Shadow ledger and import foundation accepts runtime code, a private vulnerability-reporting path, TLS 1.2-or-later transport evidence, ledger-isolation tests, deletion recalculation, envelope-encryption evidence, and an SBOM for every runtime artifact are required.
