@@ -52,7 +52,7 @@
     "delivery_id": "delivery:install-invalid-authority",
     "event_name": "install",
     "schema_version": "0.2.0",
-    "payload_sha256": "0ef9ff6f9e61471b400eff90258f64e23f68d49212b94e1a0793a4cde17f65f7",
+    "payload_sha256": "08d40d974b4db8531ec68a2fba3bfaf61811d66bb70a76abc76dc2934d5fa7ed",
     "occurred_at": "2026-08-07T00:00:00.000Z",
     "occurred_at_source": "device",
     "received_at": "2026-08-12T00:00:00.000Z",
