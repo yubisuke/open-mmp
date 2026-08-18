@@ -1062,13 +1062,36 @@ if (!summaryOnly) {
       const value = fixture("34-stage-c-apple-meta-attribution");
       const skanValidator = validatorFor("urn:open-mmp:schema:event-skan-postback:v0.2");
       const aakValidator = validatorFor("urn:open-mmp:schema:event-adattributionkit-postback:v0.2");
+      const installValidator = validatorFor("urn:open-mmp:schema:event-install:v0.2");
       const skan = value.input.records.find((item: Any) => item.record_id === "skan-verified-34").payload;
       const aak = value.input.records.find((item: Any) => item.record_id === "aak-not-winner-34").payload;
+      const adservices = value.input.records.find((item: Any) => item.record_id === "adservices-install-34").payload;
       check(skanValidator({ event_name: "skan_postback", ...skan }), `Stage C SKAN schema: ${ajv.errorsText(skanValidator.errors)}`);
       check(aakValidator({ event_name: "adattributionkit_postback", ...aak }), `Stage C AAK schema: ${ajv.errorsText(aakValidator.errors)}`);
+
+      const validV3 = structuredClone(skan);
+      validV3.version = "3.0";
+      validV3.campaign_id = 42;
+      delete validV3.source_identifier;
+      delete validV3.postback_sequence_index;
+      check(skanValidator({ event_name: "skan_postback", ...validV3 }), `Stage C rejected valid SKAN v3 envelope: ${ajv.errorsText(skanValidator.errors)}`);
+
+      const v4Campaign = structuredClone(skan);
+      v4Campaign.campaign_id = 42;
+      check(!skanValidator({ event_name: "skan_postback", ...v4Campaign }), "Stage C accepted campaign_id in SKAN v4");
+      const bothConversions = structuredClone(skan);
+      bothConversions.coarse_conversion_value = "high";
+      check(!skanValidator({ event_name: "skan_postback", ...bothConversions }), "Stage C accepted fine and coarse SKAN values together");
+      const fineLaterWindow = structuredClone(skan);
+      fineLaterWindow.postback_sequence_index = 1;
+      check(!skanValidator({ event_name: "skan_postback", ...fineLaterWindow }), "Stage C accepted a fine value after the first SKAN window");
+
       const reengagement = structuredClone(aak);
       reengagement.conversion_type = "re-engagement";
       check(!aakValidator({ event_name: "adattributionkit_postback", ...reengagement }), "Stage C accepted out-of-scope re-engagement");
+      const unknownConversion = structuredClone(adservices);
+      unknownConversion.adservices_context.conversion_type = "Unknown";
+      check(!installValidator({ event_name: "install", ...unknownConversion }), "Stage C accepted an unknown AdServices conversion type");
       check(value.output.attributions.filter((item: Any) => item.subject_scope === "aggregate").every((item: Any) => item.subject_ref.startsWith(`aggregate:${item.method}:`)), "Stage C aggregate subject namespace");
     });
   });

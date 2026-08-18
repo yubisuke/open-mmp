@@ -47,7 +47,7 @@
         "ad_group_id": { "type": "string", "pattern": "^[0-9]+$" },
         "keyword_id": { "type": "string", "pattern": "^[0-9]+$" },
         "ad_id": { "type": "string", "pattern": "^[0-9]+$" },
-        "conversion_type": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "conversion_type": { "enum": ["Download", "Redownload", "PreOrder"] },
         "claim_type": { "enum": ["Click", "Impression"] },
         "country_or_region": { "type": "string", "pattern": "^[A-Z]{2}$" },
         "supply_placement": { "type": "string", "minLength": 1, "maxLength": 128 },
