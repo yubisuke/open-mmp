@@ -344,7 +344,50 @@ function fixture(name: string): { input: Any; output: Any; python: Any } {
   return value;
 }
 
+// Real-data guardrails. This repository is public and every fixture is synthetic.
+// Tabular exports (CSV/TSV/XLSX/XLS/Parquet) and lab/input directories must never
+// be committed. The check covers tracked files plus untracked files that git would
+// accept on `git add` (ignored files are excluded on purpose). If a future importer
+// needs a synthetic CSV fixture, allow-list its exact path in .gitignore and in
+// FORBIDDEN_TABULAR_ALLOWLIST below in the same change.
+const FORBIDDEN_TABULAR_EXTENSIONS = /\.(csv|tsv|xlsx|xls|parquet)$/i;
+const FORBIDDEN_TABULAR_ALLOWLIST: string[] = [];
+const FORBIDDEN_DIRECTORY_SEGMENTS = /(^|\/)(open-mmp-lab|real-data|input)(\/|$)/;
+
+function gitListedFiles(): string[] {
+  const listed = (args: string[]) =>
+    execFileSync("git", ["ls-files", "-z", ...args], { cwd: root, encoding: "utf8" })
+      .split("\0")
+      .filter((entry) => entry.length > 0);
+  const tracked = listed([]);
+  const untrackedNotIgnored = listed(["--others", "--exclude-standard"]);
+  return [...new Set([...tracked, ...untrackedNotIgnored])].sort();
+}
+
 if (!summaryOnly) {
+  describe("real-data guardrails", () => {
+    const files = gitListedFiles();
+    it("lists files through git", () => {
+      check(files.length > 0, "git ls-files returned no files; guardrail cannot run");
+    });
+    it("contains no tabular export files", () => {
+      const offenders = files.filter(
+        (file) => FORBIDDEN_TABULAR_EXTENSIONS.test(file) && !FORBIDDEN_TABULAR_ALLOWLIST.includes(file),
+      );
+      check(offenders.length === 0, `tabular files are not allowed in this repository: ${offenders.join(", ")}`);
+    });
+    it("contains no lab, real-data, or input directories", () => {
+      const offenders = files.filter((file) => FORBIDDEN_DIRECTORY_SEGMENTS.test(file));
+      check(offenders.length === 0, `forbidden directory segment: ${offenders.join(", ")}`);
+    });
+    it("keeps fixtures limited to JSON and README files", () => {
+      const offenders = files.filter(
+        (file) => file.startsWith("fixtures/") && !/\.json$/.test(file) && !/(^|\/)README\.md$/.test(file),
+      );
+      check(offenders.length === 0, `fixtures/ may only contain .json and README.md: ${offenders.join(", ")}`);
+    });
+  });
+
   describe("schema health", () => {
     for (const state of schemaStates) {
       it(relative(root, state.path), () => {

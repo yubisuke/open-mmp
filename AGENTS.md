@@ -60,3 +60,4 @@
 - Use primary Apple, Google, and media-platform sources for behavior that depends on external specifications.
 - Keep received evidence append-only where lawful, but redact personal data when a valid deletion request requires it. Append-only is not a reason to retain identifiable deleted data.
 - Keep the measurement core open while separating deployment secrets and live fraud-defense policy.
+- This repository is public. Real or production data — MMP exports, ad revenue, media cost, identifiers, campaign/ad-set/creative/app names, or any value derived from them — must never enter it in any form (files, fixtures, tests, docs, commit messages, examples). Fixtures are synthetic only. `.gitignore`, CI, and `npm run validate` enforce the file-level part of this rule; see CONTRIBUTING.md.
