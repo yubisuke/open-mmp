@@ -16,7 +16,7 @@ This project is licensed under the [Apache License 2.0](LICENSE); attribution is
 
 ## Current status
 
-This project contains the v0.1 contract schemas, registries, synthetic fixtures, and executable reference evaluators. M0.1 contract hardening is complete, the local validation gate passes, and M1 Shadow Ledger is next. It is not production-ready runtime ingestion software or a runtime release.
+This project contains the v0.2 contract schemas, registries, synthetic fixtures, and executable reference evaluators. The in-place v0.2 consistency migration is complete, the local validation gate passes, and M1 Shadow Ledger is next. It is not production-ready runtime ingestion software or a runtime release. The immutable v0.1 baseline is available at the `contract-v0.1` Git tag.
 
 The first product entry point is a Shadow MMP that runs alongside an existing provider. It normalizes first-party events, existing MMP exports, media cost, and revenue into a common contract, then explains neutral differences through candidate evidence, exclusion reasons, attribution windows, ID joins, and recalculation history. Difference reasons describe measurement semantics, not provider quality. It must not be treated as the primary MMP until a real shadow pilot has produced sufficient evidence.
 
@@ -59,11 +59,11 @@ docs/
 
 This is a proposed implementation layout, not generated code.
 
-## Current layout (v0.1 contract artifacts)
+## Current layout (v0.2 contract artifacts)
 
 - `schemas/` — Draft 2020-12 artifact schemas, including event payloads under `schemas/events/`
 - `registries/` — versioned closed vocabularies and compatibility definitions
-- `fixtures/v0.1/` — reviewed synthetic inputs and immutable golden outputs
+- `fixtures/v0.2/` — reviewed synthetic inputs and immutable golden outputs
 - `spec/` — normative contract behavior and serialization rules
 - `tools/` — TypeScript and Python reference evaluators and contract validation
 - `issue-drafts/` — historical design and acceptance records
@@ -78,7 +78,9 @@ This is a proposed implementation layout, not generated code.
 - [Project plan](docs/project-plan.md)
 - [Issue #1 draft](issue-drafts/001-event-metric-contract-v0.1.md)
 - [Primary references](docs/references.md)
-- [Event & Metric Contract v0.1](spec/event-metric-contract-v0.1.md)
+- [Event & Metric Contract v0.2](spec/event-metric-contract-v0.2.md)
+- [Contract v0.2 migration guide](docs/contract-v0.2-migration.md)
+- [Schema versioning policy](docs/schema-versioning.md)
 
 ## Contract validation
 
@@ -90,4 +92,4 @@ python -m pip install --require-hashes --requirement requirements-contract.txt
 npm run validate
 ```
 
-Validation is read-only. It checks schemas, registries, 19 reviewed synthetic fixtures, golden output artifacts, semantic and metamorphic mutations, deterministic TypeScript output, independent Python output, and RFC 8785 conformance. See the [fixture provenance note](fixtures/v0.1/README.md).
+Validation is read-only. It checks 22 schemas, 7 registries, 27 reviewed synthetic fixtures, 324 golden output artifacts across 12 classes, 27 scenario assertions, 26 acceptance criteria, semantic and metamorphic mutations, deterministic TypeScript output, independent Python output, and RFC 8785 conformance. See the [fixture provenance note](fixtures/v0.2/README.md).

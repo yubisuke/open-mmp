@@ -33,7 +33,7 @@ The product therefore starts as a Shadow MMP alongside an existing provider.
 - Detection-response timing
 - Real user and campaign evidence
 
-Fraud decisions retain evidence references, reason codes, rule-bundle versions and digests, evaluation time, action, and supersession history. A later delayed-transparency policy for retired rules may be considered, but it is not part of v0.1.
+Fraud decisions retain evidence references, reason codes, rule-bundle versions and digests, evaluation time, action, and supersession history. A later delayed-transparency policy for retired rules may be considered, but it is not part of v0.2.
 
 ## Execution phases
 
@@ -41,9 +41,9 @@ Fraud decisions retain evidence references, reason codes, rule-bundle versions a
 
 ### Phase 0: Contract
 
-M0.1 hardening is complete and its local validation gate passes. The phase now has explicit paid reinstall/redownload semantics, global record-ID collision rejection, tenant/app-scoped defensive references, deterministic click ambiguity handling, unambiguous installation anchors, and an initial public [threat model](threat-model.md). M1 Shadow Ledger is next; this is not production-runtime readiness.
+Contract v0.2 is complete and its local validation gate passes. The phase has explicit lifecycle and payload-availability axes, nonnegative money and structured FX, registry/schema equality, secure identifiers, privacy provenance, formal timestamp rejection, reviewed metric definitions, and the required v0.2 scenarios in addition to the earlier M0.1 hardening. M1 Shadow Ledger is next; this is not production-runtime readiness.
 
-Produce `Open MMP Event & Metric Contract v0.1`:
+Produce `Open MMP Event & Metric Contract v0.2`:
 
 - Raw-record envelope
 - Click, install, and session core events

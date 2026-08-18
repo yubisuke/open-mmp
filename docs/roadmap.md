@@ -11,11 +11,11 @@ This is the canonical milestone sequence. `docs/project-plan.md` is a phase summ
 | M4 iOS privacy-preserving measurement | Phase 4 | Separate aggregate privacy-preserving series |
 | M5 Production and fraud boundary | Phase 5 | Trust boundary, approved media adapters, and production pilot |
 
-## Milestone 0: Event & Metric Contract v0.1
+## Milestone 0: Event & Metric Contract v0.2
 
-### M0.1 Contract hardening
+### M0 Contract v0.2
 
-M0.1 is complete and the full local contract validation suite passes. It hardens paid reinstall/redownload attribution, globally unique `record_id` rejection, tenant/app-scoped references, deterministic `click_id` ambiguity handling, explicit installation anchors, and the initial public [threat model](threat-model.md). The contract remains a reference implementation; M1 Shadow Ledger is next, not a runtime release.
+Contract v0.2 is complete and the full local contract validation suite passes. It retains the M0.1 hardening and adds vocabulary/schema equality, secure identifiers, explicit privacy provenance, formal invalid-timestamp rejection, versioned metric definitions, reconciliation coverage, supersession, replay, retention, and impression-to-revenue evidence. The contract remains a reference implementation; M1 Shadow Ledger is next, not a runtime release. The immutable v0.1 baseline is the `contract-v0.1` Git tag.
 
 - Versioned event envelope and raw-record contract
 - Attribution result, reason codes, and state transitions
@@ -94,4 +94,4 @@ Evidence gate: A production pilot completes backup restoration, deletion, replay
 
 ## Immediate next step
 
-Begin M1 Shadow Ledger planning and implementation. The M0.1 validation evidence is recorded; M1 remains separate from runtime-release and production evidence. This step requires no external service or GitHub access.
+Begin M1 Shadow Ledger planning and implementation. The Contract v0.2 validation evidence is recorded; M1 remains separate from runtime-release and production evidence. This step requires no external service or GitHub access.

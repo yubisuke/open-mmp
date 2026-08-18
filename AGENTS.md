@@ -10,7 +10,7 @@
 
 ## Current state
 
-- Milestone M0.1 (see `docs/roadmap.md`) is complete: the repository currently contains only the Event & Metric Contract v0.2 — JSON Schemas, registries, synthetic fixtures, and two independently implemented reference evaluators. There is no runtime service, database, HTTP API, SDK, or dashboard code yet. Do not assume any of those exist.
+- Milestone M0 Contract v0.2 (see `docs/roadmap.md`) is complete: the repository currently contains only the Event & Metric Contract v0.2 — JSON Schemas, registries, synthetic fixtures, and two independently implemented reference evaluators. There is no runtime service, database, HTTP API, SDK, or dashboard code yet. Do not assume any of those exist.
 - The contract lives in `schemas/`, `schemas/events/`, `registries/`, `fixtures/v0.2/`, and `spec/event-metric-contract-v0.2.md`. `spec/event-metric-contract-v0.2.md` is the normative document for current contract behavior. `issue-drafts/001-event-metric-contract-v0.2.md` is the original tracking Epic; treat it as a historical record of what was asked for, not a live checklist — new work items belong in `docs/roadmap.md` and `docs/project-plan.md`, and its own acceptance-criteria checkboxes should not be edited to match later hardening work.
 - The next milestone is M1 Shadow Ledger (PostgreSQL append-only received-evidence layer, normalization, difference-audit API). Do not start M2+ scope out of order without checking `docs/roadmap.md` first.
 
