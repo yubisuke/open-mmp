@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:open-mmp:schema:evidence-reference:v0.1",
-  "title": "Open MMP Evidence Reference v0.1",
+  "$id": "urn:open-mmp:schema:evidence-reference:v0.2",
+  "title": "Open MMP Evidence Reference v0.2",
   "$ref": "common.schema.json#/$defs/evidenceRef"
 }

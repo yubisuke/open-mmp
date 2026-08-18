@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:open-mmp:schema:common:v0.1",
-  "title": "Open MMP Common Types v0.1",
+  "$id": "urn:open-mmp:schema:common:v0.2",
+  "title": "Open MMP Common Types v0.2",
   "$defs": {
     "id": { "type": "string", "pattern": "^[A-Za-z0-9._:-]{1,128}$" },
     "dateTime": { "type": "string", "format": "date-time", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$" },

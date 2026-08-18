@@ -62,8 +62,8 @@ function fixRefs(value: Any): Any {
   for (const [key, child] of Object.entries(value)) {
     output[key] = key === "$ref" && typeof child === "string"
       ? child
-        .replace("../common.schema.json", "urn:open-mmp:schema:common:v0.1")
-        .replace("common.schema.json", "urn:open-mmp:schema:common:v0.1")
+        .replace("../common.schema.json", "urn:open-mmp:schema:common:v0.2")
+        .replace("common.schema.json", "urn:open-mmp:schema:common:v0.2")
       : fixRefs(child as Any);
   }
   return output;
@@ -137,13 +137,13 @@ function validatorFor(id: string): Validator {
 }
 
 const registryPaths = {
-  events: join(root, "registries", "event-names-v0.1.json"),
-  reasons: join(root, "registries", "reason-codes-v0.1.json"),
-  producers: join(root, "registries", "producer-values-v0.1.json"),
-  differences: join(root, "registries", "difference-reasons-v0.1.json"),
-  states: join(root, "registries", "state-transitions-v0.1.json"),
-  compatibility: join(root, "registries", "compatibility-v0.1.json"),
-  matchingKeys: join(root, "registries", "matching-key-types-v0.1.json"),
+  events: join(root, "registries", "event-names-v0.2.json"),
+  reasons: join(root, "registries", "reason-codes-v0.2.json"),
+  producers: join(root, "registries", "producer-values-v0.2.json"),
+  differences: join(root, "registries", "difference-reasons-v0.2.json"),
+  states: join(root, "registries", "state-transitions-v0.2.json"),
+  compatibility: join(root, "registries", "compatibility-v0.2.json"),
+  matchingKeys: join(root, "registries", "matching-key-types-v0.2.json"),
 };
 type RegistryName = keyof typeof registryPaths;
 const registryStates = Object.fromEntries(
@@ -181,17 +181,17 @@ const stateAxes = registries.states.axes ?? {};
 const compatibility = registries.compatibility.attribution ?? [];
 
 const outputSchemaIds: Record<string, string> = {
-  raw_records: "urn:open-mmp:schema:raw-record:v0.1",
-  deliveries: "urn:open-mmp:schema:event-delivery:v0.1",
-  logical_events: "urn:open-mmp:schema:logical-event:v0.1",
-  corrections: "urn:open-mmp:schema:correction:v0.1",
-  privacy_requests: "urn:open-mmp:schema:privacy-request:v0.1",
-  privacy_tombstones: "urn:open-mmp:schema:privacy-tombstone:v0.1",
-  attributions: "urn:open-mmp:schema:attribution-result:v0.1",
-  metric_runs: "urn:open-mmp:schema:metric-run:v0.1",
-  fraud_decisions: "urn:open-mmp:schema:fraud-decision:v0.1",
-  rejections: "urn:open-mmp:schema:rejection:v0.1",
-  reconciliation: "urn:open-mmp:schema:reconciliation-result:v0.1",
+  raw_records: "urn:open-mmp:schema:raw-record:v0.2",
+  deliveries: "urn:open-mmp:schema:event-delivery:v0.2",
+  logical_events: "urn:open-mmp:schema:logical-event:v0.2",
+  corrections: "urn:open-mmp:schema:correction:v0.2",
+  privacy_requests: "urn:open-mmp:schema:privacy-request:v0.2",
+  privacy_tombstones: "urn:open-mmp:schema:privacy-tombstone:v0.2",
+  attributions: "urn:open-mmp:schema:attribution-result:v0.2",
+  metric_runs: "urn:open-mmp:schema:metric-run:v0.2",
+  fraud_decisions: "urn:open-mmp:schema:fraud-decision:v0.2",
+  rejections: "urn:open-mmp:schema:rejection:v0.2",
+  reconciliation: "urn:open-mmp:schema:reconciliation-result:v0.2",
 };
 const expectedFiles: Record<string, string> = Object.fromEntries(
   Object.keys(outputSchemaIds).map((name) => [name, `expected_${name}.json`]),
@@ -281,7 +281,7 @@ function validateRegistryReferences(output: Any, label: string): void {
   }
 }
 
-const fixtureRoot = join(root, "fixtures", "v0.1");
+const fixtureRoot = join(root, "fixtures", "v0.2");
 const fixtureDirs = readdirSync(fixtureRoot, { withFileTypes: true })
   .filter((entry) => entry.isDirectory())
   .map((entry) => join(fixtureRoot, entry.name))
@@ -393,7 +393,7 @@ if (!summaryOnly) {
       it(relative(root, state.path), () => {
         const value = capturedValue(state.loaded, `schema load failure: ${relative(root, state.path)}`);
         check(value.$schema === DRAFT, `wrong schema dialect: ${relative(root, state.path)}`);
-        check(/^urn:open-mmp:schema:[a-z0-9-]+:v0\.1$/.test(value.$id), `unstable schema id: ${relative(root, state.path)}`);
+        check(/^urn:open-mmp:schema:[a-z0-9-]+:v0\.2$/.test(value.$id), `unstable schema id: ${relative(root, state.path)}`);
         assertClosedObjects(value, relative(root, state.path));
         check(!state.compileError, `schema did not compile: ${value.$id}`);
         check(state.validator, `schema validator missing: ${value.$id}`);
@@ -406,10 +406,10 @@ if (!summaryOnly) {
     for (const name of Object.keys(registryPaths) as RegistryName[]) {
       it(name, () => {
         const value = capturedValue(registryStates[name].loaded, `registry load failure: ${name}`);
-        check(value.contract_version === "0.1.0", `registry version: ${name}`);
+        check(value.contract_version === "0.2.0", `registry version: ${name}`);
         if (name === "events") {
           unique(value.event_names, "event name");
-          check(value.event_names.length === 8, "event-name registry must contain the eight v0.1 events");
+          check(value.event_names.length === 8, "event-name registry must contain the eight v0.2 events");
         } else if (name === "reasons") {
           for (const [reasonName, values] of Object.entries(value).filter(([key]) => key !== "contract_version")) {
             if (Array.isArray(values)) unique(values, `reason code in ${reasonName}`);
@@ -445,13 +445,13 @@ if (!summaryOnly) {
     for (const state of fixtureStates) {
       it(state.name, () => {
         const input = capturedValue(state.input, `fixture input load failure: ${state.name}`);
-        const fixtureValidator = validatorFor("urn:open-mmp:schema:fixture-input:v0.1");
+        const fixtureValidator = validatorFor("urn:open-mmp:schema:fixture-input:v0.2");
         check(fixtureValidator(input), `fixture schema failure: ${state.name}: ${ajv.errorsText(fixtureValidator.errors)}`);
         for (const attempt of fixtureAttempts(input)) {
           const record = attempt.record;
           check(eventNames.includes(record.event_name), `unknown fixture event_name: ${state.name}`);
           check(producerAllowed(record.producer), `unknown fixture producer: ${state.name}`);
-          const eventId = `urn:open-mmp:schema:event-${record.event_name.replaceAll("_", "-")}:v0.1`;
+          const eventId = `urn:open-mmp:schema:event-${record.event_name.replaceAll("_", "-")}:v0.2`;
           const validator = validatorFor(eventId);
           const event = { ...record.payload, event_name: record.event_name };
           check(validator(event), `event schema failure: ${state.name}/${record.record_id}: ${ajv.errorsText(validator.errors)}`);
@@ -630,7 +630,7 @@ if (!summaryOnly) {
   });
 }
 
-const contractText = capture(() => readFileSync(join(root, "spec", "event-metric-contract-v0.1.md"), "utf8"));
+const contractText = capture(() => readFileSync(join(root, "spec", "event-metric-contract-v0.2.md"), "utf8"));
 const fraudSchemaText = capture(() => readFileSync(join(root, "schemas", "fraud-decision.schema.json"), "utf8"));
 const acceptance: Array<[string, () => void]> = [
   ["AC01 Draft 2020-12 schemas have stable IDs and versions", () => check(schemaPaths.length === 23 && schemaIds.every(Boolean), "AC01")],
@@ -639,7 +639,7 @@ const acceptance: Array<[string, () => void]> = [
     check(rawSchema, "AC02 raw schema missing");
     const eventEnum = rawSchema.properties.event_name.enum;
     check(equal(eventEnum, eventNames), "AC02 raw registry mismatch");
-    for (const name of eventNames) validatorFor(`urn:open-mmp:schema:event-${name.replaceAll("_", "-")}:v0.1`);
+    for (const name of eventNames) validatorFor(`urn:open-mmp:schema:event-${name.replaceAll("_", "-")}:v0.2`);
   }],
   ["AC03 raw delivery logical correction and derived artifacts are separate", () => {
     check(Object.keys(outputSchemaIds).length === 11 && Object.values(expectedFiles).every((name) => name.startsWith("expected_")), "AC03");
@@ -843,11 +843,11 @@ const validRevenue = {
 if (!summaryOnly) {
   describe("semantic mutations", () => {
     it("accepts the baseline revenue event", () => {
-      const adValidator = validatorFor("urn:open-mmp:schema:event-ad-revenue:v0.1");
+      const adValidator = validatorFor("urn:open-mmp:schema:event-ad-revenue:v0.2");
       check(adValidator(validRevenue), "mutation baseline event invalid");
     });
     it("rejects negative ad revenue", () => {
-      const adValidator = validatorFor("urn:open-mmp:schema:event-ad-revenue:v0.1");
+      const adValidator = validatorFor("urn:open-mmp:schema:event-ad-revenue:v0.2");
       check(!adValidator({ ...validRevenue, amount_unscaled: "-1" }), "mutation negative ad revenue was accepted");
     });
     it("rejects timestamp precision drift", () => {
@@ -864,7 +864,7 @@ if (!summaryOnly) {
     it("rejects cross-tenant privacy references", () => {
       const crossTenantPrivacy = structuredClone(fixture("07-same-id-across-tenants").input);
       crossTenantPrivacy.privacy_requests.push({
-        contract_version: "0.1.0",
+        contract_version: "0.2.0",
         tenant_id: "tenant-a",
         app_id: "app-a",
         privacy_request_id: "cross-tenant-privacy",
@@ -930,11 +930,11 @@ if (!summaryOnly) {
       it(entry.name, () => {
         const input = capturedValue(entry.input, `timestamp fixture preparation failed: ${entry.name}`);
       const schemaRejected = entry.field === "occurred_at"
-        ? !validatorFor("urn:open-mmp:schema:fixture-input:v0.1")(input)
+        ? !validatorFor("urn:open-mmp:schema:fixture-input:v0.2")(input)
         : (() => {
             const eventName = entry.field === "redirector_click_at" ? "click" : "install";
             const record = input.records.find((candidate: Any) => candidate.event_name === eventName);
-            const validator = validatorFor(`urn:open-mmp:schema:event-${eventName}:v0.1`);
+            const validator = validatorFor(`urn:open-mmp:schema:event-${eventName}:v0.2`);
             return !validator({ ...record.payload, event_name: eventName });
           })();
       check(schemaRejected, `schema accepted invalid ${entry.field}`);

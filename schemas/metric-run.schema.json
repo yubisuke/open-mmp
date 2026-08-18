@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:open-mmp:schema:metric-run:v0.1",
-  "title": "Open MMP Metric Run v0.1",
+  "$id": "urn:open-mmp:schema:metric-run:v0.2",
+  "title": "Open MMP Metric Run v0.2",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -15,7 +15,7 @@
   "properties": {
     "metric_run_id": { "$ref": "common.schema.json#/$defs/id" },
     "metric_name": { "enum": ["d0_install_to_24h_ad_revenue_usd", "d0_utc_install_calendar_ad_revenue_usd", "d0_jst_install_calendar_ad_revenue_usd"] },
-    "metric_definition_version": { "const": "0.1.0" },
+    "metric_definition_version": { "const": "0.2.0" },
     "input_snapshot_id": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
     "input_ledger_position": { "type": "string", "minLength": 1 },
     "input_received_at_watermark": { "$ref": "common.schema.json#/$defs/dateTime" },
@@ -23,7 +23,7 @@
     "data_freshness": { "enum": ["complete", "late_excluded", "recalculated"] },
     "aggregation_time_zone": { "enum": ["UTC", "Asia/Tokyo"] },
     "rule_bundle_id": { "$ref": "common.schema.json#/$defs/id" },
-    "rule_bundle_version": { "const": "0.1.0" },
+    "rule_bundle_version": { "const": "0.2.0" },
     "rule_bundle_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
     "fx_rate": { "type": "string", "minLength": 1 },
     "fx_rate_source": { "type": "string", "minLength": 1 },

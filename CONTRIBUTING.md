@@ -11,7 +11,7 @@ Open MMP is currently a contract and reference-evaluator project. Read [AGENTS.m
 
 ## Contract artifacts
 
-- Follow the reviewed workflow in [fixtures/v0.1/README.md](fixtures/v0.1/README.md) when proposing a fixture. Golden outputs require human review and a written derivation; validation must not regenerate them.
+- Follow the reviewed workflow in [fixtures/v0.2/README.md](fixtures/v0.2/README.md) when proposing a fixture. Golden outputs require human review and a written derivation; validation must not regenerate them.
 - Treat existing v0.1 schema identifiers as frozen. Breaking and non-breaking schema changes, version resolution, and the v0.2 layout are to be defined in the v0.2 contract work before a versioned schema change is accepted.
 - Do not include real user, campaign, credential, provider-export, or live fraud-defense data in public fixtures or documentation.
 

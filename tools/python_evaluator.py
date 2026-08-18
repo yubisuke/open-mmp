@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Independent Python evaluator for Open MMP Contract v0.1 fixtures."""
+"""Independent Python evaluator for Open MMP Contract v0.2 fixtures."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from typing import Any
 
 import rfc8785
 
-CONTRACT_VERSION = "0.1.0"
+CONTRACT_VERSION = "0.2.0"
 ZERO_HASH = "0" * 64
 DAY_MS = 86_400_000
 

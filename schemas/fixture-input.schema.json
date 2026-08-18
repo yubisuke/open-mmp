@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:open-mmp:schema:fixture-input:v0.1",
-  "title": "Open MMP Contract Fixture Input v0.1",
+  "$id": "urn:open-mmp:schema:fixture-input:v0.2",
+  "title": "Open MMP Contract Fixture Input v0.2",
   "type": "object",
   "additionalProperties": false,
   "required": ["contract_version", "fx_policy", "metric_evaluations", "reconciliation_inputs", "privacy_requests"],
   "properties": {
-    "contract_version": { "const": "0.1.0" },
+    "contract_version": { "const": "0.2.0" },
     "server_context": { "$ref": "#/$defs/serverContext" },
     "records": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/record" } },
     "batches": {
@@ -46,11 +46,11 @@
     },
     "privacy_requests": {
       "type": "array",
-      "items": { "$ref": "urn:open-mmp:schema:privacy-request:v0.1" }
+      "items": { "$ref": "urn:open-mmp:schema:privacy-request:v0.2" }
     },
     "correction_inputs": {
       "type": "array",
-      "items": { "$ref": "urn:open-mmp:schema:correction:v0.1" }
+      "items": { "$ref": "urn:open-mmp:schema:correction:v0.2" }
     }
   },
   "oneOf": [
@@ -135,7 +135,7 @@
         "occurred_at_source", "received_at", "payload", "processing_sequence"
       ],
       "properties": {
-        "contract_version": { "const": "0.1.0" },
+        "contract_version": { "const": "0.2.0" },
         "record_id": { "$ref": "common.schema.json#/$defs/id" },
         "delivery_id": { "$ref": "common.schema.json#/$defs/id" },
         "tenant_id": { "$ref": "common.schema.json#/$defs/id" },
@@ -144,7 +144,7 @@
         "producer_version": { "type": "string", "minLength": 1 },
         "event_id": { "$ref": "common.schema.json#/$defs/id" },
         "event_name": { "enum": ["click", "install", "session_start", "ad_impression", "ad_revenue", "purchase", "refund", "consent_changed"] },
-        "schema_version": { "const": "0.1.0" },
+        "schema_version": { "const": "0.2.0" },
         "occurred_at": { "$ref": "common.schema.json#/$defs/dateTime" },
         "occurred_at_source": { "enum": ["device", "server", "import"] },
         "received_at": { "$ref": "common.schema.json#/$defs/dateTime" },

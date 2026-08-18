@@ -1,8 +1,8 @@
 {
   "name": "open-mmp-contract",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "Open MMP Event & Metric Contract v0.1 reference validation",
+  "description": "Open MMP Event & Metric Contract v0.2 reference validation",
   "type": "module",
   "engines": {
     "node": "22.18.0",

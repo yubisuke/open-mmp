@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { canonicalize } from "json-canonicalize";
-import type { OpenMMPEvaluationOutputV01 as EvaluationOutput } from "./generated/contract-types.js";
+import type { OpenMMPEvaluationOutputV02 as EvaluationOutput } from "./generated/contract-types.js";
 
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 type Any = Record<string, any>;
@@ -18,7 +18,7 @@ type Reconciliation = EvaluationOutput["reconciliation"][number];
 type EvidenceRef = Attribution["evidence_refs"][number];
 type LifecycleStatus = EvidenceRef["lifecycle_status"];
 
-const CONTRACT_VERSION = "0.1.0";
+const CONTRACT_VERSION = "0.2.0";
 const HASH = "0".repeat(64);
 const DAY_MS = 86_400_000;
 
