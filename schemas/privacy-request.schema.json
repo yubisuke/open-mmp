@@ -33,7 +33,10 @@
   "allOf": [
     {
       "if": { "properties": { "status": { "const": "completed" } } },
-      "then": { "required": ["completed_at"] }
+      "then": {
+        "properties": { "completed_at": {} },
+        "required": ["completed_at"]
+      }
     }
   ]
 }

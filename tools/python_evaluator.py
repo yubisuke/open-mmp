@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sys
+from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -24,34 +25,81 @@ def digest(value: Any) -> str:
     return hashlib.sha256(rfc8785.dumps(value)).hexdigest()
 
 
-def timestamp(value: str | None) -> datetime | None:
+class TimestampInvalidError(ValueError):
+    """A contract timestamp failed exact calendar round-trip validation."""
+
+    exit_code = 1
+
+
+def timestamp(value: str | None, field: str) -> datetime:
     if not value:
-        return None
+        raise TimestampInvalidError(f"timestamp_invalid: {field}={value}")
     try:
-        return datetime.strptime(value, "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=timezone.utc)
-    except ValueError:
-        return None
+        parsed = datetime.strptime(value, "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=timezone.utc)
+    except (TypeError, ValueError) as error:
+        raise TimestampInvalidError(f"timestamp_invalid: {field}={value}") from error
+    round_trip = parsed.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+    if round_trip != value:
+        raise TimestampInvalidError(f"timestamp_invalid: {field}={value}")
+    return parsed
 
 
-def identifier(value: dict[str, Any]) -> str:
-    for key in (
-        "record_id", "delivery_id", "logical_event_id", "correction_id",
-        "privacy_request_id", "attribution_id", "metric_run_id",
-        "fraud_decision_id", "reconciliation_id", "candidate_id",
-    ):
-        if value.get(key) is not None:
-            return str(value[key])
-    return ""
+def utf16_key(value: str) -> tuple[int, ...]:
+    encoded = value.encode("utf-16-le", errors="surrogatepass")
+    return tuple(encoded[index] | (encoded[index + 1] << 8) for index in range(0, len(encoded), 2))
 
 
-def ordered(values: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return sorted(values, key=lambda value: (
-        identifier(value),
-        str(value.get("tenant_id", "")),
-        str(value.get("app_id", "")),
-        str(value.get("delivery_id", "")),
-        digest(value),
+SortKey = Callable[[dict[str, Any]], tuple[str, ...]]
+
+
+def sort_by_key(values: list[dict[str, Any]], key: SortKey) -> list[dict[str, Any]]:
+    return sorted(values, key=lambda value: tuple(
+        utf16_key(part) for part in (*key(value), digest(value))
     ))
+
+
+def raw_record_sort_key(value: dict[str, Any]) -> tuple[str, ...]:
+    return value["record_id"], value["tenant_id"], value["app_id"], value["delivery_id"]
+
+
+def delivery_sort_key(value: dict[str, Any]) -> tuple[str, ...]:
+    return value["delivery_id"], value["record_id"], value["tenant_id"], value["app_id"]
+
+
+def logical_event_sort_key(value: dict[str, Any]) -> tuple[str, ...]:
+    return value["logical_event_id"], value["tenant_id"], value["app_id"]
+
+
+def correction_sort_key(value: dict[str, Any]) -> tuple[str, ...]:
+    return value["correction_id"], value["tenant_id"], value["app_id"]
+
+
+def privacy_request_sort_key(value: dict[str, Any]) -> tuple[str, ...]:
+    return value["privacy_request_id"], value["tenant_id"], value["app_id"]
+
+
+def privacy_tombstone_sort_key(value: dict[str, Any]) -> tuple[str, ...]:
+    return value["privacy_request_id"], value["record_id"], value["tenant_id"], value["app_id"]
+
+
+def attribution_sort_key(value: dict[str, Any]) -> tuple[str, ...]:
+    return value["attribution_id"], value["tenant_id"], value["app_id"]
+
+
+def metric_run_sort_key(value: dict[str, Any]) -> tuple[str, ...]:
+    return (value["metric_run_id"],)
+
+
+def fraud_decision_sort_key(value: dict[str, Any]) -> tuple[str, ...]:
+    return (value["fraud_decision_id"],)
+
+
+def rejection_sort_key(value: dict[str, Any]) -> tuple[str, ...]:
+    return value["delivery_id"], value["record_id"], value["tenant_id"], value["app_id"]
+
+
+def reconciliation_sort_key(value: dict[str, Any]) -> tuple[str, ...]:
+    return value["reconciliation_id"], value["tenant_id"], value["app_id"]
 
 
 def flatten_attempts(value: dict[str, Any]) -> list[dict[str, Any]]:
@@ -64,9 +112,10 @@ def flatten_attempts(value: dict[str, Any]) -> list[dict[str, Any]]:
         for record in value["records"]:
             result.append({"server": value["server_context"], "record": record, "batch_id": "batch-default"})
     return sorted(result, key=lambda item: (
-        item["record"]["received_at"], item["record"]["record_id"], item["record"]["delivery_id"],
-        item["server"]["tenant_id"], item["server"]["app_id"], item["record"]["schema_version"],
-        digest(item["record"]),
+        utf16_key(item["record"]["received_at"]), utf16_key(item["record"]["record_id"]),
+        utf16_key(item["record"]["delivery_id"]), utf16_key(item["server"]["tenant_id"]),
+        utf16_key(item["server"]["app_id"]), utf16_key(item["record"]["schema_version"]),
+        utf16_key(digest(item["record"])),
     ))
 
 
@@ -193,7 +242,7 @@ def consent_decision(attempt: dict[str, Any]) -> dict[str, Any]:
             entry for entry in server.get("alternative_legal_bases", [])
             if entry["alternative_legal_basis_id"] == record.get("alternative_legal_basis_id")
             and entry["processing_purpose_id"] == record.get("processing_purpose_id")
-            and timestamp(entry["effective_at"]) <= timestamp(record["received_at"])
+            and timestamp(entry["effective_at"], "effective_at") <= timestamp(record["received_at"], "received_at")
         ),
         None,
     )
@@ -242,7 +291,7 @@ def decide(attempt: dict[str, Any], attempts: list[dict[str, Any]]) -> dict[str,
         "ingestion_status": status,
         "duplicate_resolution": duplicate,
         "timeliness": "late" if record.get("late") else "on_time",
-        "clock_skew_suspected": timestamp(record["occurred_at"]) > timestamp(record["received_at"]) + timedelta(minutes=5),
+        "clock_skew_suspected": timestamp(record["occurred_at"], "occurred_at") > timestamp(record["received_at"], "received_at") + timedelta(minutes=5),
         "payload_disposition": "discarded" if status == "rejected" and reason != "event_id_conflict" else "protected",
     } | {key: value for key, value in consent.items() if key != "allowed" and value is not None}
     if reason:
@@ -364,7 +413,9 @@ def attribution(
         or not payload.get("install_begin_at_server")
     ):
         return result("unattributed", "none", "none", "authoritative_time_missing")
-    delta = timestamp(payload["install_begin_at_server"]) - timestamp(click["record"]["payload"]["redirector_click_at"])
+    delta = timestamp(payload["install_begin_at_server"], "install_begin_at_server") - timestamp(
+        click["record"]["payload"]["redirector_click_at"], "redirector_click_at"
+    )
     if delta.total_seconds() < 0 or delta >= timedelta(days=7):
         return result("unattributed", "none", "none", "window_expired")
     return result("non_organic", "install_referrer", "last_click", "valid_install_referrer", {
@@ -393,8 +444,8 @@ def convert_money(payload: dict[str, Any], policy: dict[str, Any]) -> int:
     return round_half_even(numerator, denominator)
 
 
-def day(value: str, zone: str) -> str:
-    result = timestamp(value)
+def day(value: str, zone: str, field: str) -> str:
+    result = timestamp(value, field)
     if zone == "Asia/Tokyo":
         result += timedelta(hours=9)
     return result.date().isoformat()
@@ -411,17 +462,17 @@ def metric_runs(
         (
             "d0_install_to_24h_ad_revenue_usd",
             "UTC",
-            lambda install, revenue: timestamp(install["occurred_at"]) <= timestamp(revenue["occurred_at"]) < timestamp(install["occurred_at"]) + timedelta(days=1),
+            lambda install, revenue: timestamp(install["occurred_at"], "occurred_at") <= timestamp(revenue["occurred_at"], "occurred_at") < timestamp(install["occurred_at"], "occurred_at") + timedelta(days=1),
         ),
         (
             "d0_utc_install_calendar_ad_revenue_usd",
             "UTC",
-            lambda install, revenue: day(install["occurred_at"], "UTC") == day(revenue["occurred_at"], "UTC"),
+            lambda install, revenue: day(install["occurred_at"], "UTC", "occurred_at") == day(revenue["occurred_at"], "UTC", "occurred_at"),
         ),
         (
             "d0_jst_install_calendar_ad_revenue_usd",
             "Asia/Tokyo",
-            lambda install, revenue: day(install["occurred_at"], "Asia/Tokyo") == day(revenue["occurred_at"], "Asia/Tokyo"),
+            lambda install, revenue: day(install["occurred_at"], "Asia/Tokyo", "occurred_at") == day(revenue["occurred_at"], "Asia/Tokyo", "occurred_at"),
         ),
     ]
     output: list[dict[str, Any]] = []
@@ -432,7 +483,11 @@ def metric_runs(
             and decision_for(decisions, attempt)["duplicate_resolution"] == "unique"
             and attempt["record"]["received_at"] <= evaluation["input_received_at_watermark"]
         ]
-        included.sort(key=lambda attempt: (attempt["record"]["received_at"], attempt["record"]["record_id"], attempt["record"]["delivery_id"]))
+        included.sort(key=lambda attempt: (
+            utf16_key(attempt["record"]["received_at"]),
+            utf16_key(attempt["record"]["record_id"]),
+            utf16_key(attempt["record"]["delivery_id"]),
+        ))
         snapshot_rows = [
             [
                 attempt["record"]["received_at"],
@@ -508,7 +563,7 @@ def metric_runs(
             if evaluation.get("supersedes_metric_run_id_prefix"):
                 run["supersedes_metric_run_id"] = f"{evaluation['supersedes_metric_run_id_prefix']}:{metric_name}"
             output.append(run)
-    return ordered(output)
+    return sort_by_key(output, metric_run_sort_key)
 
 
 def reconciliation_results(value: dict[str, Any]) -> list[dict[str, Any]]:
@@ -545,7 +600,7 @@ def reconciliation_results(value: dict[str, Any]) -> list[dict[str, Any]]:
             reason = "freshness_mismatch"
         else:
             reason = "matched"
-        matching_keys = sorted(item.get("matching_keys", []), key=key)
+        matching_keys = sorted(item.get("matching_keys", []), key=lambda entry: utf16_key(key(entry)))
         output.append({
             "reconciliation_id": item["reconciliation_id"],
             "tenant_id": item["tenant_id"],
@@ -555,13 +610,13 @@ def reconciliation_results(value: dict[str, Any]) -> list[dict[str, Any]]:
             "difference_reason_code": reason,
             "difference_reason_version": CONTRACT_VERSION,
             "matching_keys": matching_keys,
-            "candidates": sorted(candidate["candidate_id"] for candidate in matched),
-            "exclusions": sorted(candidate["exclusion_reason"] for candidate in matched if candidate["excluded"]),
-            "windows": sorted(f"{candidate['candidate_id']}:{candidate['window_status']}" for candidate in matched),
-            "joins": sorted(f"{','.join(key(entry) for entry in matching_keys)}=>{candidate['candidate_id']}" for candidate in matched),
+            "candidates": sorted((candidate["candidate_id"] for candidate in matched), key=utf16_key),
+            "exclusions": sorted((candidate["exclusion_reason"] for candidate in matched if candidate["excluded"]), key=utf16_key),
+            "windows": sorted((f"{candidate['candidate_id']}:{candidate['window_status']}" for candidate in matched), key=utf16_key),
+            "joins": sorted((f"{','.join(key(entry) for entry in matching_keys)}=>{candidate['candidate_id']}" for candidate in matched), key=utf16_key),
             "freshness": matched[0]["freshness"] if matched else item["freshness"],
         })
-    return ordered(output)
+    return sort_by_key(output, reconciliation_sort_key)
 
 
 def evaluate(value: dict[str, Any]) -> dict[str, Any]:
@@ -585,8 +640,8 @@ def evaluate(value: dict[str, Any]) -> dict[str, Any]:
         if attempt_evidence_key(attempt) not in lifecycle
     ]
     logical_evidence = [attempt for attempt in accepted if attempt_evidence_key(attempt) not in lifecycle]
-    raw = ordered([raw_record(attempt, "available") for attempt in raw_evidence])
-    deliveries = ordered([
+    raw = sort_by_key([raw_record(attempt, "available") for attempt in raw_evidence], raw_record_sort_key)
+    deliveries = sort_by_key([
         {
             "contract_version": CONTRACT_VERSION,
             "delivery_id": attempt["record"]["delivery_id"],
@@ -612,8 +667,8 @@ def evaluate(value: dict[str, Any]) -> dict[str, Any]:
             if decision_for(decisions, attempt).get(key) is not None
         }
         for attempt in attempts
-    ])
-    logical = ordered([
+    ], delivery_sort_key)
+    logical = sort_by_key([
         {
             "contract_version": CONTRACT_VERSION,
             "logical_event_id": f"logical:{attempt['server']['tenant_id']}:{attempt['server']['app_id']}:{attempt['record']['producer']}:{attempt['record']['event_id']}",
@@ -623,15 +678,15 @@ def evaluate(value: dict[str, Any]) -> dict[str, Any]:
             "producer": attempt["record"]["producer"],
             "event_id": attempt["record"]["event_id"],
             "event_name": attempt["record"]["event_name"],
-            "lifecycle": "redacted" if attempt["record"]["record_id"] in lifecycle else "active",
+            "lifecycle": "active",
             "timeliness": "late" if attempt["record"].get("late") else "on_time",
         }
         for attempt in logical_evidence
-    ])
-    attributions = ordered([
+    ], logical_event_sort_key)
+    attributions = sort_by_key([
         attribution(attempt, attempts, decisions, lifecycle)
         for attempt in accepted if attempt["record"]["event_name"] == "install"
-    ])
+    ], attribution_sort_key)
     corrections: list[dict[str, Any]] = list(value.get("correction_inputs", []))
     for attempt in accepted:
         if attempt["record"]["event_name"] == "refund":
@@ -659,8 +714,11 @@ def evaluate(value: dict[str, Any]) -> dict[str, Any]:
                 "correction_reason": request["reason_code"],
                 "effective_at": request["completed_at"],
             })
-    privacy_requests = ordered([request | {"contract_version": CONTRACT_VERSION} for request in value.get("privacy_requests", [])])
-    tombstones = ordered([
+    privacy_requests = sort_by_key(
+        [request | {"contract_version": CONTRACT_VERSION} for request in value.get("privacy_requests", [])],
+        privacy_request_sort_key,
+    )
+    tombstones = sort_by_key([
         {
             "contract_version": CONTRACT_VERSION,
             "tenant_id": request["tenant_id"],
@@ -679,8 +737,8 @@ def evaluate(value: dict[str, Any]) -> dict[str, Any]:
         for request in value.get("privacy_requests", [])
         if request["status"] == "completed"
         for affected in request.get("affected_records", [])
-    ])
-    fraud = ordered([
+    ], privacy_tombstone_sort_key)
+    fraud = sort_by_key([
         {
             "fraud_decision_id": f"fraud:{attempt['record']['record_id']}",
             "subject_ref": attempt["record"]["record_id"],
@@ -701,8 +759,8 @@ def evaluate(value: dict[str, Any]) -> dict[str, Any]:
         }
         for attempt in accepted
         if attempt["record"]["event_name"] == "click" and attempt["record"]["payload"].get("bot_prefetch")
-    ])
-    rejections = ordered([
+    ], fraud_decision_sort_key)
+    rejections = sort_by_key([
         {
             "contract_version": CONTRACT_VERSION,
             "delivery_id": decision["delivery_id"],
@@ -722,12 +780,12 @@ def evaluate(value: dict[str, Any]) -> dict[str, Any]:
             if decision.get(key) is not None
         }
         for decision in decisions_list if decision["ingestion_status"] == "rejected"
-    ])
+    ], rejection_sort_key)
     return {
         "raw_records": raw,
         "deliveries": deliveries,
         "logical_events": logical,
-        "corrections": ordered(corrections),
+        "corrections": sort_by_key(corrections, correction_sort_key),
         "privacy_requests": privacy_requests,
         "privacy_tombstones": tombstones,
         "attributions": attributions,
@@ -746,13 +804,40 @@ def conformance() -> None:
     print(canonical(vector))
 
 
+def batch() -> None:
+    requests = json.load(sys.stdin)
+    if not isinstance(requests, list):
+        raise ValueError("batch input must be a JSON array")
+    results: list[dict[str, Any]] = []
+    for value in requests:
+        try:
+            results.append({"ok": True, "output": evaluate(value)})
+        except TimestampInvalidError as error:
+            results.append({
+                "ok": False,
+                "error": {
+                    "name": "TimestampInvalidError",
+                    "message": str(error),
+                    "exit_code": error.exit_code,
+                },
+            })
+    print(canonical(results))
+
+
 if __name__ == "__main__":
+    sys.stdin.reconfigure(encoding="utf-8")
     sys.stdout.reconfigure(encoding="utf-8")
-    if len(sys.argv) == 2 and sys.argv[1] == "--conformance":
-        conformance()
-    else:
-        if sys.argv[1] == "-":
-            print(canonical(evaluate(json.load(sys.stdin))))
+    try:
+        if len(sys.argv) == 2 and sys.argv[1] == "--conformance":
+            conformance()
+        elif len(sys.argv) == 2 and sys.argv[1] == "--batch":
+            batch()
         else:
-            with open(sys.argv[1], encoding="utf-8") as source:
-                print(canonical(evaluate(json.load(source))))
+            if sys.argv[1] == "-":
+                print(canonical(evaluate(json.load(sys.stdin))))
+            else:
+                with open(sys.argv[1], encoding="utf-8") as source:
+                    print(canonical(evaluate(json.load(source))))
+    except TimestampInvalidError as error:
+        print(str(error), file=sys.stderr)
+        raise SystemExit(1) from None

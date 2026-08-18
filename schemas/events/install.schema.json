@@ -25,11 +25,19 @@
   "allOf": [
     {
       "if": { "properties": { "install_type": { "enum": ["reinstall", "redownload"] } }, "required": ["install_type"] },
-      "then": { "required": ["prior_installation_id"] }
+      "then": {
+        "properties": { "prior_installation_id": {} },
+        "required": ["prior_installation_id"]
+      }
     },
     {
       "if": { "properties": { "install_type": { "const": "first_install" } }, "required": ["install_type"] },
-      "then": { "not": { "required": ["prior_installation_id"] } }
+      "then": {
+        "not": {
+          "properties": { "prior_installation_id": {} },
+          "required": ["prior_installation_id"]
+        }
+      }
     }
   ]
 }
