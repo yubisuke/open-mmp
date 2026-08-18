@@ -10,7 +10,7 @@ Contract v0.2 is an in-place contract migration from the immutable `contract-v0.
 | `contract_version` and event `schema_version` `0.1.0` | `0.2.0` | Object versions identify the matching in-place schema set. |
 | `registries/*-v0.1.json` | `registries/*-v0.2.json` | Registry values and compatibility rules are versioned with the contract. |
 | `fixtures/v0.1/` | `fixtures/v0.2/` | Reviewed fixture inputs and outputs are a versioned set. |
-| 11 expected output classes | 12 expected output classes | `expected_metric_definitions.json` makes versioned metric definitions reviewable outputs. |
+| 11 expected output classes | 13 expected output classes | `expected_metric_definitions.json` and `expected_cost_records.json` make versioned metric definitions and append-only cost snapshots reviewable outputs. |
 
 The `contract-v0.1` tag points to the pre-migration `main` commit. The versioning rules are in [schema-versioning.md](schema-versioning.md).
 
@@ -37,6 +37,13 @@ The `contract-v0.1` tag points to the pre-migration `main` commit. The versionin
 | Producer vocabulary | Adds `sdk-ios`, `adapter:<network>`, and `postback:<kind>`; preserves `sdk-android`, `redirector`, and `import:<provider>`. | Distinguishes event origin and deployment-private adapter classes (WO-3 A4). |
 | Stale timestamp policy | Adds optional closed server-context `timestamp_stale_policy` and rejection `timestamp_stale`; stale delivery/rejection artifacts carry the server authority plus the version and digest bound to the boundary. | Separates calendar-valid evidence outside the configured retention boundary from invalid timestamps with reproducible policy provenance (WO-3 A5). |
 | Import reconciliation | Maps payload `provider_click_ref` to the existing `provider_click_id` matching-key type, derives reconciliation input from accepted imported installs, and emits only provider-namespaced SHA-256 key values with protected access classification. | Preserves the WO-2 matching-key vocabulary, prevents cross-provider key collisions and raw-reference disclosure, and removes fixture/caller-authored reconciliation as a prerequisite for Shadow import (WO-3 A2). |
+| Click and install dimensions | Adds typed optional reporting dimensions to click and install, including first-party `attribution_confirmed_at`. | Keeps reporting dimensions in closed schemas and distinguishes first-party confirmation from imported provider confirmation (WO-3 B1/B2). |
+| Advertiser-side view event | Adds `ad_view`; `ad_impression` remains mediation-side evidence. | Prevents two different observation points from becoming aliases (WO-3 B4). |
+| Ad-revenue scope | Requires `subject_scope`; installation-level revenue requires `installation_id`, aggregate revenue forbids it. Adds optional mediation/country/ad-unit evidence, S2S-only `anchor_source`, and `currency_source`. | Makes cohort eligibility and default-currency provenance explicit (WO-3 B3/B9). |
+| Cost record | Adds append-only imported-reported cost with exact dimension and report-snapshot digests. The work-order term `spend` uses the existing v0.2 money names `amount_unscaled`, `amount_scale`, and `currency`. | Reuses the canonical money representation and makes revision selection reproducible (WO-3 B5). |
+| Metric definition and run | Replaces the fixed three-name contract with typed data-driven calculations and grouping; adds money, ratio, and count run shapes. | Supports D1/D3/D7 ROAS, D1/D7 retention, cohort LTV, and cohort size without hard-coded metric-name branching (WO-3 B6/B7). |
+| FX aggregation | Converts and half-even rounds each source event before summing target units. | Prevents aggregate-first rounding drift (WO-3 B8). |
+| Import normalization | Higher-precision timestamps truncate to canonical milliseconds; missing upstream currency is supplied by deployment policy with `currency_source=default`. | Makes import-boundary normalization explicit and reproducible (WO-3 B9). |
 
 ## Existing fixture input migration
 
@@ -136,7 +143,7 @@ Abbreviations in the field column are exact field names: `cv=contract_version`, 
 
 ## New fixture and golden ledger
 
-Each row below adds `input.json` and all 12 reviewed golden files: `expected_raw_records.json`, `expected_deliveries.json`, `expected_logical_events.json`, `expected_corrections.json`, `expected_privacy_requests.json`, `expected_privacy_tombstones.json`, `expected_attributions.json`, `expected_metric_definitions.json`, `expected_metric_runs.json`, `expected_fraud_decisions.json`, `expected_rejections.json`, and `expected_reconciliation.json`. Empty arrays are explicit expected results.
+Each row below adds `input.json` and all 13 reviewed golden files: `expected_raw_records.json`, `expected_deliveries.json`, `expected_logical_events.json`, `expected_corrections.json`, `expected_privacy_requests.json`, `expected_privacy_tombstones.json`, `expected_attributions.json`, `expected_metric_definitions.json`, `expected_metric_runs.json`, `expected_cost_records.json`, `expected_fraud_decisions.json`, `expected_rejections.json`, and `expected_reconciliation.json`. Empty arrays are explicit expected results.
 
 Stage A also hardens the provider-key inputs introduced with fixtures 21 through 23: fixtures 21 and 23 change their reconciliation golden as described below, while fixture 22 changes only its unmatched candidate input and therefore has no golden change. The exact synthetic source-to-digest calculations for fixtures 01, 03, 19, 21, 22, 23, and 28 through 31 are listed in `fixtures/v0.2/README.md`.
 
@@ -155,17 +162,32 @@ Stage A also hardens the provider-key inputs introduced with fixtures 21 through
 | 30 `imported-time-authority-unavailable` | Imported non-organic judgment with `provider_time_authority_unavailable`, imported ad-revenue context, and accepted `postback:synthetic-kind` evidence. | WO-3 A1, A3, A4, A6(c). |
 | 31 `imported-reconciliation-derived` | Empty authored reconciliation input; evaluator-derived `matched` and `join_key_missing` rows, plus `provider_modeled_conversion`, `provider_unattributed`, and accepted `adapter:synthetic-network` evidence. | WO-3 A1, A2, A4, A6(d). |
 | 32 `timestamp-stale` | Rejected delivery/rejection with `timestamp_stale`, server-authoritative policy version/digest provenance, discarded payload, and no raw/logical evidence. | WO-3 A5. |
+| 33 `stage-b-cohort-metrics` | Typed click/install/ad-view evidence, installation and aggregate revenue, current append-only cost revision, seven data-driven metric definitions, and independently reviewed D1/D3/D7 ROAS, D1/D7 retention, D7 LTV, and cohort-size runs. | WO-3 B1-B9. |
+
+### Stage B golden-change ledger
+
+This subsection is exhaustive relative to the accepted Stage A commit `c5c41b3c0cc6bd08c565dd0376ce1b4f5d64105d`.
+
+| Fixtures | Golden file | Exact Stage B change |
+| --- | --- | --- |
+| 01-32 | `expected_cost_records.json` | Adds the thirteenth output class as an explicit empty array. |
+| 01-32 | `expected_metric_definitions.json` | Replaces the three fixed-name records with structured `value_type` and `definition` fields while preserving the same baseline metric semantics and names. |
+| 08, 09, 17, 26, 27 | `expected_metric_runs.json` | Adds `value_type=money`; values and prior lifecycle/supersession semantics remain unchanged. |
+| 08, 09, 27, 30 | `expected_raw_records.json` | Recomputes `payload_sha256` after the synthetic ad-revenue inputs add required `subject_scope` and fixture 30 adds `currency_source=reported`. |
+| 33 | all 13 `expected_*.json` files | Adds the new Stage B scenario. Non-empty cost, event, metric-definition, and metric-run artifacts are derived in `fixtures/v0.2/README.md`; all empty arrays are explicit reviewed results. |
+
+Stage B input changes are exact: fixtures 08, 09, 17, 26, and 27 add `subject_scope=installation_level` to each ad-revenue payload; fixture 30 adds that scope plus `currency_source=reported`; fixture 33 is new. No other Stage A input or golden content changes in this stage.
 
 ## Inventory reconciliation
 
-The v0.2 fixture tree contains 32 `input.json` files and `32 * 12 = 384` golden output files, plus this README: 417 paths in the resulting tree. The base migration changes every inherited fixture-tree path because the version directory moves from v0.1 to v0.2; Git may display unchanged files as renames. Relative to the completed WO-2 tree, WO-3 Stage A adds five inputs and 60 reviewed golden files, and content-updates exactly five existing reconciliation goldens: fixtures 01, 03, 19, 21, and 23. Use:
+The v0.2 fixture tree contains 33 `input.json` files and `33 * 13 = 429` golden output files, plus this README: 463 paths in the resulting tree. The base migration changes every inherited fixture-tree path because the version directory moves from v0.1 to v0.2; Git may display unchanged files as renames. Relative to the completed WO-2 tree, WO-3 Stage A adds five inputs and 60 reviewed golden files, and content-updates exactly five existing reconciliation goldens: fixtures 01, 03, 19, 21, and 23. Stage B then adds one input, 13 fixture-33 goldens, 32 explicit cost-output goldens, and the exact existing-content changes listed above. Use:
 
 ```bash
 git diff --name-status --find-renames contract-v0.1..HEAD -- fixtures/
 git diff --stat contract-v0.1..HEAD -- fixtures/
 ```
 
-The expected new-side inventory is 32 inputs, 384 golden files, and one README. The tables above account for every content-changed inherited golden and every new golden; all remaining inherited goldens are path-only moves.
+The expected new-side inventory is 33 inputs, 429 golden files, and one README. The tables above account for every content-changed inherited golden and every new golden; all remaining inherited goldens are path-only moves.
 
 ## Consumer migration
 

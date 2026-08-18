@@ -10,6 +10,7 @@ This document is normative for the v0.2 schemas, registries, fixtures, and refer
 - Schema identifiers use `urn:open-mmp:schema:<artifact>:v0.2`.
 - Contract objects are closed. A documented `extensions` object is the only open extension point. The fixture envelope's payload container is dispatched by `event_name` and then validated by the corresponding closed event schema.
 - Accepted contract timestamps use UTC RFC 3339 with exactly millisecond precision and a trailing `Z`, for example `2026-08-12T00:00:00.000Z`.
+- An importer that receives a higher-precision upstream timestamp truncates, and never rounds, the fractional part to milliseconds before creating a contract object. The resulting millisecond string is the canonical contract timestamp; protected upstream evidence may be retained outside this normalized field.
 - Ingress timestamp strings first pass the millisecond-`Z` syntax boundary. Evaluators then require a real UTC calendar instant. A syntactically shaped but calendrically invalid value follows the formal `timestamp_invalid` rejection path before window, skew, or bucket evaluation; its payload is discarded and only non-identifying delivery/rejection metadata is emitted. Accepted output timestamps also satisfy the schema `date-time` format.
 - A server context may set the closed `timestamp_stale_policy` object. Its server-authoritative `before` boundary, `policy_version`, and `authority=server` are bound by `policy_digest=SHA-256(JCS({authority,before,policy_version}))`. A calendar-valid event whose `occurred_at` is strictly earlier than `before` follows the `timestamp_stale` rejection path; equality is accepted. The policy does not compare `provider_confirmed_at`. Absence of the object explicitly disables stale rejection. A stale rejection carries the policy version, digest, and authority, discards the payload, and remains distinct from `timestamp_invalid`.
 - String ordering in evaluator outputs is by UTF-16 code unit.
@@ -80,6 +81,10 @@ For Install Referrer attribution:
 - A client timestamp exactly five minutes after receipt is normal. A later value is retained with `clock_skew_suspected=true`.
 - Missing authority yields `authoritative_time_missing`; explicitly invalid protected authority evidence yields `authoritative_time_invalid`. Device time never substitutes.
 
+Click payloads may carry the typed reporting dimensions `ad_group_id`, `creative_id`, `network`, `country`, `site_id`, and the protected opaque `remote_click_ref`. Install payloads may carry `country`, `app_version`, `os_version`, `sdk_version`, `ad_tracking_limited`, and `attribution_confirmed_at`. The last field records first-party confirmation time and is distinct from imported `import_context.provider_confirmed_at`.
+
+`ad_impression` is mediation-side impression evidence. `ad_view` is the advertiser-side view event. The two names are not aliases and are retained independently. Ad revenue declares `subject_scope=installation_level | aggregate`; installation-level revenue requires `installation_id`, while aggregate revenue forbids it and is never joined into an installation cohort. Optional mediation, country, and ad-unit dimensions remain evidence. `anchor_source` is accepted only from an authenticated `postback:<kind>` producer because it denotes server-to-server anchoring.
+
 ## Consent and withdrawal
 
 Consent is evaluated per server-configured `processing_purpose_id`.
@@ -122,7 +127,7 @@ An accepted install produced by `import:<provider>` may carry the closed `import
 
 The canonical provider dimension field names are `provider_network`, `provider_site_ref`, and `provider_country`. They implement the Stage A work-order proposals `network`, `site_ref`, and `country` while preserving the v0.2 closed-context namespace.
 
-## Money, FX, and D0 metrics
+## Money, FX, cost, and cohort metrics
 
 Source money is:
 
@@ -130,17 +135,25 @@ Source money is:
 - `amount_scale`: integer from 0 through 18
 - `currency`: uppercase ISO 4217 code
 
-The reference evaluator joins revenue to one explicit accepted installation anchor with the same authenticated tenant, app, and `installation_id`. It converts to the metric currency with a fixed synthetic FX policy using integer arithmetic and half-even rounding. Metric runs record the FX rate, source, as-of time, rate-snapshot digest, policy version, and rounding mode.
+The reference evaluator joins installation-level revenue to one explicit accepted installation anchor with the same authenticated tenant, app, and `installation_id`. It converts each source event independently to the metric currency with integer arithmetic and half-even rounding, then sums the rounded target units. Rounding only after summing unrounded source values is not conforming. Metric runs record the FX rate, source, as-of time, rate-snapshot digest, policy version, and rounding mode.
+
+Imported source money with an absent or empty upstream currency is normalized before contract ingress. The deployment supplies an uppercase ISO 4217 `currency`, and the event records `currency_source=default`; an explicit upstream value records `currency_source=reported`. Empty currency strings are never accepted by the closed event schema.
 
 All amounts are nonnegative; direction is expressed by event type and `financial_status`. A refund is a refund event, not a negative purchase or ad-revenue amount.
 
-The three independent v0.2 definitions are:
+The three baseline v0.2 definitions are:
 
 - `d0_install_to_24h_ad_revenue_usd`: `[install.occurred_at, install.occurred_at + 24 hours)`
 - `d0_utc_install_calendar_ad_revenue_usd`
 - `d0_jst_install_calendar_ad_revenue_usd`
 
 Metric names are stable aliases; the definition fields remain authoritative.
+
+Metric definitions are data, not hard-coded evaluator branches. A definition declares its name and version, anchor, time zone, value type, structured calculation, window, activity-event set when applicable, and rule-bundle identity. `activity_events` defaults semantically to `session_start` for retention when omitted by a deployment-owned definition. Metric runs repeat the value type and include either money fields, a ratio scale, or a count value. Optional grouping stores typed dimensions and `dimension_digest=SHA-256(JCS(dimensions))` over exactly the dimensions present.
+
+Cost records are append-only imported reports. Their required identity is tenant, app, network, campaign, acquisition date, money, source, `as_of`, report-snapshot digest, and a dimension digest. `ad_group_id` and `country` are optional. `dimension_digest` is SHA-256 over RFC 8785 JCS of exactly the present ordered-key object drawn from `network`, `campaign_id`, `ad_group_id`, and `country`. For each `(tenant_id, app_id, dimension_digest)`, the current row is the latest `as_of` at or before the metric watermark. Revisions do not overwrite older rows.
+
+The reference definitions support elapsed-window D1, D3, and D7 ROAS, activity-day D1 and D7 retention, cohort LTV, and cohort installation count. Cohort grouping is anchored to the install and may include campaign, network, country, and the install date in the metric time zone. Revenue windows are half-open from install time through `install + (N + 1) days`; retention counts installations with an accepted configured activity event on activity day N; cohort LTV divides cumulative rounded revenue by cohort size; ROAS divides cumulative rounded revenue by the current acquisition-date cost snapshot. Missing eligible cost is undefined and fails closed rather than becoming zero.
 
 ## Input snapshots and recalculation
 
@@ -152,6 +165,8 @@ Snapshot rows are sorted by `(received_at, record_id)` and contain:
 - `record_id`
 - evidence lifecycle status for that evaluation
 - policy digest
+
+When a metric uses cost, the snapshot also includes the selected current cost row as `['cost', as_of, cost_record_id, report_snapshot_digest, dimension_digest]`. Cost rows participate in `input_snapshot_id`, evidence, and reproducibility even though the raw-event `input_ledger_position` remains the last accepted event record.
 
 `input_snapshot_id` is the JCS/SHA-256 digest of those rows. `input_ledger_position` is the final `received_at|record_id` pair. A later eligible record produces a different snapshot and an immutable replacement run with `supersedes_metric_run_id`.
 
@@ -212,7 +227,7 @@ Production signals, IP or User-Agent values, live thresholds, model weights, wat
 
 ## Reviewed fixture and validation gate
 
-The reviewed gate compiles 22 schemas and validates 7 registries. The 32 fixture directories contain synthetic input plus 12 reviewed golden output classes: raw records, deliveries, logical events, corrections, privacy requests, privacy tombstones, attributions, metric definitions, metric runs, public fraud decisions, rejections, and reconciliation. Fixture 10 demonstrates both paid reinstall attribution and no-referrer redownload attribution. Fixtures 28 through 32 exercise imported attribution, automatically derived reconciliation, every registered producer form, and stale-evidence rejection. Validation also exercises invalid calendar timestamps, reconciliation reasons, attribution supersession, replay suspicion, retention expiry, impression-to-revenue evidence, reorder invariance, install-type evidence dominance, record-ID collision, click ambiguity, and scoped-reference mutations; golden files remain committed review artifacts.
+The reviewed gate compiles 24 schemas and validates 7 registries. The 33 fixture directories contain synthetic input plus 13 reviewed golden output classes: raw records, deliveries, logical events, corrections, privacy requests, privacy tombstones, attributions, metric definitions, metric runs, cost records, public fraud decisions, rejections, and reconciliation. Fixture 10 demonstrates both paid reinstall attribution and no-referrer redownload attribution. Fixtures 28 through 32 exercise imported attribution, automatically derived reconciliation, every registered producer form, and stale-evidence rejection. Fixture 33 exercises reporting dimensions, advertiser-side ad views, installation and aggregate revenue, default-currency provenance, append-only cost revisions, per-event half-even FX, ROAS, retention, and cohort LTV/count. Validation also exercises invalid calendar timestamps, reconciliation reasons, attribution supersession, replay suspicion, retention expiry, impression-to-revenue evidence, reorder invariance, install-type evidence dominance, record-ID collision, click ambiguity, millisecond normalization boundaries, and scoped-reference mutations; golden files remain committed review artifacts.
 
 The validation command never writes fixture files. `npm run validate`:
 
@@ -240,4 +255,5 @@ Environment setup is `npm ci` and `python -m pip install --require-hashes --requ
 - `canonical_record_id`, invalid timestamp rejection, completed privacy-subject HMAC handling, tombstone provenance, and retention-expiry recalculation are defined explicitly.
 - Metric definitions are reviewed fixture outputs. Eight additional required scenarios cover invalid timestamps, three reconciliation differences, attribution supersession, replay suspicion, retention expiry, and impression-to-revenue linkage.
 - Stage A of the v0.2 extension adds provider-reported attribution as a separate imported method, closed import context, automatic import reconciliation, explicit producer forms, and `timestamp_stale`; none of these changes name or rate an incumbent provider.
+- Stage B adds typed click/install reporting dimensions, advertiser-side `ad_view`, scoped ad revenue, append-only cost records, data-driven metric definitions, per-event half-even conversion, and deterministic ROAS, retention, and cohort metrics.
 - Full migration details and the golden-change ledger are in `docs/contract-v0.2-migration.md`.

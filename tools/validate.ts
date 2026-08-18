@@ -215,6 +215,7 @@ const outputSchemaIds: Record<string, string> = {
   privacy_requests: "urn:open-mmp:schema:privacy-request:v0.2",
   privacy_tombstones: "urn:open-mmp:schema:privacy-tombstone:v0.2",
   attributions: "urn:open-mmp:schema:attribution-result:v0.2",
+  cost_records: "urn:open-mmp:schema:cost-record:v0.2",
   metric_definitions: "urn:open-mmp:schema:metric-definition:v0.2",
   metric_runs: "urn:open-mmp:schema:metric-run:v0.2",
   fraud_decisions: "urn:open-mmp:schema:fraud-decision:v0.2",
@@ -252,6 +253,7 @@ function pythonBatch(inputs: Any[]): PythonBatchResult[] {
   return JSON.parse(execFileSync("python", [join(root, "tools", "python_evaluator.py"), "--batch"], {
     input: JSON.stringify(inputs),
     encoding: "utf8",
+    maxBuffer: 16 * 1024 * 1024,
   }));
 }
 
@@ -302,6 +304,14 @@ function validateRegistryReferences(output: Any, label: string): void {
     for (const evidence of run.evidence_refs) {
       check(typeof evidence.tenant_id === "string" && typeof evidence.app_id === "string", `unqualified metric evidence in ${label}`);
     }
+  }
+  for (const cost of output.cost_records) {
+    const dimensions = Object.fromEntries(
+      ["network", "campaign_id", "ad_group_id", "country"]
+        .filter((field) => cost[field] !== undefined)
+        .map((field) => [field, cost[field]]),
+    );
+    check(cost.dimension_digest === sha256(dimensions), `cost dimension digest mismatch in ${label}`);
   }
   for (const definition of output.metric_definitions) {
     check(definition.metric_definition_version === "0.2.0", `wrong metric definition version in ${label}`);
@@ -446,7 +456,7 @@ if (!summaryOnly) {
         check(value.contract_version === "0.2.0", `registry version: ${name}`);
         if (name === "events") {
           unique(value.event_names, "event name");
-          check(value.event_names.length === 8, "event-name registry must contain the eight v0.2 events");
+          check(value.event_names.length === 9, "event-name registry must contain the nine Stage B v0.2 events");
         } else if (name === "reasons") {
           for (const [reasonName, values] of Object.entries(value).filter(([key]) => key !== "contract_version")) {
             if (Array.isArray(values)) unique(values, `reason code in ${reasonName}`);
@@ -522,8 +532,8 @@ if (!summaryOnly) {
         }
       });
     }
-    it("contains 32 fixture directories", () => {
-      check(fixtureDirs.length === 32, `expected 32 fixture directories, found ${fixtureDirs.length}`);
+    it("contains 33 fixture directories", () => {
+      check(fixtureDirs.length === 33, `expected 33 fixture directories, found ${fixtureDirs.length}`);
     });
   });
 
@@ -748,12 +758,19 @@ const scenarios: Array<[string, () => void]> = [
     check(value.rejections.length === 1 && value.rejections[0].reason_code === "timestamp_stale", "scenario 32 stale rejection");
     check(value.raw_records.length === 0 && value.logical_events.length === 0, "scenario 32 payload discarded");
   }],
+  ["33 Stage B cohort dimensions cost and metrics", () => {
+    const value = fixture("33-stage-b-cohort-metrics");
+    const metrics = Object.fromEntries(value.output.metric_runs.map((item: Any) => [item.metric_name, item]));
+    check(metrics.d1_roas.value_unscaled === "500000" && metrics.d3_roas.value_unscaled === "1000000" && metrics.d7_roas.value_unscaled === "1500000", "scenario 33 ROAS");
+    check(metrics.retention_d1.value_unscaled === "1000000" && metrics.retention_d7.value_unscaled === "1000000", "scenario 33 retention");
+    check(metrics.cohort_ltv_d7_usd.value_unscaled === "150000000" && metrics.cohort_install_count.value_unscaled === "1", "scenario 33 LTV and count");
+  }],
 ];
 if (!summaryOnly) {
   describe("reviewed scenarios", () => {
     for (const [name, assertion] of scenarios) it(name, assertion);
-    it("contains 32 scenario assertions", () => {
-      check(scenarios.length === 32, "scenario assertion inventory must contain 32 entries");
+    it("contains 33 scenario assertions", () => {
+      check(scenarios.length === 33, "scenario assertion inventory must contain 33 entries");
     });
   });
 
@@ -899,12 +916,86 @@ if (!summaryOnly) {
       check(!capture(() => evaluate(mismatchedDigest)).ok, "stale policy digest was not bound to canonical policy fields");
     });
   });
+
+  describe("WO-3 Stage B dimensions metrics and money", () => {
+    it("preserves click and install dimensions and separates advertiser views from mediation impressions", () => {
+      const value = fixture("33-stage-b-cohort-metrics");
+      const click = value.input.records.find((record: Any) => record.record_id === "click-33").payload;
+      const install = value.input.records.find((record: Any) => record.record_id === "install-33").payload;
+      check([click.ad_group_id, click.creative_id, click.network, click.country, click.site_id, click.remote_click_ref].every(Boolean), "Stage B click dimensions");
+      check(install.country === "JP" && install.app_version && install.os_version && install.sdk_version && install.ad_tracking_limited === false && install.attribution_confirmed_at, "Stage B install dimensions");
+      check(value.output.raw_records.some((record: Any) => record.event_name === "ad_view"), "Stage B advertiser-side ad_view");
+      check(eventNames.includes("ad_impression") && eventNames.includes("ad_view"), "Stage B advertiser and mediation event names");
+    });
+    it("supports installation and aggregate ad revenue without inventing an installation anchor", () => {
+      const value = fixture("33-stage-b-cohort-metrics");
+      const aggregate = value.input.records.find((record: Any) => record.record_id === "aggregate-revenue-33");
+      const validator = validatorFor("urn:open-mmp:schema:event-ad-revenue:v0.2");
+      check(aggregate.payload.subject_scope === "aggregate" && aggregate.payload.installation_id === undefined, "Stage B aggregate revenue identity");
+      check(aggregate.payload.currency === "USD" && aggregate.payload.currency_source === "default", "Stage B default currency provenance");
+      check(validator({ ...aggregate.payload, event_name: "ad_revenue" }), `Stage B aggregate revenue schema: ${ajv.errorsText(validator.errors)}`);
+      check(!validator({ ...aggregate.payload, installation_id: "installation:forbidden", event_name: "ad_revenue" }), "aggregate revenue accepted installation identity");
+      const installation = value.input.records.find((record: Any) => record.record_id === "revenue-33-a").payload;
+      const missing = { ...installation, event_name: "ad_revenue" };
+      delete missing.installation_id;
+      check(!validator(missing), "installation-level revenue accepted without installation_id");
+    });
+    it("limits synthetic anchor_source to authenticated S2S postback producers", () => {
+      const mutated = structuredClone(fixture("33-stage-b-cohort-metrics").input);
+      mutated.records.find((record: Any) => record.record_id === "revenue-33-a").payload.anchor_source = "server_user_ref";
+      check(!capture(() => evaluate(mutated)).ok, "non-S2S ad revenue accepted anchor_source");
+      check(!capture(() => pythonOutputs([mutated])).ok, "Python accepted non-S2S ad revenue anchor_source");
+    });
+    it("selects the latest cost revision and binds it to the metric snapshot", () => {
+      const value = fixture("33-stage-b-cohort-metrics");
+      check(value.output.cost_records.length === 2 && value.output.cost_records.every((record: Any) => record.ad_group_id === undefined), "Stage B optional cost ad_group_id");
+      const d7 = value.output.metric_runs.find((run: Any) => run.metric_name === "d7_roas");
+      check(d7.evidence_refs.some((evidence: Any) => evidence.ref === "cost-33") && !d7.evidence_refs.some((evidence: Any) => evidence.ref === "cost-33-old"), "Stage B current cost evidence");
+      const changed = structuredClone(value.input);
+      changed.cost_records[1].report_snapshot_digest = "3".repeat(64);
+      const changedRun = evaluate(changed).metric_runs.find((run: Any) => run.metric_name === "d7_roas");
+      check(changedRun, "Stage B changed cost run missing");
+      check(changedRun.value_unscaled === d7.value_unscaled && changedRun.input_snapshot_id !== d7.input_snapshot_id, "Stage B cost snapshot binding");
+      const invalid = structuredClone(value.input);
+      invalid.cost_records[1].dimension_digest = "4".repeat(64);
+      check(!capture(() => evaluate(invalid)).ok, "Stage B invalid cost dimension digest");
+    });
+    it("drives ratio money and count metrics from closed definitions and grouping", () => {
+      const value = fixture("33-stage-b-cohort-metrics");
+      const runs = value.output.metric_runs;
+      check(runs.every((run: Any) => run.grouping?.dimensions.cohort_date === "2026-08-01" && /^[a-f0-9]{64}$/.test(run.grouping.dimension_digest)), "Stage B grouping contract");
+      check(runs.some((run: Any) => run.value_type === "money") && runs.some((run: Any) => run.value_type === "ratio") && runs.some((run: Any) => run.value_type === "count"), "Stage B value type coverage");
+      const validator = validatorFor("urn:open-mmp:schema:metric-definition:v0.2");
+      const ratio = value.input.metric_definitions.find((definition: Any) => definition.metric_name === "d1_roas");
+      check(validator(ratio), `Stage B ratio definition: ${ajv.errorsText(validator.errors)}`);
+      check(!validator({ ...ratio, currency: "USD" }), "ratio metric accepted currency");
+      const money = structuredClone(value.input.metric_definitions.find((definition: Any) => definition.metric_name === "cohort_ltv_d7_usd"));
+      delete money.currency;
+      check(!validator(money), "money metric accepted missing currency");
+    });
+    it("rounds each revenue event half-even before exact summation", () => {
+      const value = fixture("33-stage-b-cohort-metrics");
+      const source = value.input.records.filter((record: Any) => record.record_id.startsWith("revenue-33-"));
+      check(source.length === 3 && source.every((record: Any) => record.payload.amount_unscaled === "100000001" && record.payload.amount_scale === 6), "Stage B half-even source vector");
+      const metrics = Object.fromEntries(value.output.metric_runs.map((run: Any) => [run.metric_name, run.value_unscaled]));
+      check(metrics.d1_roas === "500000" && metrics.d3_roas === "1000000" && metrics.d7_roas === "1500000", "Stage B per-event rounded totals");
+    });
+    it("requires import adapters to provide canonical millisecond timestamps", () => {
+      const value = fixture("33-stage-b-cohort-metrics");
+      const aggregate = value.input.records.find((record: Any) => record.record_id === "aggregate-revenue-33");
+      check(aggregate.occurred_at.endsWith(".123Z") && aggregate.payload.import_context.provider_confirmed_at.endsWith(".123Z"), "Stage B normalized timestamp evidence");
+      const invalid = structuredClone(value.input);
+      invalid.records.find((record: Any) => record.record_id === "aggregate-revenue-33").occurred_at = "2026-08-02T12:00:00.123987Z";
+      const validator = validatorFor("urn:open-mmp:schema:fixture-input:v0.2");
+      check(!validator(invalid), "Stage B accepted timestamp precision above milliseconds");
+    });
+  });
 }
 
 const contractText = capture(() => readFileSync(join(root, "spec", "event-metric-contract-v0.2.md"), "utf8"));
 const fraudSchemaText = capture(() => readFileSync(join(root, "schemas", "fraud-decision.schema.json"), "utf8"));
 const acceptance: Array<[string, () => void]> = [
-  ["AC01 Draft 2020-12 schemas have stable IDs and versions", () => check(schemaPaths.length === 22 && schemaIds.every(Boolean), "AC01")],
+  ["AC01 Draft 2020-12 schemas have stable IDs and versions", () => check(schemaPaths.length === 24 && schemaIds.every(Boolean), "AC01")],
   ["AC02 canonical event names agree across registry and schemas", () => {
     const rawSchema = schemaValues.find(({ value }) => value.$id === outputSchemaIds.raw_records)?.value;
     check(rawSchema, "AC02 raw schema missing");
@@ -913,7 +1004,7 @@ const acceptance: Array<[string, () => void]> = [
     for (const name of eventNames) validatorFor(`urn:open-mmp:schema:event-${name.replaceAll("_", "-")}:v0.2`);
   }],
   ["AC03 raw delivery logical correction and derived artifacts are separate", () => {
-    check(Object.keys(outputSchemaIds).length === 12 && Object.values(expectedFiles).every((name) => name.startsWith("expected_")), "AC03");
+    check(Object.keys(outputSchemaIds).length === 13 && Object.values(expectedFiles).every((name) => name.startsWith("expected_")), "AC03");
   }],
   ["AC04 tenant-scoped idempotency duplicate and conflict fixtures pass", () => {
     check(fixture("05-duplicate-delivery").output.deliveries.some((item: Any) => item.duplicate_resolution === "duplicate_delivery"), "AC04 duplicate");
@@ -990,7 +1081,7 @@ const acceptance: Array<[string, () => void]> = [
     check(corrections.some((item: Any) => item.correction_type === "retraction"), "AC15 retraction");
     check(fixture("17-redaction-recalculation").output.metric_runs.some((item: Any) => item.supersedes_metric_run_id), "AC15 redaction");
   }],
-  ["AC16 clock referrer prefetch and withdrawal fixtures pass", () => check(scenarios.length === 32 && fixture("11-clock-skew").output.deliveries.some((item: Any) => item.clock_skew_suspected) && fixture("13-referrer-unsupported").output.attributions.length === 2 && fixture("19-bot-prefetch").output.fraud_decisions.length === 1 && fixture("20-timestamp-invalid").output.rejections.some((item: Any) => item.reason_code === "timestamp_invalid"), "AC16")],
+  ["AC16 clock referrer prefetch and withdrawal fixtures pass", () => check(scenarios.length === 33 && fixture("11-clock-skew").output.deliveries.some((item: Any) => item.clock_skew_suspected) && fixture("13-referrer-unsupported").output.attributions.length === 2 && fixture("19-bot-prefetch").output.fraud_decisions.length === 1 && fixture("20-timestamp-invalid").output.rejections.some((item: Any) => item.reason_code === "timestamp_invalid"), "AC16")],
   ["AC17 server-recognized withdrawal rejects and redacts payload", () => {
     for (const name of ["14-withdrawal-after-occurrence", "15-event-after-withdrawal"]) {
       const value = fixture(name).output;
@@ -1030,7 +1121,7 @@ const acceptance: Array<[string, () => void]> = [
     for (const forbidden of ["threshold", "model_weight", "watchlist", "ip_address", "user_agent", "response_timing"]) check(!schemaText.includes(forbidden), `AC20 ${forbidden}`);
     check(specText.includes("remain private"), "AC20 private boundary");
   }],
-  ["AC21 one command validates every schema registry fixture and golden", () => check(schemaPaths.length === 22 && Object.keys(registries).length === 7 && fixtureDirs.length === 32 && outputArtifactCount === 32 * 12, "AC21")],
+  ["AC21 one command validates every schema registry fixture and golden", () => check(schemaPaths.length === 24 && Object.keys(registries).length === 7 && fixtureDirs.length === 33 && outputArtifactCount === 33 * 13, "AC21")],
   ["AC22 repeated and independent evaluators produce identical JCS", () => {
     for (const { output, python } of results.values()) check(equal(output, python), "AC22 evaluator mismatch");
     const vector = { numbers: [333333333.33333329, 1e30, 4.50, 2e-3, 1e-27, -0], string: "€$\u000f\nA'B\"\\\"/" };
@@ -1110,7 +1201,7 @@ if (!summaryOnly) {
 // Deliberate in-memory mutations prove that the validator is not a count-only
 // or self-generated-golden check.
 const validRevenue = {
-  event_name: "ad_revenue", installation_id: "installation-test", impression_id: "impression-test",
+  event_name: "ad_revenue", subject_scope: "installation_level", installation_id: "installation-test", impression_id: "impression-test",
   ad_unit_id: "unit-test", ad_network: "synthetic", amount_unscaled: "1", amount_scale: 18,
   currency: "USD", revenue_source: "server_verified",
 };

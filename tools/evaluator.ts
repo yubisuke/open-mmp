@@ -11,6 +11,7 @@ type Correction = EvaluationOutput["corrections"][number];
 type PrivacyRequest = EvaluationOutput["privacy_requests"][number];
 type PrivacyTombstone = EvaluationOutput["privacy_tombstones"][number];
 type Attribution = EvaluationOutput["attributions"][number];
+type CostRecord = EvaluationOutput["cost_records"][number];
 type MetricDefinition = EvaluationOutput["metric_definitions"][number];
 type MetricRun = EvaluationOutput["metric_runs"][number];
 type FraudDecision = EvaluationOutput["fraud_decisions"][number];
@@ -91,6 +92,15 @@ function assertImportProviderContexts(all: Attempt[]): void {
     if (!attempt.record.producer.startsWith("import:") || !context) continue;
     if (attempt.record.producer !== `import:${context.provider}`) {
       throw new Error("import_context.provider must match the authenticated import producer");
+    }
+  }
+}
+
+function assertRevenueAnchorSources(all: Attempt[]): void {
+  for (const attempt of all) {
+    if (attempt.record.event_name !== "ad_revenue" || attempt.record.payload.anchor_source === undefined) continue;
+    if (!attempt.record.producer.startsWith("postback:")) {
+      throw new Error("ad_revenue.anchor_source is limited to authenticated S2S postback producers");
     }
   }
 }
@@ -490,20 +500,60 @@ function roundHalfEven(numerator: bigint, denominator: bigint): bigint {
   return negative ? -quotient : quotient;
 }
 
-function metricDefinitions(): MetricDefinition[] {
-  const definitions: Array<Pick<MetricDefinition, "metric_name" | "aggregation_time_zone">> = [
-    { metric_name: "d0_install_to_24h_ad_revenue_usd", aggregation_time_zone: "UTC" },
-    { metric_name: "d0_utc_install_calendar_ad_revenue_usd", aggregation_time_zone: "UTC" },
-    { metric_name: "d0_jst_install_calendar_ad_revenue_usd", aggregation_time_zone: "Asia/Tokyo" },
+function baseMetricDefinitions(): MetricDefinition[] {
+  const definitions: Array<Pick<MetricDefinition, "metric_name" | "aggregation_time_zone" | "definition">> = [
+    {
+      metric_name: "d0_install_to_24h_ad_revenue_usd",
+      aggregation_time_zone: "UTC",
+      definition: { calculation: "revenue_sum", window: { type: "elapsed", day: 0 }, numerator: "revenue" },
+    },
+    {
+      metric_name: "d0_utc_install_calendar_ad_revenue_usd",
+      aggregation_time_zone: "UTC",
+      definition: { calculation: "revenue_sum", window: { type: "calendar_day", day: 0 }, numerator: "revenue" },
+    },
+    {
+      metric_name: "d0_jst_install_calendar_ad_revenue_usd",
+      aggregation_time_zone: "Asia/Tokyo",
+      definition: { calculation: "revenue_sum", window: { type: "calendar_day", day: 0 }, numerator: "revenue" },
+    },
   ];
   return definitions.map((definition): MetricDefinition => ({
     ...definition,
     metric_definition_version: CONTRACT_VERSION,
     anchor_event: "install",
+    value_type: "money",
+    currency: "USD",
+    amount_scale: 6,
     rule_bundle_id: "metric-default",
     rule_bundle_version: CONTRACT_VERSION,
     rule_bundle_hash: HASH,
   }));
+}
+
+function metricDefinitions(input: Any): MetricDefinition[] {
+  const definitions = [...baseMetricDefinitions(), ...(input.metric_definitions ?? [])];
+  const names = new Set<string>();
+  for (const definition of definitions) {
+    if (names.has(definition.metric_name)) throw new Error(`duplicate metric definition: ${definition.metric_name}`);
+    names.add(definition.metric_name);
+  }
+  return sortByKey(definitions, (definition) => [definition.metric_name, definition.metric_definition_version]);
+}
+
+function costRecords(input: Any): CostRecord[] {
+  const records: CostRecord[] = (input.cost_records ?? []).map((record: Any) => {
+    const dimensions = Object.fromEntries(
+      ["network", "campaign_id", "ad_group_id", "country"]
+        .filter((field) => record[field] !== undefined)
+        .map((field) => [field, record[field]]),
+    );
+    if (record.dimension_digest !== sha256(dimensions)) {
+      throw new Error(`cost dimension_digest mismatch: ${record.cost_record_id}`);
+    }
+    return { ...record, contract_version: CONTRACT_VERSION };
+  });
+  return sortByKey(records, (record) => [record.cost_record_id, record.tenant_id, record.app_id, record.as_of]);
 }
 
 function convertMoney(payload: Any, fxPolicy: Any): bigint {
@@ -523,15 +573,9 @@ function metricRuns(
   const evaluations = input.metric_evaluations ?? [];
   if (!evaluations.length) return [];
   const fxPolicy = input.fx_policy;
-  const metricDefinitions: Array<{
-    metric_name: MetricRun["metric_name"];
-    aggregation_time_zone: MetricRun["aggregation_time_zone"];
-    eligible: (install: Any, revenue: Any) => boolean;
-  }> = [
-    { metric_name: "d0_install_to_24h_ad_revenue_usd", aggregation_time_zone: "UTC", eligible: (install: Any, revenue: Any) => time(revenue.occurred_at, "occurred_at") >= time(install.occurred_at, "occurred_at") && time(revenue.occurred_at, "occurred_at") < time(install.occurred_at, "occurred_at") + DAY_MS },
-    { metric_name: "d0_utc_install_calendar_ad_revenue_usd", aggregation_time_zone: "UTC", eligible: (install: Any, revenue: Any) => dateAt(revenue.occurred_at, "UTC", "occurred_at") === dateAt(install.occurred_at, "UTC", "occurred_at") },
-    { metric_name: "d0_jst_install_calendar_ad_revenue_usd", aggregation_time_zone: "Asia/Tokyo", eligible: (install: Any, revenue: Any) => dateAt(revenue.occurred_at, "Asia/Tokyo", "occurred_at") === dateAt(install.occurred_at, "Asia/Tokyo", "occurred_at") },
-  ];
+  const definitions = metricDefinitions(input);
+  const definitionsByName = new Map(definitions.map((definition) => [definition.metric_name, definition]));
+  const cost_records = costRecords(input);
   const output: MetricRun[] = [];
   for (const evaluation of evaluations) {
     const included = all.filter((attempt) =>
@@ -539,67 +583,144 @@ function metricRuns(
       decisionFor(decisions, attempt).duplicate_resolution === "unique" &&
       compareText(attempt.record.received_at, evaluation.input_received_at_watermark) <= 0,
     );
-    const snapshotRows = [...included].sort(attemptOrder).map((attempt) => [
+    const recordSnapshotRows = [...included].sort(attemptOrder).map((attempt) => [
       attempt.record.received_at,
       attempt.record.record_id,
       evaluation.privacy_state === "after" ? (lifecycle.get(attemptEvidenceKey(attempt)) ?? "available") : "available",
       attempt.server.policy_digest,
     ]);
     const visible = included.filter((attempt) => evaluation.privacy_state !== "after" || !lifecycle.has(attemptEvidenceKey(attempt)));
-    const installs = visible.filter((attempt) => attempt.record.event_name === "install");
-    const revenue = visible.filter((attempt) => attempt.record.event_name === "ad_revenue");
+    const installs = visible.filter((attempt) => attempt.record.event_name === "install" && matchesGrouping(attempt, evaluation.grouping));
+    const revenue = visible.filter((attempt) => attempt.record.event_name === "ad_revenue" &&
+      attempt.record.payload.subject_scope === "installation_level");
+    const activities = visible;
     const affectedStates = evaluation.privacy_state === "after"
       ? included.map((attempt) => lifecycle.get(attemptEvidenceKey(attempt))).filter(Boolean)
       : [];
     const reproducibility_status = affectedStates.includes("redacted")
       ? "redaction_affected"
       : affectedStates.includes("purged") ? "retention_affected" : "fully_reproducible";
-    const ledger = snapshotRows.at(-1);
-    const evidence_refs: MetricRun["evidence_refs"] = [...included].sort(attemptOrder).map((attempt) => ({
+    const ledger = recordSnapshotRows.at(-1);
+    const recordEvidence: MetricRun["evidence_refs"] = [...included].sort(attemptOrder).map((attempt) => ({
       tenant_id: attempt.server.tenant_id,
       app_id: attempt.server.app_id,
       ref: attempt.record.record_id,
       lifecycle_status: evaluation.privacy_state === "after" ? (lifecycle.get(attemptEvidenceKey(attempt)) ?? "available") : "available",
       access_class: "protected",
     }));
+    const cohortScopes = new Set(installs.map((install) => compositeKey([install.server.tenant_id, install.server.app_id])));
+    const groupedCosts = cost_records.filter((cost) => {
+      const grouping = evaluation.grouping;
+      if (compareText(cost.as_of, evaluation.input_received_at_watermark) > 0) return false;
+      if (cohortScopes.size && !cohortScopes.has(compositeKey([cost.tenant_id, cost.app_id]))) return false;
+      if (!grouping) return true;
+      return ["campaign_id", "network", "country"].every((field) => grouping[field] === undefined || cost[field] === grouping[field]) &&
+        (grouping.cohort_date === undefined || cost.date === grouping.cohort_date);
+    });
+    const currentCosts = [...new Map(groupedCosts
+      .sort((a, b) => compareText(a.as_of, b.as_of) || compareText(a.cost_record_id, b.cost_record_id))
+      .map((cost) => [compositeKey([cost.tenant_id, cost.app_id, cost.dimension_digest]), cost])).values()];
+    const costSnapshotRows = sortByKey(currentCosts, (cost) => [cost.as_of, cost.cost_record_id]).map((cost) => [
+      "cost", cost.as_of, cost.cost_record_id, cost.report_snapshot_digest, cost.dimension_digest,
+    ]);
+    const snapshotRows = [...recordSnapshotRows, ...costSnapshotRows];
+    const costEvidence: MetricRun["evidence_refs"] = currentCosts.map((cost) => ({
+      tenant_id: cost.tenant_id,
+      app_id: cost.app_id,
+      ref: cost.cost_record_id,
+      lifecycle_status: "available",
+      access_class: "protected",
+    }));
+    const evidence_refs = sortByKey([...recordEvidence, ...costEvidence], (evidence) => [evidence.ref, evidence.tenant_id, evidence.app_id]);
     if (fxPolicy.rates.length !== 1) throw new Error("v0.2 metric runs require exactly one structured FX rate");
     const fxRate = fxPolicy.rates[0];
-    for (const definition of metricDefinitions) {
-      let value = 0n;
-      for (const item of revenue) {
+    const selectedNames = evaluation.metric_names ?? [
+      "d0_install_to_24h_ad_revenue_usd",
+      "d0_utc_install_calendar_ad_revenue_usd",
+      "d0_jst_install_calendar_ad_revenue_usd",
+    ];
+    for (const metricName of selectedNames) {
+      const definition = definitionsByName.get(metricName);
+      if (!definition) throw new Error(`unknown metric definition: ${metricName}`);
+      const revenueValue = revenue.reduce((sum, item) => {
         const installation = installs.find((candidate) =>
           candidate.server.tenant_id === item.server.tenant_id && candidate.server.app_id === item.server.app_id &&
           candidate.record.payload.installation_id === item.record.payload.installation_id,
         );
-        if (installation && definition.eligible(installation.record, item.record)) value += convertMoney(item.record.payload, fxPolicy);
+        return installation && eligibleRevenue(definition, installation.record, item.record)
+          ? sum + convertMoney(item.record.payload, fxPolicy)
+          : sum;
+      }, 0n);
+      const cohortSize = BigInt(new Set(installs.map((install) => install.record.payload.installation_id)).size);
+      let value: bigint;
+      if (definition.definition.calculation === "revenue_sum") {
+        value = revenueValue;
+      } else if (definition.definition.calculation === "revenue_over_cost") {
+        const cost = currentCosts.reduce((sum, item) => {
+          if (item.currency !== fxPolicy.target_currency) throw new Error(`cost currency mismatch: ${item.cost_record_id}`);
+          return sum + scaleMoney(item, fxPolicy.target_scale);
+        }, 0n);
+        if (cost === 0n) throw new Error(`undefined ROAS without cost: ${metricName}`);
+        value = roundHalfEven(revenueValue * (10n ** BigInt(definition.ratio_scale ?? 6)), cost);
+      } else if (definition.definition.calculation === "active_installations_over_cohort") {
+        if (cohortSize === 0n) throw new Error(`undefined retention without cohort: ${metricName}`);
+        const activityEvents = new Set(definition.activity_events ?? ["session_start"]);
+        const active = new Set<string>();
+        for (const session of activities.filter((item) => activityEvents.has(item.record.event_name))) {
+          const installation = installs.find((candidate) =>
+            candidate.server.tenant_id === session.server.tenant_id && candidate.server.app_id === session.server.app_id &&
+            candidate.record.payload.installation_id === session.record.payload.installation_id,
+          );
+          if (!installation) continue;
+          const dayIndex = Math.floor((time(session.record.occurred_at, "occurred_at") - time(installation.record.occurred_at, "occurred_at")) / DAY_MS);
+          if (dayIndex === definition.definition.window.day) active.add(installation.record.payload.installation_id);
+        }
+        value = roundHalfEven(BigInt(active.size) * (10n ** BigInt(definition.ratio_scale ?? 6)), cohortSize);
+      } else if (definition.definition.calculation === "revenue_over_cohort") {
+        if (cohortSize === 0n) throw new Error(`undefined LTV without cohort: ${metricName}`);
+        value = roundHalfEven(revenueValue, cohortSize);
+      } else if (definition.definition.calculation === "cohort_size") {
+        value = cohortSize;
+      } else {
+        throw new Error(`unsupported metric calculation: ${definition.definition.calculation}`);
       }
-      output.push({
-        metric_run_id: `${evaluation.metric_run_id_prefix}:${definition.metric_name}`,
-        metric_name: definition.metric_name,
-        metric_definition_version: CONTRACT_VERSION,
-        input_snapshot_id: sha256(snapshotRows),
-        input_received_at_watermark: evaluation.input_received_at_watermark,
-        input_ledger_position: ledger ? `${ledger[0]}|${ledger[1]}` : "empty",
-        computed_at: evaluation.computed_at,
-        data_freshness: evaluation.data_freshness,
-        aggregation_time_zone: definition.aggregation_time_zone,
-        rule_bundle_id: "metric-default",
-        rule_bundle_version: CONTRACT_VERSION,
-        rule_bundle_hash: HASH,
+      const grouping = evaluation.grouping ? {
+        dimensions: evaluation.grouping,
+        dimension_digest: sha256(evaluation.grouping),
+      } : undefined;
+      const moneyFields = definition.value_type === "money" ? {
         fx_rate_unscaled: fxRate.rate_unscaled,
         fx_rate_scale: fxRate.rate_scale,
         fx_rate_source: fxRate.source,
         fx_rate_as_of: fxRate.as_of,
         fx_rate_snapshot_id: sha256(fxPolicy.rates),
         fx_policy_version: fxPolicy.policy_version,
+        amount_scale: definition.amount_scale,
+        currency: definition.currency,
+      } : {};
+      output.push({
+        metric_run_id: `${evaluation.metric_run_id_prefix}:${metricName}`,
+        metric_name: metricName,
+        metric_definition_version: definition.metric_definition_version,
+        input_snapshot_id: sha256(snapshotRows),
+        input_received_at_watermark: evaluation.input_received_at_watermark,
+        input_ledger_position: ledger ? `${ledger[0]}|${ledger[1]}` : "empty",
+        computed_at: evaluation.computed_at,
+        data_freshness: evaluation.data_freshness,
+        aggregation_time_zone: definition.aggregation_time_zone,
+        rule_bundle_id: definition.rule_bundle_id,
+        rule_bundle_version: definition.rule_bundle_version,
+        rule_bundle_hash: definition.rule_bundle_hash,
         rounding_mode: fxPolicy.rounding_mode,
         reproducibility_status,
+        value_type: definition.value_type,
         value_unscaled: value.toString(),
-        amount_scale: fxPolicy.target_scale,
-        currency: fxPolicy.target_currency,
+        ...moneyFields,
+        ...(definition.value_type === "ratio" ? { ratio_scale: definition.ratio_scale } : {}),
+        ...(grouping ? { grouping } : {}),
         evidence_refs,
         ...(evaluation.supersedes_metric_run_id_prefix ? {
-          supersedes_metric_run_id: `${evaluation.supersedes_metric_run_id_prefix}:${definition.metric_name}`,
+          supersedes_metric_run_id: `${evaluation.supersedes_metric_run_id_prefix}:${metricName}`,
         } : {}),
       });
     }
@@ -650,6 +771,35 @@ function importedReconciliationInputs(accepted: Attempt[]): Any[] {
     });
 }
 
+function scaleMoney(payload: Any, targetScale: number): bigint {
+  const difference = targetScale - Number(payload.amount_scale);
+  if (difference >= 0) return BigInt(payload.amount_unscaled) * (10n ** BigInt(difference));
+  return roundHalfEven(BigInt(payload.amount_unscaled), 10n ** BigInt(-difference));
+}
+
+function matchesGrouping(attempt: Attempt, grouping: Any): boolean {
+  if (!grouping) return true;
+  const payload = attempt.record.payload;
+  const campaign = payload.campaign_id ?? payload.import_context?.provider_campaign_ref;
+  const network = payload.network ?? payload.ad_network ?? payload.import_context?.provider_network;
+  if (grouping.campaign_id !== undefined && campaign !== grouping.campaign_id) return false;
+  if (grouping.network !== undefined && network !== grouping.network) return false;
+  if (grouping.country !== undefined && payload.country !== grouping.country && payload.import_context?.provider_country !== grouping.country) return false;
+  if (grouping.cohort_date !== undefined && attempt.record.event_name === "install" &&
+      dateAt(attempt.record.occurred_at, "UTC", "occurred_at") !== grouping.cohort_date) return false;
+  return true;
+}
+
+function eligibleRevenue(definition: MetricDefinition, install: Any, revenue: Any): boolean {
+  const dayIndex = definition.definition.window.day;
+  if (definition.definition.window.type === "calendar_day") {
+    return dateAt(revenue.occurred_at, definition.aggregation_time_zone, "occurred_at") ===
+      dateAt(new Date(time(install.occurred_at, "occurred_at") + dayIndex * DAY_MS).toISOString(), definition.aggregation_time_zone, "occurred_at");
+  }
+  const elapsed = time(revenue.occurred_at, "occurred_at") - time(install.occurred_at, "occurred_at");
+  return elapsed >= 0 && elapsed < (dayIndex + 1) * DAY_MS;
+}
+
 function reconciliationResults(input: Any, accepted: Attempt[]): Reconciliation[] {
   const reconciliationInputs = [...(input.reconciliation_inputs ?? []), ...importedReconciliationInputs(accepted)];
   const identities = reconciliationInputs.map((item: Any) => compositeKey([item.tenant_id, item.app_id, item.reconciliation_id]));
@@ -697,6 +847,7 @@ function reconciliationResults(input: Any, accepted: Attempt[]): Reconciliation[
 export function evaluate(input: Any): EvaluationOutput {
   const all = attempts(input).sort(attemptOrder);
   assertImportProviderContexts(all);
+  assertRevenueAnchorSources(all);
   assertScopedReferences(input, all);
   const decisionsList = all.map((attempt) => {
     try {
@@ -887,7 +1038,8 @@ export function evaluate(input: Any): EvaluationOutput {
     privacy_requests,
     privacy_tombstones,
     attributions,
-    metric_definitions: metricDefinitions(),
+    cost_records: costRecords(input),
+    metric_definitions: metricDefinitions(input),
     metric_runs: metricRuns(input, all, decisions, lifecycle),
     fraud_decisions,
     rejections,

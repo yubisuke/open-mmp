@@ -1,8 +1,8 @@
 # Contract v0.2 fixture provenance
 
-The JSON files in the 32 numbered directories are reviewed, immutable golden contract examples. They are committed as source artifacts; the validation command never creates, updates, or regenerates them.
+The JSON files in the 33 numbered directories are reviewed, immutable golden contract examples. They are committed as source artifacts; the validation command never creates, updates, or regenerates them.
 
-Each fixture has one synthetic input and 12 independently asserted output classes:
+Each fixture has one synthetic input and 13 independently asserted output classes:
 
 - `expected_raw_records.json`
 - `expected_deliveries.json`
@@ -13,11 +13,12 @@ Each fixture has one synthetic input and 12 independently asserted output classe
 - `expected_attributions.json`
 - `expected_metric_definitions.json`
 - `expected_metric_runs.json`
+- `expected_cost_records.json`
 - `expected_fraud_decisions.json`
 - `expected_rejections.json`
 - `expected_reconciliation.json`
 
-The validator checks every object against its Draft 2020-12 schema, checks registry references, runs scenario-specific semantic assertions and acceptance assertions, evaluates each input twice in TypeScript, evaluates it independently in Python, and compares RFC 8785 canonical bytes. Deliberate in-memory mutations prove that malformed timestamps, negative money, unknown registry values, changed golden output, input reorder, paid reinstall evidence, record-ID collisions, ambiguous clicks, cross-scope references, protected provider-reference leakage, stale-policy provenance drift, extension bypass, and registry/schema drift fail validation or fail closed as specified.
+The validator checks every object against its Draft 2020-12 schema, checks registry references, runs scenario-specific semantic assertions and acceptance assertions, evaluates each input twice in TypeScript, evaluates it independently in Python, and compares RFC 8785 canonical bytes. Deliberate in-memory mutations prove that malformed timestamps, negative money, unknown registry values, changed golden output, input reorder, paid reinstall evidence, record-ID collisions, ambiguous clicks, cross-scope references, protected provider-reference leakage, stale-policy provenance drift, cost-dimension drift, aggregate-installation misuse, invalid S2S anchors, extension bypass, and registry/schema drift fail validation or fail closed as specified.
 
 The data is synthetic. It contains no external-source format, campaign data, user data, credential, live fraud rule, or operational threshold.
 
@@ -59,11 +60,17 @@ Provider matching-key values were independently recomputed from the normative `S
 | 30 | `provider_install_id` | `provider-install-30` | `d8f60efac521150c9b4cda17845a89dd2cfa3953277d58c5107a2e855cf64843` |
 | 31 | `provider_install_id` | `provider-install-modeled-31` | `a593e0f1a0fc48f9bb42a263189ea5f9c706d93771301b8d8898e65777abdecd` |
 
+### Fixture 33: per-event FX, cost revision, and cohort metrics
+
+Each of the three synthetic EUR revenue events has `amount_unscaled=100000001`, scale 6, and EUR-to-USD rate `5 * 10^-1`. At target scale 6, each event converts to the exact tie `50000000.5`; half-even rounds each event to `50000000` before aggregation. Cumulative D1, D3, and D7 revenue is therefore `50000000`, `100000000`, and `150000000` target units. The current cost revision is USD `100000000` scale 6, so ROAS at ratio scale 6 is `500000`, `1000000`, and `1500000`. One-install retention on D1 and D7 is `1000000`; D7 cohort LTV is `150000000`; cohort size is `1`.
+
+The cost dimension object `{campaign_id:"provider-campaign-33",country:"JP",network:"synthetic-network"}` has independently checked JCS/SHA-256 digest `953315226bb75e01e5ed7f838cf9f044cbfe5fb899b5bfa5e42e300a87d2caff`. The later `as_of` row supersedes the earlier row only for current selection; both remain immutable inputs. The aggregate revenue uses the synthetic deployment default USD with `currency_source=default` and is excluded from installation-cohort metrics. The imported timestamp is already normalized by truncation to `2026-08-01T00:00:00.123Z`. The reviewed golden artifacts were checked against these formulas and the output schemas; the validator itself never writes them.
+
 ## v0.2 fixture derivations
 
-Fixtures 01 through 19 preserve the reviewed v0.1 scenarios under the v0.2 schemas and semantics. Their per-file changes are recorded in `docs/contract-v0.2-migration.md`. Every fixture now includes the three versioned metric definitions as a twelfth output class.
+Fixtures 01 through 19 preserve the reviewed v0.1 scenarios under the v0.2 schemas and semantics. Their per-file changes are recorded in `docs/contract-v0.2-migration.md`. Every fixture now includes reviewed metric definitions and an explicit cost-record output class.
 
-Each new fixture 20 through 32 contains the same 12 `expected_*.json` artifacts listed above. Empty arrays are deliberate reviewed outputs, not missing assertions.
+Each new fixture 20 through 33 contains the same 13 `expected_*.json` artifacts listed above. Empty arrays are deliberate reviewed outputs, not missing assertions.
 
 | Fixture | Independent derivation of the meaningful golden result |
 | --- | --- |
@@ -80,6 +87,7 @@ Each new fixture 20 through 32 contains the same 12 `expected_*.json` artifacts 
 | `30-imported-time-authority-unavailable` | A synthetic provider reports an attributed install but supplies no `provider_confirmed_at`. The result remains provider-reported non-organic and uses `provider_time_authority_unavailable`, rather than first-party `authoritative_time_missing`. Imported and `postback:synthetic-kind` revenue records exercise closed import context and the postback producer without a metric evaluation. |
 | `31-imported-reconciliation-derived` | Both imported installs start with an empty fixture-authored `reconciliation_inputs` array. The modeled install has a provider install reference and deterministically yields `provider_modeled_conversion` plus `matched`; the provider-unattributed install has no provider install/click reference and yields `provider_unattributed` plus `join_key_missing`. An accepted `adapter:synthetic-network` click exercises the adapter producer independently. |
 | `32-timestamp-stale` | `2026-07-31T23:59:59.999Z` is a real millisecond UTC instant but is one millisecond before `timestamp_stale_policy.before=2026-08-01T00:00:00.000Z`. The independently calculated policy digest is `c034a208b23264f380a2103e28d8f80375eae379ebabb805e1da9238876a05c3` for JCS `{authority:"server",before:"2026-08-01T00:00:00.000Z",policy_version:"retention-v0.2"}`. It is rejected as `timestamp_stale`; delivery and rejection retain that policy provenance, while the payload is discarded and no raw or logical evidence is emitted. Mutations prove equality is accepted, absence disables the policy, the old flat field is rejected, and a mismatched digest fails evaluation. |
+| `33-stage-b-cohort-metrics` | Typed click/install dimensions and `ad_view` evidence are retained. Installation-level revenue joins one install, aggregate revenue does not. The later cost revision is current at the watermark. Per-event half-even FX produces the independently calculated D1/D3/D7 ROAS, D1/D7 retention, D7 cohort LTV, and cohort-size results described above. |
 
 ## Adding a fixture
 
@@ -88,6 +96,6 @@ Each new fixture 20 through 32 contains the same 12 `expected_*.json` artifacts 
 1. Create `fixtures/.candidates/<NN-name>/input.json`. Use only synthetic data and keep the proposed number and name stable during review.
 2. Run `evaluate()` from `tools/evaluator.ts` manually and run `python tools/python_evaluator.py fixtures/.candidates/<NN-name>/input.json` independently. Save neither command's output as an approved golden automatically.
 3. Compare the two outputs, review every field by hand against the schemas and contract, and record the derivation of each meaningful expected value in the pull-request description. Resolve any disagreement before promotion.
-4. Promote the reviewed input to `fixtures/v0.2/<NN-name>/`, hand-create the 12 `expected_*.json` output files, and update the named scenario assertions and inventory checks in `tools/validate.ts`. Run `npm run validate` before requesting review.
+4. Promote the reviewed input to `fixtures/v0.2/<NN-name>/`, hand-create the 13 `expected_*.json` output files, and update the named scenario assertions and inventory checks in `tools/validate.ts`. Run `npm run validate` before requesting review.
 
 Golden changes must be reviewed in a commit separate from evaluator or schema behavior changes. The validation command remains read-only and must never promote a candidate or regenerate an expected file.

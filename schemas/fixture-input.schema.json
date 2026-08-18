@@ -24,6 +24,14 @@
       }
     },
     "fx_policy": { "$ref": "#/$defs/fxPolicy" },
+    "cost_records": {
+      "type": "array",
+      "items": { "$ref": "urn:open-mmp:schema:cost-record:v0.2" }
+    },
+    "metric_definitions": {
+      "type": "array",
+      "items": { "$ref": "urn:open-mmp:schema:metric-definition:v0.2" }
+    },
     "metric_evaluations": {
       "type": "array",
       "items": {
@@ -36,7 +44,24 @@
           "computed_at": { "$ref": "common.schema.json#/$defs/dateTime" },
           "data_freshness": { "enum": ["complete", "late_excluded", "recalculated"] },
           "privacy_state": { "enum": ["before", "after"] },
-          "supersedes_metric_run_id_prefix": { "$ref": "common.schema.json#/$defs/id" }
+          "supersedes_metric_run_id_prefix": { "$ref": "common.schema.json#/$defs/id" },
+          "metric_names": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]{2,127}$" }
+          },
+          "grouping": {
+            "type": "object",
+            "additionalProperties": false,
+            "minProperties": 1,
+            "properties": {
+              "campaign_id": { "$ref": "common.schema.json#/$defs/id" },
+              "network": { "type": "string", "minLength": 1, "maxLength": 128 },
+              "country": { "type": "string", "pattern": "^[A-Z]{2}$" },
+              "cohort_date": { "type": "string", "format": "date", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" }
+            }
+          }
         }
       }
     },
@@ -158,7 +183,7 @@
         "producer": { "type": "string", "pattern": "^(sdk-android|sdk-ios|redirector|import:[a-z0-9-]+|adapter:[a-z0-9-]+|postback:[a-z0-9-]+)$" },
         "producer_version": { "type": "string", "minLength": 1 },
         "event_id": { "$ref": "common.schema.json#/$defs/id" },
-        "event_name": { "enum": ["click", "install", "session_start", "ad_impression", "ad_revenue", "purchase", "refund", "consent_changed"] },
+        "event_name": { "enum": ["click", "install", "session_start", "ad_impression", "ad_view", "ad_revenue", "purchase", "refund", "consent_changed"] },
         "schema_version": { "const": "0.2.0" },
         "occurred_at": { "$ref": "#/$defs/ingressDateTimeSyntax" },
         "occurred_at_source": { "enum": ["device", "server", "import"] },

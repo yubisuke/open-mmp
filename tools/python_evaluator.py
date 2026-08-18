@@ -129,6 +129,15 @@ def assert_import_provider_contexts(attempts: list[dict[str, Any]]) -> None:
             raise ValueError("import_context.provider must match the authenticated import producer")
 
 
+def assert_revenue_anchor_sources(attempts: list[dict[str, Any]]) -> None:
+    for attempt in attempts:
+        record = attempt["record"]
+        if record["event_name"] != "ad_revenue" or record["payload"].get("anchor_source") is None:
+            continue
+        if not record["producer"].startswith("postback:"):
+            raise ValueError("ad_revenue.anchor_source is limited to authenticated S2S postback producers")
+
+
 def scope_key(attempt: dict[str, Any]) -> tuple[str, str, str, str]:
     server, record = attempt["server"], attempt["record"]
     return server["tenant_id"], server["app_id"], record["producer"], record["event_id"]
@@ -554,23 +563,99 @@ def day(value: str, zone: str, field: str) -> str:
     return result.date().isoformat()
 
 
-def metric_definitions() -> list[dict[str, Any]]:
+def base_metric_definitions() -> list[dict[str, Any]]:
+    definitions = [
+        (
+            "d0_install_to_24h_ad_revenue_usd", "UTC",
+            {"calculation": "revenue_sum", "window": {"type": "elapsed", "day": 0}, "numerator": "revenue"},
+        ),
+        (
+            "d0_utc_install_calendar_ad_revenue_usd", "UTC",
+            {"calculation": "revenue_sum", "window": {"type": "calendar_day", "day": 0}, "numerator": "revenue"},
+        ),
+        (
+            "d0_jst_install_calendar_ad_revenue_usd", "Asia/Tokyo",
+            {"calculation": "revenue_sum", "window": {"type": "calendar_day", "day": 0}, "numerator": "revenue"},
+        ),
+    ]
     return [
         {
             "metric_name": metric_name,
             "aggregation_time_zone": zone,
+            "definition": definition,
             "metric_definition_version": CONTRACT_VERSION,
             "anchor_event": "install",
+            "value_type": "money",
+            "currency": "USD",
+            "amount_scale": 6,
             "rule_bundle_id": "metric-default",
             "rule_bundle_version": CONTRACT_VERSION,
             "rule_bundle_hash": ZERO_HASH,
         }
-        for metric_name, zone in (
-            ("d0_install_to_24h_ad_revenue_usd", "UTC"),
-            ("d0_utc_install_calendar_ad_revenue_usd", "UTC"),
-            ("d0_jst_install_calendar_ad_revenue_usd", "Asia/Tokyo"),
-        )
+        for metric_name, zone, definition in definitions
     ]
+
+
+def metric_definitions(value: dict[str, Any]) -> list[dict[str, Any]]:
+    definitions = base_metric_definitions() + value.get("metric_definitions", [])
+    names: set[str] = set()
+    for definition in definitions:
+        if definition["metric_name"] in names:
+            raise ValueError(f"duplicate metric definition: {definition['metric_name']}")
+        names.add(definition["metric_name"])
+    return sort_by_key(definitions, lambda definition: (
+        definition["metric_name"], definition["metric_definition_version"],
+    ))
+
+
+def cost_records(value: dict[str, Any]) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    for record in value.get("cost_records", []):
+        dimensions = {
+            field: record[field]
+            for field in ("network", "campaign_id", "ad_group_id", "country")
+            if field in record
+        }
+        if record["dimension_digest"] != digest(dimensions):
+            raise ValueError(f"cost dimension_digest mismatch: {record['cost_record_id']}")
+        records.append(record | {"contract_version": CONTRACT_VERSION})
+    return sort_by_key(records, lambda record: (
+        record["cost_record_id"], record["tenant_id"], record["app_id"], record["as_of"],
+    ))
+
+
+def scale_money(payload: dict[str, Any], target_scale: int) -> int:
+    difference = target_scale - int(payload["amount_scale"])
+    if difference >= 0:
+        return int(payload["amount_unscaled"]) * 10 ** difference
+    return round_half_even(int(payload["amount_unscaled"]), 10 ** -difference)
+
+
+def matches_grouping(attempt: dict[str, Any], grouping: dict[str, Any] | None) -> bool:
+    if not grouping:
+        return True
+    payload = attempt["record"]["payload"]
+    context = payload.get("import_context", {})
+    campaign = payload.get("campaign_id", context.get("provider_campaign_ref"))
+    network = payload.get("network", payload.get("ad_network", context.get("provider_network")))
+    if grouping.get("campaign_id") is not None and campaign != grouping["campaign_id"]:
+        return False
+    if grouping.get("network") is not None and network != grouping["network"]:
+        return False
+    if grouping.get("country") is not None and payload.get("country", context.get("provider_country")) != grouping["country"]:
+        return False
+    if grouping.get("cohort_date") is not None and attempt["record"]["event_name"] == "install" and day(attempt["record"]["occurred_at"], "UTC", "occurred_at") != grouping["cohort_date"]:
+        return False
+    return True
+
+
+def eligible_revenue(definition: dict[str, Any], install: dict[str, Any], revenue: dict[str, Any]) -> bool:
+    day_index = int(definition["definition"]["window"]["day"])
+    if definition["definition"]["window"]["type"] == "calendar_day":
+        anchor = timestamp(install["occurred_at"], "occurred_at") + timedelta(days=day_index)
+        return day(revenue["occurred_at"], definition["aggregation_time_zone"], "occurred_at") == day(anchor.isoformat(timespec="milliseconds").replace("+00:00", "Z"), definition["aggregation_time_zone"], "occurred_at")
+    elapsed = timestamp(revenue["occurred_at"], "occurred_at") - timestamp(install["occurred_at"], "occurred_at")
+    return timedelta(0) <= elapsed < timedelta(days=day_index + 1)
 
 
 def metric_runs(
@@ -580,23 +665,9 @@ def metric_runs(
     lifecycle: dict[tuple[str, str, str], str],
 ) -> list[dict[str, Any]]:
     policy = value["fx_policy"]
-    definitions = [
-        (
-            "d0_install_to_24h_ad_revenue_usd",
-            "UTC",
-            lambda install, revenue: timestamp(install["occurred_at"], "occurred_at") <= timestamp(revenue["occurred_at"], "occurred_at") < timestamp(install["occurred_at"], "occurred_at") + timedelta(days=1),
-        ),
-        (
-            "d0_utc_install_calendar_ad_revenue_usd",
-            "UTC",
-            lambda install, revenue: day(install["occurred_at"], "UTC", "occurred_at") == day(revenue["occurred_at"], "UTC", "occurred_at"),
-        ),
-        (
-            "d0_jst_install_calendar_ad_revenue_usd",
-            "Asia/Tokyo",
-            lambda install, revenue: day(install["occurred_at"], "Asia/Tokyo", "occurred_at") == day(revenue["occurred_at"], "Asia/Tokyo", "occurred_at"),
-        ),
-    ]
+    definitions = metric_definitions(value)
+    definitions_by_name = {definition["metric_name"]: definition for definition in definitions}
+    costs = cost_records(value)
     output: list[dict[str, Any]] = []
     for evaluation in value.get("metric_evaluations", []):
         included = [
@@ -610,7 +681,7 @@ def metric_runs(
             utf16_key(attempt["record"]["record_id"]),
             utf16_key(attempt["record"]["delivery_id"]),
         ))
-        snapshot_rows = [
+        record_snapshot_rows = [
             [
                 attempt["record"]["received_at"],
                 attempt["record"]["record_id"],
@@ -623,15 +694,20 @@ def metric_runs(
             attempt for attempt in included
             if evaluation["privacy_state"] != "after" or attempt_evidence_key(attempt) not in lifecycle
         ]
-        installs = [attempt for attempt in visible if attempt["record"]["event_name"] == "install"]
-        revenue = [attempt for attempt in visible if attempt["record"]["event_name"] == "ad_revenue"]
+        installs = [attempt for attempt in visible if attempt["record"]["event_name"] == "install" and matches_grouping(attempt, evaluation.get("grouping"))]
+        revenue = [
+            attempt for attempt in visible
+            if attempt["record"]["event_name"] == "ad_revenue"
+            and attempt["record"]["payload"].get("subject_scope") == "installation_level"
+        ]
+        activities = visible
         states = [
             lifecycle[attempt_evidence_key(attempt)]
             for attempt in included
             if evaluation["privacy_state"] == "after" and attempt_evidence_key(attempt) in lifecycle
         ]
         reproducibility = "redaction_affected" if "redacted" in states else ("retention_affected" if "purged" in states else "fully_reproducible")
-        evidence = [
+        record_evidence = [
             {
                 "tenant_id": attempt["server"]["tenant_id"],
                 "app_id": attempt["server"]["app_id"],
@@ -641,12 +717,48 @@ def metric_runs(
             }
             for attempt in included
         ]
-        ledger = snapshot_rows[-1] if snapshot_rows else None
+        cohort_scopes = {
+            (install["server"]["tenant_id"], install["server"]["app_id"])
+            for install in installs
+        }
+        grouped_costs = [
+            cost for cost in costs
+            if cost["as_of"] <= evaluation["input_received_at_watermark"]
+            and (not cohort_scopes or (cost["tenant_id"], cost["app_id"]) in cohort_scopes)
+            if all(evaluation.get("grouping", {}).get(field) is None or cost.get(field) == evaluation["grouping"][field] for field in ("campaign_id", "network", "country"))
+            and (evaluation.get("grouping", {}).get("cohort_date") is None or cost["date"] == evaluation["grouping"]["cohort_date"])
+        ]
+        current_by_digest: dict[tuple[str, str, str], dict[str, Any]] = {}
+        for cost in sorted(grouped_costs, key=lambda item: (utf16_key(item["as_of"]), utf16_key(item["cost_record_id"]))):
+            current_by_digest[(cost["tenant_id"], cost["app_id"], cost["dimension_digest"])] = cost
+        current_costs = list(current_by_digest.values())
+        cost_snapshot_rows = [
+            ["cost", cost["as_of"], cost["cost_record_id"], cost["report_snapshot_digest"], cost["dimension_digest"]]
+            for cost in sort_by_key(current_costs, lambda item: (item["as_of"], item["cost_record_id"]))
+        ]
+        snapshot_rows = record_snapshot_rows + cost_snapshot_rows
+        cost_evidence = [
+            {
+                "tenant_id": cost["tenant_id"], "app_id": cost["app_id"], "ref": cost["cost_record_id"],
+                "lifecycle_status": "available", "access_class": "protected",
+            }
+            for cost in current_costs
+        ]
+        evidence = sort_by_key(record_evidence + cost_evidence, lambda item: (item["ref"], item["tenant_id"], item["app_id"]))
+        ledger = record_snapshot_rows[-1] if record_snapshot_rows else None
         if len(policy["rates"]) != 1:
             raise ValueError("v0.2 metric runs require exactly one structured FX rate")
         only_rate = policy["rates"][0]
-        for metric_name, zone, eligible in definitions:
-            amount = 0
+        selected_names = evaluation.get("metric_names", [
+            "d0_install_to_24h_ad_revenue_usd",
+            "d0_utc_install_calendar_ad_revenue_usd",
+            "d0_jst_install_calendar_ad_revenue_usd",
+        ])
+        for metric_name in selected_names:
+            if metric_name not in definitions_by_name:
+                raise ValueError(f"unknown metric definition: {metric_name}")
+            definition = definitions_by_name[metric_name]
+            revenue_value = 0
             for item in revenue:
                 installation = next(
                     (
@@ -657,34 +769,83 @@ def metric_runs(
                     ),
                     None,
                 )
-                if installation and eligible(installation["record"], item["record"]):
-                    amount += convert_money(item["record"]["payload"], policy)
+                if installation and eligible_revenue(definition, installation["record"], item["record"]):
+                    revenue_value += convert_money(item["record"]["payload"], policy)
+            cohort_ids = {install["record"]["payload"]["installation_id"] for install in installs}
+            cohort_size = len(cohort_ids)
+            calculation = definition["definition"]["calculation"]
+            if calculation == "revenue_sum":
+                amount = revenue_value
+            elif calculation == "revenue_over_cost":
+                cost_value = 0
+                for cost in current_costs:
+                    if cost["currency"] != policy["target_currency"]:
+                        raise ValueError(f"cost currency mismatch: {cost['cost_record_id']}")
+                    cost_value += scale_money(cost, int(policy["target_scale"]))
+                if cost_value == 0:
+                    raise ValueError(f"undefined ROAS without cost: {metric_name}")
+                amount = round_half_even(revenue_value * 10 ** int(definition.get("ratio_scale", 6)), cost_value)
+            elif calculation == "active_installations_over_cohort":
+                if cohort_size == 0:
+                    raise ValueError(f"undefined retention without cohort: {metric_name}")
+                event_names = set(definition.get("activity_events", ["session_start"]))
+                active: set[str] = set()
+                for activity in (item for item in activities if item["record"]["event_name"] in event_names):
+                    installation = next((candidate for candidate in installs
+                                         if candidate["server"]["tenant_id"] == activity["server"]["tenant_id"]
+                                         and candidate["server"]["app_id"] == activity["server"]["app_id"]
+                                         and candidate["record"]["payload"]["installation_id"] == activity["record"]["payload"].get("installation_id")), None)
+                    if installation is None:
+                        continue
+                    day_index = (timestamp(activity["record"]["occurred_at"], "occurred_at") - timestamp(installation["record"]["occurred_at"], "occurred_at")).days
+                    if day_index == definition["definition"]["window"]["day"]:
+                        active.add(installation["record"]["payload"]["installation_id"])
+                amount = round_half_even(len(active) * 10 ** int(definition.get("ratio_scale", 6)), cohort_size)
+            elif calculation == "revenue_over_cohort":
+                if cohort_size == 0:
+                    raise ValueError(f"undefined LTV without cohort: {metric_name}")
+                amount = round_half_even(revenue_value, cohort_size)
+            elif calculation == "cohort_size":
+                amount = cohort_size
+            else:
+                raise ValueError(f"unsupported metric calculation: {calculation}")
             run = {
                 "metric_run_id": f"{evaluation['metric_run_id_prefix']}:{metric_name}",
                 "metric_name": metric_name,
-                "metric_definition_version": CONTRACT_VERSION,
+                "metric_definition_version": definition["metric_definition_version"],
                 "input_snapshot_id": digest(snapshot_rows),
                 "input_received_at_watermark": evaluation["input_received_at_watermark"],
                 "input_ledger_position": f"{ledger[0]}|{ledger[1]}" if ledger else "empty",
                 "computed_at": evaluation["computed_at"],
                 "data_freshness": evaluation["data_freshness"],
-                "aggregation_time_zone": zone,
-                "rule_bundle_id": "metric-default",
-                "rule_bundle_version": CONTRACT_VERSION,
-                "rule_bundle_hash": ZERO_HASH,
-                "fx_rate_unscaled": only_rate["rate_unscaled"],
-                "fx_rate_scale": only_rate["rate_scale"],
-                "fx_rate_source": only_rate["source"],
-                "fx_rate_as_of": only_rate["as_of"],
-                "fx_rate_snapshot_id": digest(policy["rates"]),
-                "fx_policy_version": policy["policy_version"],
+                "aggregation_time_zone": definition["aggregation_time_zone"],
+                "rule_bundle_id": definition["rule_bundle_id"],
+                "rule_bundle_version": definition["rule_bundle_version"],
+                "rule_bundle_hash": definition["rule_bundle_hash"],
                 "rounding_mode": policy["rounding_mode"],
                 "reproducibility_status": reproducibility,
+                "value_type": definition["value_type"],
                 "value_unscaled": str(amount),
-                "amount_scale": policy["target_scale"],
-                "currency": policy["target_currency"],
                 "evidence_refs": evidence,
             }
+            if definition["value_type"] == "money":
+                run |= {
+                    "fx_rate_unscaled": only_rate["rate_unscaled"],
+                    "fx_rate_scale": only_rate["rate_scale"],
+                    "fx_rate_source": only_rate["source"],
+                    "fx_rate_as_of": only_rate["as_of"],
+                    "fx_rate_snapshot_id": digest(policy["rates"]),
+                    "fx_policy_version": policy["policy_version"],
+                    "amount_scale": definition["amount_scale"],
+                    "currency": definition["currency"],
+                }
+            if definition["value_type"] == "ratio":
+                run["ratio_scale"] = definition["ratio_scale"]
+            if evaluation.get("grouping"):
+                run["grouping"] = {
+                    "dimensions": evaluation["grouping"],
+                    "dimension_digest": digest(evaluation["grouping"]),
+                }
             if evaluation.get("supersedes_metric_run_id_prefix"):
                 run["supersedes_metric_run_id"] = f"{evaluation['supersedes_metric_run_id_prefix']}:{metric_name}"
             output.append(run)
@@ -799,6 +960,7 @@ def reconciliation_results(value: dict[str, Any], accepted: list[dict[str, Any]]
 def evaluate(value: dict[str, Any]) -> dict[str, Any]:
     attempts = flatten_attempts(value)
     assert_import_provider_contexts(attempts)
+    assert_revenue_anchor_sources(attempts)
     assert_scoped_references(value, attempts)
     decisions_list: list[dict[str, Any]] = []
     for attempt in attempts:
@@ -979,7 +1141,8 @@ def evaluate(value: dict[str, Any]) -> dict[str, Any]:
         "privacy_requests": privacy_requests,
         "privacy_tombstones": tombstones,
         "attributions": attributions,
-        "metric_definitions": metric_definitions(),
+        "cost_records": cost_records(value),
+        "metric_definitions": metric_definitions(value),
         "metric_runs": metric_runs(value, attempts, decisions, lifecycle),
         "fraud_decisions": fraud,
         "rejections": rejections,
@@ -1010,6 +1173,15 @@ def batch() -> None:
                     "name": "TimestampInvalidError",
                     "message": str(error),
                     "exit_code": error.exit_code,
+                },
+            })
+        except Exception as error:
+            results.append({
+                "ok": False,
+                "error": {
+                    "name": type(error).__name__,
+                    "message": str(error),
+                    "exit_code": 1,
                 },
             })
     print(canonical(results))

@@ -127,6 +127,7 @@
       "processing_purpose_id": "analytics",
       "processing_sequence": 1,
       "payload": {
+        "subject_scope": "installation_level",
         "installation_id": "installation:install-17",
         "impression_id": "impression:revenue-17",
         "ad_unit_id": "ad-unit-a",

@@ -20,6 +20,12 @@
     "install_begin_at_server_status": { "enum": ["available", "missing", "invalid"] },
     "referrer_read_at": { "$ref": "../common.schema.json#/$defs/dateTime" },
     "occurred_at_device": { "$ref": "../common.schema.json#/$defs/dateTime" },
+    "country": { "type": "string", "pattern": "^[A-Z]{2}$" },
+    "app_version": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "os_version": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "sdk_version": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "ad_tracking_limited": { "type": "boolean" },
+    "attribution_confirmed_at": { "$ref": "../common.schema.json#/$defs/dateTime" },
     "import_context": { "$ref": "../common.schema.json#/$defs/importContext" },
     "extensions": { "type": "object", "propertyNames": { "not": { "pattern": "^(import($|_)|imported($|_)|provider($|_))" } }, "additionalProperties": true }
   },

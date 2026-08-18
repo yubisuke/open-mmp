@@ -19,7 +19,7 @@
     "producer_version": { "type": "string", "minLength": 1 },
     "event_id": { "$ref": "common.schema.json#/$defs/id" },
     "delivery_id": { "$ref": "common.schema.json#/$defs/id" },
-    "event_name": { "enum": ["click", "install", "session_start", "ad_impression", "ad_revenue", "purchase", "refund", "consent_changed"] },
+    "event_name": { "enum": ["click", "install", "session_start", "ad_impression", "ad_view", "ad_revenue", "purchase", "refund", "consent_changed"] },
     "schema_version": { "const": "0.2.0" },
     "payload_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
     "occurred_at": { "$ref": "common.schema.json#/$defs/dateTime" },

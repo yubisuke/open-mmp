@@ -31,7 +31,7 @@
     "delivery_id": "delivery:revenue-late",
     "event_name": "ad_revenue",
     "schema_version": "0.2.0",
-    "payload_sha256": "96b216471dda597b4bf921604b13614478f0aa8371191822ae82ab20c7489a72",
+    "payload_sha256": "d5723dcf9b609e460cf55e1d187ff6867797d521e02f7cdf423c5a0559706ab6",
     "occurred_at": "2026-08-12T12:00:00.000Z",
     "occurred_at_source": "device",
     "received_at": "2026-08-13T00:00:00.000Z",

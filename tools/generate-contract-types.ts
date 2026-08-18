@@ -13,6 +13,7 @@ const artifacts = {
   privacy_requests: "privacy-request.schema.json",
   privacy_tombstones: "privacy-tombstone.schema.json",
   attributions: "attribution-result.schema.json",
+  cost_records: "cost-record.schema.json",
   metric_definitions: "metric-definition.schema.json",
   metric_runs: "metric-run.schema.json",
   fraud_decisions: "fraud-decision.schema.json",

@@ -95,6 +95,94 @@ export type OpenMMPAttributionResultV02 = {
   rule_bundle_hash: string;
   supersedes_attribution_id?: string;
 };
+export type OpenMMPCostRecordV02 = Money & {
+  contract_version: "0.2.0";
+  cost_record_id: string;
+  tenant_id: string;
+  app_id: string;
+  network: string;
+  campaign_id: string;
+  ad_group_id?: string;
+  country?: string;
+  date: string;
+  amount_unscaled: unknown;
+  amount_scale: unknown;
+  currency: unknown;
+  source: "imported_reported";
+  as_of: string;
+  report_snapshot_digest: string;
+  dimension_digest: string;
+};
+export type OpenMMPMetricDefinitionV02 = {
+  [k: string]: unknown;
+} & {
+  metric_name: string;
+  metric_definition_version: string;
+  anchor_event: "install" | "calendar_day";
+  aggregation_time_zone: "UTC" | "Asia/Tokyo";
+  value_type: "money" | "ratio" | "count";
+  currency?: string;
+  amount_scale?: number;
+  ratio_scale?: number;
+  definition: {
+    calculation:
+      "revenue_sum" | "revenue_over_cost" | "active_installations_over_cohort" | "revenue_over_cohort" | "cohort_size";
+    window: {
+      type: "elapsed" | "calendar_day" | "activity_day";
+      day: number;
+    };
+    numerator: "revenue" | "active_installations" | "cohort_size";
+    denominator?: "cost" | "cohort_size";
+    cost_basis?: "cohort_acquisition_day_current_snapshot";
+  };
+  /**
+   * @minItems 1
+   */
+  activity_events?: string[];
+  rule_bundle_id: string;
+  rule_bundle_version: string;
+  rule_bundle_hash: string;
+};
+export type OpenMMPMetricRunV02 = {
+  [k: string]: unknown;
+} & {
+  metric_run_id: string;
+  metric_name: string;
+  metric_definition_version: string;
+  input_snapshot_id: string;
+  input_ledger_position: string;
+  input_received_at_watermark: string;
+  computed_at: string;
+  data_freshness: "complete" | "late_excluded" | "recalculated";
+  aggregation_time_zone: "UTC" | "Asia/Tokyo";
+  rule_bundle_id: string;
+  rule_bundle_version: string;
+  rule_bundle_hash: string;
+  fx_rate_unscaled?: string;
+  fx_rate_scale?: number;
+  fx_rate_source?: string;
+  fx_rate_as_of?: string;
+  fx_rate_snapshot_id?: string;
+  fx_policy_version?: string;
+  rounding_mode: "half_even";
+  reproducibility_status: "fully_reproducible" | "redaction_affected" | "retention_affected";
+  value_type: "money" | "ratio" | "count";
+  value_unscaled: string;
+  amount_scale?: number;
+  ratio_scale?: number;
+  currency?: string;
+  grouping?: {
+    dimensions: {
+      campaign_id?: string;
+      network?: string;
+      country?: string;
+      cohort_date?: string;
+    };
+    dimension_digest: string;
+  };
+  supersedes_metric_run_id?: string;
+  evidence_refs: EvidenceRef[];
+};
 export type OpenMMPRejectionV02 = {
   [k: string]: unknown;
 } & {
@@ -135,6 +223,7 @@ export interface OpenMMPEvaluationOutputV02 {
   privacy_requests: OpenMMPPrivacyRequestV02[];
   privacy_tombstones: OpenMMPPrivacyTombstoneV02[];
   attributions: OpenMMPAttributionResultV02[];
+  cost_records: OpenMMPCostRecordV02[];
   metric_definitions: OpenMMPMetricDefinitionV02[];
   metric_runs: OpenMMPMetricRunV02[];
   fraud_decisions: OpenMMPFraudDecisionV02[];
@@ -151,7 +240,15 @@ export interface OpenMMPRawRecordV02 {
   event_id: string;
   delivery_id: string;
   event_name:
-    "click" | "install" | "session_start" | "ad_impression" | "ad_revenue" | "purchase" | "refund" | "consent_changed";
+    | "click"
+    | "install"
+    | "session_start"
+    | "ad_impression"
+    | "ad_view"
+    | "ad_revenue"
+    | "purchase"
+    | "refund"
+    | "consent_changed";
   schema_version: "0.2.0";
   payload_sha256: string;
   occurred_at: string;
@@ -179,7 +276,15 @@ export interface OpenMMPLogicalEventV02 {
   producer: string;
   event_id: string;
   event_name:
-    "click" | "install" | "session_start" | "ad_impression" | "ad_revenue" | "purchase" | "refund" | "consent_changed";
+    | "click"
+    | "install"
+    | "session_start"
+    | "ad_impression"
+    | "ad_view"
+    | "ad_revenue"
+    | "purchase"
+    | "refund"
+    | "consent_changed";
   record_lifecycle: "active" | "retracted";
   timeliness: "on_time" | "late";
 }
@@ -212,47 +317,11 @@ export interface EvidenceRef {
   lifecycle_status: "available" | "redacted" | "purged";
   access_class: "public" | "protected" | "private";
 }
-export interface OpenMMPMetricDefinitionV02 {
-  metric_name:
-    | "d0_install_to_24h_ad_revenue_usd"
-    | "d0_utc_install_calendar_ad_revenue_usd"
-    | "d0_jst_install_calendar_ad_revenue_usd";
-  metric_definition_version: "0.2.0";
-  anchor_event: "install";
-  aggregation_time_zone: "UTC" | "Asia/Tokyo";
-  rule_bundle_id: string;
-  rule_bundle_version: string;
-  rule_bundle_hash: string;
-}
-export interface OpenMMPMetricRunV02 {
-  metric_run_id: string;
-  metric_name:
-    | "d0_install_to_24h_ad_revenue_usd"
-    | "d0_utc_install_calendar_ad_revenue_usd"
-    | "d0_jst_install_calendar_ad_revenue_usd";
-  metric_definition_version: "0.2.0";
-  input_snapshot_id: string;
-  input_ledger_position: string;
-  input_received_at_watermark: string;
-  computed_at: string;
-  data_freshness: "complete" | "late_excluded" | "recalculated";
-  aggregation_time_zone: "UTC" | "Asia/Tokyo";
-  rule_bundle_id: string;
-  rule_bundle_version: string;
-  rule_bundle_hash: string;
-  fx_rate_unscaled: string;
-  fx_rate_scale: number;
-  fx_rate_source: string;
-  fx_rate_as_of: string;
-  fx_rate_snapshot_id: string;
-  fx_policy_version: string;
-  rounding_mode: "half_even";
-  reproducibility_status: "fully_reproducible" | "redaction_affected" | "retention_affected";
-  value_unscaled: string;
+export interface Money {
+  amount_unscaled: string;
   amount_scale: number;
   currency: string;
-  supersedes_metric_run_id?: string;
-  evidence_refs: EvidenceRef[];
+  [k: string]: unknown;
 }
 export interface OpenMMPFraudDecisionV02 {
   fraud_decision_id: string;

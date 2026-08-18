@@ -12,15 +12,16 @@
     "rule_bundle_id": "metric-default",
     "rule_bundle_version": "0.2.0",
     "rule_bundle_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "rounding_mode": "half_even",
+    "reproducibility_status": "redaction_affected",
+    "value_type": "money",
+    "value_unscaled": "0",
     "fx_rate_unscaled": "100000000",
     "fx_rate_scale": 8,
     "fx_rate_source": "synthetic-fixture-rate",
     "fx_rate_as_of": "2026-08-12T00:00:00.000Z",
     "fx_rate_snapshot_id": "ffa58914aa0e3f8339ca16e6b7a79dd194b20f6b3df574e3e22997d6612f4a05",
     "fx_policy_version": "fx-v0.1",
-    "rounding_mode": "half_even",
-    "reproducibility_status": "redaction_affected",
-    "value_unscaled": "0",
     "amount_scale": 6,
     "currency": "USD",
     "evidence_refs": [
@@ -34,15 +35,15 @@
       {
         "tenant_id": "tenant-a",
         "app_id": "app-a",
-        "ref": "session-purge-17",
-        "lifecycle_status": "purged",
+        "ref": "revenue-17",
+        "lifecycle_status": "redacted",
         "access_class": "protected"
       },
       {
         "tenant_id": "tenant-a",
         "app_id": "app-a",
-        "ref": "revenue-17",
-        "lifecycle_status": "redacted",
+        "ref": "session-purge-17",
+        "lifecycle_status": "purged",
         "access_class": "protected"
       }
     ],
@@ -61,15 +62,16 @@
     "rule_bundle_id": "metric-default",
     "rule_bundle_version": "0.2.0",
     "rule_bundle_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "rounding_mode": "half_even",
+    "reproducibility_status": "redaction_affected",
+    "value_type": "money",
+    "value_unscaled": "0",
     "fx_rate_unscaled": "100000000",
     "fx_rate_scale": 8,
     "fx_rate_source": "synthetic-fixture-rate",
     "fx_rate_as_of": "2026-08-12T00:00:00.000Z",
     "fx_rate_snapshot_id": "ffa58914aa0e3f8339ca16e6b7a79dd194b20f6b3df574e3e22997d6612f4a05",
     "fx_policy_version": "fx-v0.1",
-    "rounding_mode": "half_even",
-    "reproducibility_status": "redaction_affected",
-    "value_unscaled": "0",
     "amount_scale": 6,
     "currency": "USD",
     "evidence_refs": [
@@ -83,15 +85,15 @@
       {
         "tenant_id": "tenant-a",
         "app_id": "app-a",
-        "ref": "session-purge-17",
-        "lifecycle_status": "purged",
+        "ref": "revenue-17",
+        "lifecycle_status": "redacted",
         "access_class": "protected"
       },
       {
         "tenant_id": "tenant-a",
         "app_id": "app-a",
-        "ref": "revenue-17",
-        "lifecycle_status": "redacted",
+        "ref": "session-purge-17",
+        "lifecycle_status": "purged",
         "access_class": "protected"
       }
     ],
@@ -110,15 +112,16 @@
     "rule_bundle_id": "metric-default",
     "rule_bundle_version": "0.2.0",
     "rule_bundle_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "rounding_mode": "half_even",
+    "reproducibility_status": "redaction_affected",
+    "value_type": "money",
+    "value_unscaled": "0",
     "fx_rate_unscaled": "100000000",
     "fx_rate_scale": 8,
     "fx_rate_source": "synthetic-fixture-rate",
     "fx_rate_as_of": "2026-08-12T00:00:00.000Z",
     "fx_rate_snapshot_id": "ffa58914aa0e3f8339ca16e6b7a79dd194b20f6b3df574e3e22997d6612f4a05",
     "fx_policy_version": "fx-v0.1",
-    "rounding_mode": "half_even",
-    "reproducibility_status": "redaction_affected",
-    "value_unscaled": "0",
     "amount_scale": 6,
     "currency": "USD",
     "evidence_refs": [
@@ -132,15 +135,15 @@
       {
         "tenant_id": "tenant-a",
         "app_id": "app-a",
-        "ref": "session-purge-17",
-        "lifecycle_status": "purged",
+        "ref": "revenue-17",
+        "lifecycle_status": "redacted",
         "access_class": "protected"
       },
       {
         "tenant_id": "tenant-a",
         "app_id": "app-a",
-        "ref": "revenue-17",
-        "lifecycle_status": "redacted",
+        "ref": "session-purge-17",
+        "lifecycle_status": "purged",
         "access_class": "protected"
       }
     ],
@@ -159,15 +162,16 @@
     "rule_bundle_id": "metric-default",
     "rule_bundle_version": "0.2.0",
     "rule_bundle_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "rounding_mode": "half_even",
+    "reproducibility_status": "fully_reproducible",
+    "value_type": "money",
+    "value_unscaled": "1000000",
     "fx_rate_unscaled": "100000000",
     "fx_rate_scale": 8,
     "fx_rate_source": "synthetic-fixture-rate",
     "fx_rate_as_of": "2026-08-12T00:00:00.000Z",
     "fx_rate_snapshot_id": "ffa58914aa0e3f8339ca16e6b7a79dd194b20f6b3df574e3e22997d6612f4a05",
     "fx_policy_version": "fx-v0.1",
-    "rounding_mode": "half_even",
-    "reproducibility_status": "fully_reproducible",
-    "value_unscaled": "1000000",
     "amount_scale": 6,
     "currency": "USD",
     "evidence_refs": [
@@ -181,14 +185,14 @@
       {
         "tenant_id": "tenant-a",
         "app_id": "app-a",
-        "ref": "session-purge-17",
+        "ref": "revenue-17",
         "lifecycle_status": "available",
         "access_class": "protected"
       },
       {
         "tenant_id": "tenant-a",
         "app_id": "app-a",
-        "ref": "revenue-17",
+        "ref": "session-purge-17",
         "lifecycle_status": "available",
         "access_class": "protected"
       }
@@ -207,15 +211,16 @@
     "rule_bundle_id": "metric-default",
     "rule_bundle_version": "0.2.0",
     "rule_bundle_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "rounding_mode": "half_even",
+    "reproducibility_status": "fully_reproducible",
+    "value_type": "money",
+    "value_unscaled": "1000000",
     "fx_rate_unscaled": "100000000",
     "fx_rate_scale": 8,
     "fx_rate_source": "synthetic-fixture-rate",
     "fx_rate_as_of": "2026-08-12T00:00:00.000Z",
     "fx_rate_snapshot_id": "ffa58914aa0e3f8339ca16e6b7a79dd194b20f6b3df574e3e22997d6612f4a05",
     "fx_policy_version": "fx-v0.1",
-    "rounding_mode": "half_even",
-    "reproducibility_status": "fully_reproducible",
-    "value_unscaled": "1000000",
     "amount_scale": 6,
     "currency": "USD",
     "evidence_refs": [
@@ -229,14 +234,14 @@
       {
         "tenant_id": "tenant-a",
         "app_id": "app-a",
-        "ref": "session-purge-17",
+        "ref": "revenue-17",
         "lifecycle_status": "available",
         "access_class": "protected"
       },
       {
         "tenant_id": "tenant-a",
         "app_id": "app-a",
-        "ref": "revenue-17",
+        "ref": "session-purge-17",
         "lifecycle_status": "available",
         "access_class": "protected"
       }
@@ -255,15 +260,16 @@
     "rule_bundle_id": "metric-default",
     "rule_bundle_version": "0.2.0",
     "rule_bundle_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "rounding_mode": "half_even",
+    "reproducibility_status": "fully_reproducible",
+    "value_type": "money",
+    "value_unscaled": "1000000",
     "fx_rate_unscaled": "100000000",
     "fx_rate_scale": 8,
     "fx_rate_source": "synthetic-fixture-rate",
     "fx_rate_as_of": "2026-08-12T00:00:00.000Z",
     "fx_rate_snapshot_id": "ffa58914aa0e3f8339ca16e6b7a79dd194b20f6b3df574e3e22997d6612f4a05",
     "fx_policy_version": "fx-v0.1",
-    "rounding_mode": "half_even",
-    "reproducibility_status": "fully_reproducible",
-    "value_unscaled": "1000000",
     "amount_scale": 6,
     "currency": "USD",
     "evidence_refs": [
@@ -277,14 +283,14 @@
       {
         "tenant_id": "tenant-a",
         "app_id": "app-a",
-        "ref": "session-purge-17",
+        "ref": "revenue-17",
         "lifecycle_status": "available",
         "access_class": "protected"
       },
       {
         "tenant_id": "tenant-a",
         "app_id": "app-a",
-        "ref": "revenue-17",
+        "ref": "session-purge-17",
         "lifecycle_status": "available",
         "access_class": "protected"
       }
