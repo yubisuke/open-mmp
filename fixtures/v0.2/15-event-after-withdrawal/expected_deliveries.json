@@ -1,6 +1,6 @@
 [
   {
-    "contract_version": "0.1.0",
+    "contract_version": "0.2.0",
     "delivery_id": "delivery:consent-control-after-withdrawal",
     "record_id": "consent-control-after-withdrawal",
     "canonical_record_id": "consent-control-after-withdrawal",
@@ -18,7 +18,7 @@
     "withdrawal_recognized_at": "2026-08-12T00:00:00.000Z"
   },
   {
-    "contract_version": "0.1.0",
+    "contract_version": "0.2.0",
     "delivery_id": "delivery:event-after-withdrawal",
     "record_id": "event-after-withdrawal",
     "canonical_record_id": "event-after-withdrawal",

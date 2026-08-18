@@ -1,6 +1,6 @@
 [
   {
-    "contract_version": "0.1.0",
+    "contract_version": "0.2.0",
     "delivery_id": "delivery:install-unavailable",
     "record_id": "install-unavailable",
     "canonical_record_id": "install-unavailable",
@@ -17,7 +17,7 @@
     "consent_decision_reason_code": "consent_not_required"
   },
   {
-    "contract_version": "0.1.0",
+    "contract_version": "0.2.0",
     "delivery_id": "delivery:install-unsupported",
     "record_id": "install-unsupported",
     "canonical_record_id": "install-unsupported",

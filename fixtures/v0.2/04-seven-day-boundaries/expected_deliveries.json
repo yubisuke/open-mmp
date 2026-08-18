@@ -1,6 +1,6 @@
 [
   {
-    "contract_version": "0.1.0",
+    "contract_version": "0.2.0",
     "delivery_id": "delivery:click-4",
     "record_id": "click-4",
     "canonical_record_id": "click-4",
@@ -17,7 +17,7 @@
     "consent_decision_reason_code": "consent_not_required"
   },
   {
-    "contract_version": "0.1.0",
+    "contract_version": "0.2.0",
     "delivery_id": "delivery:install-after",
     "record_id": "install-after",
     "canonical_record_id": "install-after",
@@ -34,7 +34,7 @@
     "consent_decision_reason_code": "consent_not_required"
   },
   {
-    "contract_version": "0.1.0",
+    "contract_version": "0.2.0",
     "delivery_id": "delivery:install-before",
     "record_id": "install-before",
     "canonical_record_id": "install-before",
@@ -51,7 +51,7 @@
     "consent_decision_reason_code": "consent_not_required"
   },
   {
-    "contract_version": "0.1.0",
+    "contract_version": "0.2.0",
     "delivery_id": "delivery:install-exact",
     "record_id": "install-exact",
     "canonical_record_id": "install-exact",

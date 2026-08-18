@@ -5,7 +5,7 @@
     "decision": "suspected",
     "action": "exclude",
     "reason_code": "bot_prefetch",
-    "reason_code_version": "0.1.0",
+    "reason_code_version": "0.2.0",
     "evidence": [
       {
         "type": "link_prefetch_category",
@@ -15,7 +15,7 @@
       }
     ],
     "rule_bundle_id": "fraud-public-envelope",
-    "rule_bundle_version": "0.1.0",
+    "rule_bundle_version": "0.2.0",
     "rule_bundle_hash": "0000000000000000000000000000000000000000000000000000000000000000",
     "evaluated_at": "2026-08-12T00:00:00.000Z"
   }

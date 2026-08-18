@@ -1,6 +1,6 @@
 [
   {
-    "contract_version": "0.1.0",
+    "contract_version": "0.2.0",
     "logical_event_id": "logical:tenant-a:app-a:sdk-android:event:install-unavailable",
     "record_id": "install-unavailable",
     "tenant_id": "tenant-a",
@@ -12,7 +12,7 @@
     "timeliness": "on_time"
   },
   {
-    "contract_version": "0.1.0",
+    "contract_version": "0.2.0",
     "logical_event_id": "logical:tenant-a:app-a:sdk-android:event:install-unsupported",
     "record_id": "install-unsupported",
     "tenant_id": "tenant-a",

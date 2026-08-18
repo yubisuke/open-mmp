@@ -1,6 +1,6 @@
 [
   {
-    "contract_version": "0.1.0",
+    "contract_version": "0.2.0",
     "delivery_id": "delivery:purchase-16",
     "record_id": "purchase-16",
     "canonical_record_id": "purchase-16",
@@ -17,7 +17,7 @@
     "consent_decision_reason_code": "consent_not_required"
   },
   {
-    "contract_version": "0.1.0",
+    "contract_version": "0.2.0",
     "delivery_id": "delivery:refund-16",
     "record_id": "refund-16",
     "canonical_record_id": "refund-16",

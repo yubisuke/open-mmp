@@ -1,6 +1,6 @@
 [
   {
-    "contract_version": "0.1.0",
+    "contract_version": "0.2.0",
     "delivery_id": "delivery:install-9",
     "record_id": "install-9",
     "canonical_record_id": "install-9",
@@ -17,7 +17,7 @@
     "consent_decision_reason_code": "consent_not_required"
   },
   {
-    "contract_version": "0.1.0",
+    "contract_version": "0.2.0",
     "delivery_id": "delivery:revenue-9",
     "record_id": "revenue-9",
     "canonical_record_id": "revenue-9",

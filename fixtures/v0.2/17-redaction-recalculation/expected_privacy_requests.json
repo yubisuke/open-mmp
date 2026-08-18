@@ -1,6 +1,6 @@
 [
   {
-    "contract_version": "0.1.0",
+    "contract_version": "0.2.0",
     "tenant_id": "tenant-a",
     "app_id": "app-a",
     "privacy_request_id": "privacy-17",

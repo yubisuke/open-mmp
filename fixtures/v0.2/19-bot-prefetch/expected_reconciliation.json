@@ -6,7 +6,7 @@
     "input_snapshot_id": "internal-snapshot:19",
     "external_snapshot_id": "external-snapshot:19",
     "difference_reason_code": "candidate_excluded",
-    "difference_reason_version": "0.1.0",
+    "difference_reason_version": "0.2.0",
     "matching_keys": [
       {
         "type": "provider_click_id",

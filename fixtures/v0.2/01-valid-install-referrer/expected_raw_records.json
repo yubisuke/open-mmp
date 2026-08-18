@@ -1,6 +1,6 @@
 [
   {
-    "contract_version": "0.1.0",
+    "contract_version": "0.2.0",
     "record_id": "click-1",
     "tenant_id": "tenant-a",
     "app_id": "app-a",
@@ -9,7 +9,7 @@
     "event_id": "event:click-1",
     "delivery_id": "delivery:click-1",
     "event_name": "click",
-    "schema_version": "0.1.0",
+    "schema_version": "0.2.0",
     "payload_sha256": "10d76accfdb1d74a63e389c27bc184268b7742d03e83b6858f2373caec85b9c4",
     "occurred_at": "2026-08-05T00:00:00.000Z",
     "occurred_at_source": "server",
@@ -21,7 +21,7 @@
     "consent_decision_reason_code": "consent_not_required"
   },
   {
-    "contract_version": "0.1.0",
+    "contract_version": "0.2.0",
     "record_id": "install-1",
     "tenant_id": "tenant-a",
     "app_id": "app-a",
@@ -30,7 +30,7 @@
     "event_id": "event:install-1",
     "delivery_id": "delivery:install-1",
     "event_name": "install",
-    "schema_version": "0.1.0",
+    "schema_version": "0.2.0",
     "payload_sha256": "eb279124485c6f17452977b6176d4d35a4d146ef557ac9cf88c3a6e69dc98874",
     "occurred_at": "2026-08-06T00:00:00.000Z",
     "occurred_at_source": "device",

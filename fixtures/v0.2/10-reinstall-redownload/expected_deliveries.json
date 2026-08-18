@@ -1,6 +1,6 @@
 [
   {
-    "contract_version": "0.1.0",
+    "contract_version": "0.2.0",
     "delivery_id": "delivery:click-10-paid",
     "record_id": "click-10-paid",
     "canonical_record_id": "click-10-paid",
@@ -17,7 +17,7 @@
     "consent_decision_reason_code": "consent_not_required"
   },
   {
-    "contract_version": "0.1.0",
+    "contract_version": "0.2.0",
     "delivery_id": "delivery:install-10a",
     "record_id": "install-10a",
     "canonical_record_id": "install-10a",
@@ -34,7 +34,7 @@
     "consent_decision_reason_code": "consent_not_required"
   },
   {
-    "contract_version": "0.1.0",
+    "contract_version": "0.2.0",
     "delivery_id": "delivery:install-10b",
     "record_id": "install-10b",
     "canonical_record_id": "install-10b",
@@ -51,7 +51,7 @@
     "consent_decision_reason_code": "consent_not_required"
   },
   {
-    "contract_version": "0.1.0",
+    "contract_version": "0.2.0",
     "delivery_id": "delivery:install-10c",
     "record_id": "install-10c",
     "canonical_record_id": "install-10c",

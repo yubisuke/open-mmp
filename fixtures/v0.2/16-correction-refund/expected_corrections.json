@@ -1,6 +1,6 @@
 [
   {
-    "contract_version": "0.1.0",
+    "contract_version": "0.2.0",
     "tenant_id": "tenant-a",
     "app_id": "app-a",
     "correction_id": "correction:refund-16",
@@ -10,7 +10,7 @@
     "effective_at": "2026-08-12T00:01:00.000Z"
   },
   {
-    "contract_version": "0.1.0",
+    "contract_version": "0.2.0",
     "tenant_id": "tenant-a",
     "app_id": "app-a",
     "correction_id": "retraction-16",

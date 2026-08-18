@@ -1,6 +1,6 @@
 [
   {
-    "contract_version": "0.1.0",
+    "contract_version": "0.2.0",
     "logical_event_id": "logical:tenant-a:app-a:sdk-android:event:install-8",
     "record_id": "install-8",
     "tenant_id": "tenant-a",
@@ -12,7 +12,7 @@
     "timeliness": "on_time"
   },
   {
-    "contract_version": "0.1.0",
+    "contract_version": "0.2.0",
     "logical_event_id": "logical:tenant-a:app-a:sdk-android:event:revenue-late",
     "record_id": "revenue-late",
     "tenant_id": "tenant-a",

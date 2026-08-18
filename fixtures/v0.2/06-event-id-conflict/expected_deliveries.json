@@ -1,6 +1,6 @@
 [
   {
-    "contract_version": "0.1.0",
+    "contract_version": "0.2.0",
     "delivery_id": "delivery:conflict-first",
     "record_id": "conflict-first",
     "canonical_record_id": "conflict-first",
@@ -17,7 +17,7 @@
     "consent_decision_reason_code": "consent_not_required"
   },
   {
-    "contract_version": "0.1.0",
+    "contract_version": "0.2.0",
     "delivery_id": "delivery:conflict-second",
     "record_id": "conflict-second",
     "canonical_record_id": "conflict-first",

@@ -1,6 +1,6 @@
 [
   {
-    "contract_version": "0.1.0",
+    "contract_version": "0.2.0",
     "delivery_id": "delivery:aggregate-invalid",
     "record_id": "aggregate-invalid",
     "canonical_record_id": "aggregate-invalid",

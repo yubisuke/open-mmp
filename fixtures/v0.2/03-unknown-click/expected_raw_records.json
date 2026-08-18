@@ -1,6 +1,6 @@
 [
   {
-    "contract_version": "0.1.0",
+    "contract_version": "0.2.0",
     "record_id": "install-3",
     "tenant_id": "tenant-a",
     "app_id": "app-a",
@@ -9,7 +9,7 @@
     "event_id": "event:install-3",
     "delivery_id": "delivery:install-3",
     "event_name": "install",
-    "schema_version": "0.1.0",
+    "schema_version": "0.2.0",
     "payload_sha256": "70ef7af8b86614ffdfb4c9a77357e3e9ec4658509220b2fec4395afa19aa7b24",
     "occurred_at": "2026-08-12T00:00:00.000Z",
     "occurred_at_source": "device",

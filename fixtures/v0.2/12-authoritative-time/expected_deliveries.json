@@ -1,6 +1,6 @@
 [
   {
-    "contract_version": "0.1.0",
+    "contract_version": "0.2.0",
     "delivery_id": "delivery:click-12",
     "record_id": "click-12",
     "canonical_record_id": "click-12",
@@ -17,7 +17,7 @@
     "consent_decision_reason_code": "consent_not_required"
   },
   {
-    "contract_version": "0.1.0",
+    "contract_version": "0.2.0",
     "delivery_id": "delivery:install-device-cross",
     "record_id": "install-device-cross",
     "canonical_record_id": "install-device-cross",
@@ -34,7 +34,7 @@
     "consent_decision_reason_code": "consent_not_required"
   },
   {
-    "contract_version": "0.1.0",
+    "contract_version": "0.2.0",
     "delivery_id": "delivery:install-invalid-authority",
     "record_id": "install-invalid-authority",
     "canonical_record_id": "install-invalid-authority",
@@ -51,7 +51,7 @@
     "consent_decision_reason_code": "consent_not_required"
   },
   {
-    "contract_version": "0.1.0",
+    "contract_version": "0.2.0",
     "delivery_id": "delivery:install-missing-authority",
     "record_id": "install-missing-authority",
     "canonical_record_id": "install-missing-authority",

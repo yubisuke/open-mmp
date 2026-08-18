@@ -1,6 +1,6 @@
 [
   {
-    "contract_version": "0.1.0",
+    "contract_version": "0.2.0",
     "logical_event_id": "logical:tenant-a:app-a:redirector:shared-event-id",
     "record_id": "tenant-a-record",
     "tenant_id": "tenant-a",
@@ -12,7 +12,7 @@
     "timeliness": "on_time"
   },
   {
-    "contract_version": "0.1.0",
+    "contract_version": "0.2.0",
     "logical_event_id": "logical:tenant-b:app-b:redirector:shared-event-id",
     "record_id": "tenant-b-record",
     "tenant_id": "tenant-b",

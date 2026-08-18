@@ -1,6 +1,6 @@
 [
   {
-    "contract_version": "0.1.0",
+    "contract_version": "0.2.0",
     "delivery_id": "delivery:queued-before-withdrawal",
     "record_id": "queued-before-withdrawal",
     "canonical_record_id": "queued-before-withdrawal",
@@ -19,7 +19,7 @@
     "reason_code": "consent_withdrawn"
   },
   {
-    "contract_version": "0.1.0",
+    "contract_version": "0.2.0",
     "delivery_id": "delivery:queued-explicit-basis",
     "record_id": "queued-explicit-basis",
     "canonical_record_id": "queued-explicit-basis",

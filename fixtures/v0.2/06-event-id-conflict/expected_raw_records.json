@@ -1,6 +1,6 @@
 [
   {
-    "contract_version": "0.1.0",
+    "contract_version": "0.2.0",
     "record_id": "conflict-first",
     "tenant_id": "tenant-a",
     "app_id": "app-a",
@@ -9,7 +9,7 @@
     "event_id": "event:conflict-first",
     "delivery_id": "delivery:conflict-first",
     "event_name": "click",
-    "schema_version": "0.1.0",
+    "schema_version": "0.2.0",
     "payload_sha256": "a70ecf1989f45a27786a37d1da96821a97d3bc7538cab0ad11404d34c8f3f2a0",
     "occurred_at": "2026-08-10T00:00:00.000Z",
     "occurred_at_source": "server",
@@ -21,7 +21,7 @@
     "consent_decision_reason_code": "consent_not_required"
   },
   {
-    "contract_version": "0.1.0",
+    "contract_version": "0.2.0",
     "record_id": "conflict-second",
     "tenant_id": "tenant-a",
     "app_id": "app-a",
@@ -30,7 +30,7 @@
     "event_id": "event:conflict-first",
     "delivery_id": "delivery:conflict-second",
     "event_name": "click",
-    "schema_version": "0.1.0",
+    "schema_version": "0.2.0",
     "payload_sha256": "c399ec50b31db77ee7c482ac147d40cf52c4e5af5d73d35b896bc70bdb33ecb1",
     "occurred_at": "2026-08-10T00:00:00.000Z",
     "occurred_at_source": "server",

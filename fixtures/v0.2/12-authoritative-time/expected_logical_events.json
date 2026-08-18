@@ -1,6 +1,6 @@
 [
   {
-    "contract_version": "0.1.0",
+    "contract_version": "0.2.0",
     "logical_event_id": "logical:tenant-a:app-a:redirector:event:click-12",
     "record_id": "click-12",
     "tenant_id": "tenant-a",
@@ -12,7 +12,7 @@
     "timeliness": "on_time"
   },
   {
-    "contract_version": "0.1.0",
+    "contract_version": "0.2.0",
     "logical_event_id": "logical:tenant-a:app-a:sdk-android:event:install-device-cross",
     "record_id": "install-device-cross",
     "tenant_id": "tenant-a",
@@ -24,7 +24,7 @@
     "timeliness": "on_time"
   },
   {
-    "contract_version": "0.1.0",
+    "contract_version": "0.2.0",
     "logical_event_id": "logical:tenant-a:app-a:sdk-android:event:install-invalid-authority",
     "record_id": "install-invalid-authority",
     "tenant_id": "tenant-a",
@@ -36,7 +36,7 @@
     "timeliness": "on_time"
   },
   {
-    "contract_version": "0.1.0",
+    "contract_version": "0.2.0",
     "logical_event_id": "logical:tenant-a:app-a:sdk-android:event:install-missing-authority",
     "record_id": "install-missing-authority",
     "tenant_id": "tenant-a",

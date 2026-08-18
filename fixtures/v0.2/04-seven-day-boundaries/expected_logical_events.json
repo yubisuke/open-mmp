@@ -1,6 +1,6 @@
 [
   {
-    "contract_version": "0.1.0",
+    "contract_version": "0.2.0",
     "logical_event_id": "logical:tenant-a:app-a:redirector:event:click-4",
     "record_id": "click-4",
     "tenant_id": "tenant-a",
@@ -12,7 +12,7 @@
     "timeliness": "on_time"
   },
   {
-    "contract_version": "0.1.0",
+    "contract_version": "0.2.0",
     "logical_event_id": "logical:tenant-a:app-a:sdk-android:event:install-after",
     "record_id": "install-after",
     "tenant_id": "tenant-a",
@@ -24,7 +24,7 @@
     "timeliness": "on_time"
   },
   {
-    "contract_version": "0.1.0",
+    "contract_version": "0.2.0",
     "logical_event_id": "logical:tenant-a:app-a:sdk-android:event:install-before",
     "record_id": "install-before",
     "tenant_id": "tenant-a",
@@ -36,7 +36,7 @@
     "timeliness": "on_time"
   },
   {
-    "contract_version": "0.1.0",
+    "contract_version": "0.2.0",
     "logical_event_id": "logical:tenant-a:app-a:sdk-android:event:install-exact",
     "record_id": "install-exact",
     "tenant_id": "tenant-a",
