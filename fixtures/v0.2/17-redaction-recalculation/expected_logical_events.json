@@ -8,7 +8,7 @@
     "producer": "sdk-android",
     "event_id": "event:install-17",
     "event_name": "install",
-    "lifecycle": "active",
+    "record_lifecycle": "active",
     "timeliness": "on_time"
   }
 ]

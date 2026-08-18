@@ -8,7 +8,7 @@
     "producer": "sdk-android",
     "event_id": "event:purchase-16",
     "event_name": "purchase",
-    "lifecycle": "active",
+    "record_lifecycle": "active",
     "timeliness": "on_time"
   },
   {
@@ -20,7 +20,7 @@
     "producer": "sdk-android",
     "event_id": "event:refund-16",
     "event_name": "refund",
-    "lifecycle": "active",
+    "record_lifecycle": "active",
     "timeliness": "on_time"
   }
 ]

@@ -10,7 +10,7 @@
     "delivery_id": "delivery:install-8",
     "event_name": "install",
     "schema_version": "0.2.0",
-    "payload_sha256": "6b1abc0708bfcb9e759afbf7c7e2bddc1e137d2fed1379787c220d9e3763dfef",
+    "payload_sha256": "830d0f652dd79c6f4751e7c2ccd84d68ca5c2ae1f199a3765532cc05a82b727c",
     "occurred_at": "2026-08-12T00:00:00.000Z",
     "occurred_at_source": "device",
     "received_at": "2026-08-12T00:01:00.000Z",

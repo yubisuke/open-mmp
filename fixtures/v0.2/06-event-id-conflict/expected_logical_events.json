@@ -8,7 +8,7 @@
     "producer": "redirector",
     "event_id": "event:conflict-first",
     "event_name": "click",
-    "lifecycle": "active",
+    "record_lifecycle": "active",
     "timeliness": "on_time"
   }
 ]

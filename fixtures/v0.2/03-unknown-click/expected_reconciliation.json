@@ -10,7 +10,7 @@
     "matching_keys": [
       {
         "type": "provider_click_id",
-        "value": "unknown-click",
+        "value": "unknown-click_0000000000000000",
         "scope": "tenant_app",
         "normalization": "identity",
         "cardinality": "one_to_one",

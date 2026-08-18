@@ -8,7 +8,7 @@
     "producer": "sdk-android",
     "event_id": "event:skew-exact",
     "event_name": "session_start",
-    "lifecycle": "active",
+    "record_lifecycle": "active",
     "timeliness": "on_time"
   },
   {
@@ -20,7 +20,7 @@
     "producer": "sdk-android",
     "event_id": "event:skew-over",
     "event_name": "session_start",
-    "lifecycle": "active",
+    "record_lifecycle": "active",
     "timeliness": "on_time"
   }
 ]

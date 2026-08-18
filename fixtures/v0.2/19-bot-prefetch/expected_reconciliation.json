@@ -10,7 +10,7 @@
     "matching_keys": [
       {
         "type": "provider_click_id",
-        "value": "click-prefetch",
+        "value": "click-prefetch_0000000000000000",
         "scope": "tenant_app",
         "normalization": "identity",
         "cardinality": "one_to_one",
@@ -27,7 +27,7 @@
       "prefetch-click:in_window"
     ],
     "joins": [
-      "provider_click_id:click-prefetch=>prefetch-click"
+      "provider_click_id:click-prefetch_0000000000000000=>prefetch-click"
     ],
     "freshness": "current"
   }
