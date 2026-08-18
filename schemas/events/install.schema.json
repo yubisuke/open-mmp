@@ -26,6 +26,45 @@
     "sdk_version": { "type": "string", "minLength": 1, "maxLength": 128 },
     "ad_tracking_limited": { "type": "boolean" },
     "attribution_confirmed_at": { "$ref": "../common.schema.json#/$defs/dateTime" },
+    "meta_referrer_status": { "enum": ["decrypted", "decrypt_failed", "absent"] },
+    "meta_referrer_context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attribution_model"],
+      "properties": {
+        "attribution_model": { "enum": ["last_click", "view_through"] }
+      }
+    },
+    "adservices_context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "attribution"],
+      "properties": {
+        "status": { "enum": ["attributed", "token_expired"] },
+        "attribution": { "type": "boolean" },
+        "org_id": { "type": "string", "pattern": "^[0-9]+$" },
+        "campaign_id": { "type": "string", "pattern": "^[0-9]+$" },
+        "ad_group_id": { "type": "string", "pattern": "^[0-9]+$" },
+        "keyword_id": { "type": "string", "pattern": "^[0-9]+$" },
+        "ad_id": { "type": "string", "pattern": "^[0-9]+$" },
+        "conversion_type": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "claim_type": { "enum": ["Click", "Impression"] },
+        "country_or_region": { "type": "string", "pattern": "^[A-Z]{2}$" },
+        "supply_placement": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "click_date": { "$ref": "../common.schema.json#/$defs/dateTime" },
+        "impression_date": { "$ref": "../common.schema.json#/$defs/dateTime" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "status": { "const": "attributed" } }, "required": ["status"] },
+          "then": { "properties": { "attribution": { "const": true } } }
+        },
+        {
+          "if": { "properties": { "status": { "const": "token_expired" } }, "required": ["status"] },
+          "then": { "properties": { "attribution": { "const": false } } }
+        }
+      ]
+    },
     "import_context": { "$ref": "../common.schema.json#/$defs/importContext" },
     "extensions": { "type": "object", "propertyNames": { "not": { "pattern": "^(import($|_)|imported($|_)|provider($|_))" } }, "additionalProperties": true }
   },
@@ -51,6 +90,22 @@
       "then": {
         "properties": { "install_begin_at_server": { "$ref": "../common.schema.json#/$defs/dateTime" } },
         "required": ["install_begin_at_server"]
+      }
+    },
+    {
+      "if": { "properties": { "meta_referrer_status": { "enum": ["decrypted", "decrypt_failed"] } }, "required": ["meta_referrer_status"] },
+      "then": {
+        "properties": { "meta_referrer_context": {} },
+        "required": ["meta_referrer_context"]
+      }
+    },
+    {
+      "if": { "properties": { "meta_referrer_status": { "const": "absent" } }, "required": ["meta_referrer_status"] },
+      "then": {
+        "not": {
+          "properties": { "meta_referrer_context": {} },
+          "required": ["meta_referrer_context"]
+        }
       }
     }
   ]

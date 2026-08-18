@@ -490,6 +490,21 @@ def attribution(
             return result("organic", "imported", "provider_reported", "provider_organic")
         return result("unattributed", "imported", "provider_reported", "provider_unattributed")
 
+    if payload.get("meta_referrer_status") == "decrypted":
+        return result(
+            "non_organic", "meta_install_referrer",
+            payload["meta_referrer_context"]["attribution_model"], "meta_referrer_decrypted",
+        )
+    if payload.get("meta_referrer_status") == "decrypt_failed":
+        return result(
+            "unattributed", "meta_install_referrer",
+            payload["meta_referrer_context"]["attribution_model"], "meta_referrer_decrypt_failed",
+        )
+    if payload.get("adservices_context", {}).get("status") == "attributed":
+        return result("non_organic", "apple_adservices", "last_click", "adservices_attributed")
+    if payload.get("adservices_context", {}).get("status") == "token_expired":
+        return result("unattributed", "apple_adservices", "last_click", "adservices_token_expired")
+
     if payload["referrer_status"] == "none":
         return result("organic", "none", "none", "no_referrer")
     if payload["referrer_status"] == "unsupported":
@@ -533,6 +548,52 @@ def attribution(
     return result("non_organic", "install_referrer", "last_click", "valid_install_referrer", {
         "evidence_refs": [evidence(click["record"]["record_id"]), evidence(install["record_id"])],
     })
+
+
+def aggregate_postback_attribution(
+    attempt: dict[str, Any],
+    lifecycle: dict[tuple[str, str, str], str],
+) -> dict[str, Any]:
+    server, record = attempt["server"], attempt["record"]
+    payload = record["payload"]
+    method = "skadnetwork" if record["event_name"] == "skan_postback" else "adattributionkit"
+    status, reason = "non_organic", "skan_postback_verified"
+    if not payload["signature_verified"]:
+        status, reason = "unattributed", "skan_signature_invalid"
+    elif not payload["did_win"]:
+        status, reason = "unattributed", "postback_not_winner"
+    elif payload.get("source_identifier") is None:
+        status, reason = "unattributed", "crowd_anonymity_suppressed"
+    elif payload.get("conversion_value") is None and payload.get("coarse_conversion_value") is None:
+        status, reason = "unattributed", "conversion_value_null"
+    return {
+        "attribution_id": f"attr:{record['record_id']}",
+        "tenant_id": server["tenant_id"],
+        "app_id": server["app_id"],
+        "subject_scope": "aggregate",
+        "subject_ref": f"aggregate:{method}:{record['record_id']}",
+        "status": status,
+        "method": method,
+        "model": "aggregate",
+        "reason_code": reason,
+        "reason_code_version": CONTRACT_VERSION,
+        "evidence_refs": [{
+            "tenant_id": server["tenant_id"],
+            "app_id": server["app_id"],
+            "ref": record["record_id"],
+            "lifecycle_status": lifecycle.get(
+                evidence_key(server["tenant_id"], server["app_id"], record["record_id"]), "available",
+            ),
+            "access_class": "protected",
+        }],
+        "effective_at": record["occurred_at"],
+        "decided_at": server["received_at"],
+        "input_cutoff_at": server["received_at"],
+        "finality": "final",
+        "rule_bundle_id": "apple-postback-default",
+        "rule_bundle_version": CONTRACT_VERSION,
+        "rule_bundle_hash": ZERO_HASH,
+    }
 
 
 def round_half_even(numerator: int, denominator: int) -> int:
@@ -1029,8 +1090,15 @@ def evaluate(value: dict[str, Any]) -> dict[str, Any]:
         for attempt in logical_evidence
     ], logical_event_sort_key)
     attributions = sort_by_key([
-        attribution(attempt, attempts, decisions, lifecycle)
-        for attempt in accepted if attempt["record"]["event_name"] == "install"
+        *[
+            attribution(attempt, attempts, decisions, lifecycle)
+            for attempt in accepted if attempt["record"]["event_name"] == "install"
+        ],
+        *[
+            aggregate_postback_attribution(attempt, lifecycle)
+            for attempt in accepted
+            if attempt["record"]["event_name"] in ("skan_postback", "adattributionkit_postback")
+        ],
     ], attribution_sort_key)
     corrections: list[dict[str, Any]] = list(value.get("correction_inputs", []))
     for attempt in accepted:

@@ -66,8 +66,16 @@ export type OpenMMPAttributionResultV02 = {
   subject_scope: "installation_level" | "aggregate";
   subject_ref: string;
   status: "organic" | "non_organic" | "unattributed";
-  method: "install_referrer" | "aggregate_privacy" | "imported" | "none";
-  model: "last_click" | "aggregate" | "provider_reported" | "none";
+  method:
+    | "install_referrer"
+    | "aggregate_privacy"
+    | "imported"
+    | "skadnetwork"
+    | "adattributionkit"
+    | "meta_install_referrer"
+    | "apple_adservices"
+    | "none";
+  model: "last_click" | "view_through" | "aggregate" | "provider_reported" | "none";
   reason_code:
     | "valid_install_referrer"
     | "no_referrer"
@@ -83,7 +91,16 @@ export type OpenMMPAttributionResultV02 = {
     | "provider_organic"
     | "provider_unattributed"
     | "provider_time_authority_unavailable"
-    | "provider_modeled_conversion";
+    | "provider_modeled_conversion"
+    | "meta_referrer_decrypted"
+    | "meta_referrer_decrypt_failed"
+    | "adservices_attributed"
+    | "adservices_token_expired"
+    | "skan_postback_verified"
+    | "skan_signature_invalid"
+    | "postback_not_winner"
+    | "crowd_anonymity_suppressed"
+    | "conversion_value_null";
   reason_code_version: "0.2.0";
   evidence_refs: EvidenceRef[];
   effective_at: string;
@@ -248,7 +265,9 @@ export interface OpenMMPRawRecordV02 {
     | "ad_revenue"
     | "purchase"
     | "refund"
-    | "consent_changed";
+    | "consent_changed"
+    | "skan_postback"
+    | "adattributionkit_postback";
   schema_version: "0.2.0";
   payload_sha256: string;
   occurred_at: string;
@@ -284,7 +303,9 @@ export interface OpenMMPLogicalEventV02 {
     | "ad_revenue"
     | "purchase"
     | "refund"
-    | "consent_changed";
+    | "consent_changed"
+    | "skan_postback"
+    | "adattributionkit_postback";
   record_lifecycle: "active" | "retracted";
   timeliness: "on_time" | "late";
 }

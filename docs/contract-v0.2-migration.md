@@ -44,6 +44,10 @@ The `contract-v0.1` tag points to the pre-migration `main` commit. The versionin
 | Metric definition and run | Replaces the fixed three-name contract with typed data-driven calculations and grouping; adds money, ratio, and count run shapes. | Supports D1/D3/D7 ROAS, D1/D7 retention, cohort LTV, and cohort size without hard-coded metric-name branching (WO-3 B6/B7). |
 | FX aggregation | Converts and half-even rounds each source event before summing target units. | Prevents aggregate-first rounding drift (WO-3 B8). |
 | Import normalization | Higher-precision timestamps truncate to canonical milliseconds; missing upstream currency is supplied by deployment policy with `currency_source=default`. | Makes import-boundary normalization explicit and reproducible (WO-3 B9). |
+| Platform compatibility | Adds aggregate `skadnetwork` and `adattributionkit`, installation-level `meta_install_referrer` last-click/view-through, and installation-level `apple_adservices` last-click rows. | Makes the Stage C attribution methods and scopes structurally valid (WO-3 C1). |
+| Apple aggregate postbacks | Adds closed `skan_postback` and `adattributionkit_postback` event schemas with normalized platform fields and a separate signature-verification result. | Represents privacy-preserving aggregate attribution without installation identity (WO-3 C2). |
+| Meta Install Referrer | Adds `meta_referrer_status` and a minimal closed `meta_referrer_context` containing only normalized last-click/view-through semantics. Exact provider-decrypted fields remain unverified and absent. | Preserves verified contract semantics without inferring unavailable primary-source fields or using extensions (WO-3 C3). |
+| Apple AdServices | Adds a closed install `adservices_context` for attributed and token-expired normalized outcomes. | Represents Apple Ads attribution separately from first-party and imported-provider methods (WO-3 C1/C3). |
 
 ## Existing fixture input migration
 
@@ -163,6 +167,7 @@ Stage A also hardens the provider-key inputs introduced with fixtures 21 through
 | 31 `imported-reconciliation-derived` | Empty authored reconciliation input; evaluator-derived `matched` and `join_key_missing` rows, plus `provider_modeled_conversion`, `provider_unattributed`, and accepted `adapter:synthetic-network` evidence. | WO-3 A1, A2, A4, A6(d). |
 | 32 `timestamp-stale` | Rejected delivery/rejection with `timestamp_stale`, server-authoritative policy version/digest provenance, discarded payload, and no raw/logical evidence. | WO-3 A5. |
 | 33 `stage-b-cohort-metrics` | Typed click/install/ad-view evidence, installation and aggregate revenue, current append-only cost revision, seven data-driven metric definitions, and independently reviewed D1/D3/D7 ROAS, D1/D7 retention, D7 LTV, and cohort-size runs. | WO-3 B1-B9. |
+| 34 `stage-c-apple-meta-attribution` | Eleven accepted synthetic events and eleven attributions exercise SKAdNetwork, AdAttributionKit, Meta Install Referrer, Apple AdServices, both new aggregate event names, every Stage C compatibility method/model row, and every Stage C reason including the distinct non-winner reason. | WO-3 C1-C3. |
 
 ### Stage B golden-change ledger
 
@@ -178,16 +183,20 @@ This subsection is exhaustive relative to the accepted Stage A commit `c5c41b3c0
 
 Stage B input changes are exact: fixtures 08, 09, 17, 26, and 27 add `subject_scope=installation_level` to each ad-revenue payload; fixture 30 adds that scope plus `currency_source=reported`; fixture 33 is new. No other Stage A input or golden content changes in this stage.
 
+### Stage C golden-change ledger
+
+Stage C does not change any fixture 01-33 input or golden file. Fixture 34 adds one synthetic `input.json` and all 13 reviewed `expected_*.json` files. Its meaningful non-empty results are raw records, deliveries, logical events, baseline metric definitions, and eleven attribution results; the remaining output classes are explicit empty arrays. Producer suffixes are synthetic. The candidate outputs were accepted only after closed-schema validation, TypeScript/Python canonical parity, input-permutation invariance, and a field-by-field review of all eleven method/model/status/reason combinations.
+
 ## Inventory reconciliation
 
-The v0.2 fixture tree contains 33 `input.json` files and `33 * 13 = 429` golden output files, plus this README: 463 paths in the resulting tree. The base migration changes every inherited fixture-tree path because the version directory moves from v0.1 to v0.2; Git may display unchanged files as renames. Relative to the completed WO-2 tree, WO-3 Stage A adds five inputs and 60 reviewed golden files, and content-updates exactly five existing reconciliation goldens: fixtures 01, 03, 19, 21, and 23. Stage B then adds one input, 13 fixture-33 goldens, 32 explicit cost-output goldens, and the exact existing-content changes listed above. Use:
+The v0.2 fixture tree contains 34 `input.json` files and `34 * 13 = 442` golden output files, plus this README: 477 paths in the resulting tree. The base migration changes every inherited fixture-tree path because the version directory moves from v0.1 to v0.2; Git may display unchanged files as renames. Relative to the completed WO-2 tree, WO-3 Stage A adds five inputs and 60 reviewed golden files, and content-updates exactly five existing reconciliation goldens: fixtures 01, 03, 19, 21, and 23. Stage B then adds one input, 13 fixture-33 goldens, 32 explicit cost-output goldens, and the exact existing-content changes listed above. Stage C adds one input and 13 fixture-34 goldens without changing fixtures 01-33. Use:
 
 ```bash
 git diff --name-status --find-renames contract-v0.1..HEAD -- fixtures/
 git diff --stat contract-v0.1..HEAD -- fixtures/
 ```
 
-The expected new-side inventory is 33 inputs, 429 golden files, and one README. The tables above account for every content-changed inherited golden and every new golden; all remaining inherited goldens are path-only moves.
+The expected new-side inventory is 34 inputs, 442 golden files, and one README. The tables above account for every content-changed inherited golden and every new golden; all remaining inherited goldens are path-only moves.
 
 ## Consumer migration
 

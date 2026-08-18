@@ -456,7 +456,7 @@ if (!summaryOnly) {
         check(value.contract_version === "0.2.0", `registry version: ${name}`);
         if (name === "events") {
           unique(value.event_names, "event name");
-          check(value.event_names.length === 9, "event-name registry must contain the nine Stage B v0.2 events");
+          check(value.event_names.length === 11, "event-name registry must contain the eleven Stage C v0.2 events");
         } else if (name === "reasons") {
           for (const [reasonName, values] of Object.entries(value).filter(([key]) => key !== "contract_version")) {
             if (Array.isArray(values)) unique(values, `reason code in ${reasonName}`);
@@ -532,8 +532,8 @@ if (!summaryOnly) {
         }
       });
     }
-    it("contains 33 fixture directories", () => {
-      check(fixtureDirs.length === 33, `expected 33 fixture directories, found ${fixtureDirs.length}`);
+    it("contains 34 fixture directories", () => {
+      check(fixtureDirs.length === 34, `expected 34 fixture directories, found ${fixtureDirs.length}`);
     });
   });
 
@@ -765,12 +765,22 @@ const scenarios: Array<[string, () => void]> = [
     check(metrics.retention_d1.value_unscaled === "1000000" && metrics.retention_d7.value_unscaled === "1000000", "scenario 33 retention");
     check(metrics.cohort_ltv_d7_usd.value_unscaled === "150000000" && metrics.cohort_install_count.value_unscaled === "1", "scenario 33 LTV and count");
   }],
+  ["34 Stage C Apple and Meta attribution envelopes", () => {
+    const value = fixture("34-stage-c-apple-meta-attribution").output;
+    const reasons = new Set(value.attributions.map((item: Any) => item.reason_code));
+    for (const reason of [
+      "meta_referrer_decrypted", "meta_referrer_decrypt_failed", "adservices_attributed",
+      "adservices_token_expired", "skan_postback_verified", "skan_signature_invalid",
+      "postback_not_winner", "crowd_anonymity_suppressed", "conversion_value_null",
+    ]) check(reasons.has(reason), `scenario 34 missing ${reason}`);
+    check(value.attributions.filter((item: Any) => item.subject_scope === "aggregate").length === 5, "scenario 34 aggregate attribution count");
+  }],
 ];
 if (!summaryOnly) {
   describe("reviewed scenarios", () => {
     for (const [name, assertion] of scenarios) it(name, assertion);
-    it("contains 33 scenario assertions", () => {
-      check(scenarios.length === 33, "scenario assertion inventory must contain 33 entries");
+    it("contains 34 scenario assertions", () => {
+      check(scenarios.length === 34, "scenario assertion inventory must contain 34 entries");
     });
   });
 
@@ -1011,12 +1021,63 @@ if (!summaryOnly) {
       check(!validator(invalid), "Stage B accepted timestamp precision above milliseconds");
     });
   });
+
+  describe("WO-3 Stage C Apple and Meta attribution", () => {
+    it("exercises every new compatibility row", () => {
+      const output = fixture("34-stage-c-apple-meta-attribution").output;
+      const observed = new Set(output.attributions.map((item: Any) => `${item.subject_scope}|${item.method}|${item.model}`));
+      for (const row of [
+        "aggregate|skadnetwork|aggregate",
+        "aggregate|adattributionkit|aggregate",
+        "installation_level|meta_install_referrer|last_click",
+        "installation_level|meta_install_referrer|view_through",
+        "installation_level|apple_adservices|last_click",
+      ]) {
+        check(compatibility.some((item: Any) => `${item.subject_scope}|${item.method}|${item.model}` === row), `Stage C compatibility row missing: ${row}`);
+        check(observed.has(row), `Stage C compatibility row not exercised: ${row}`);
+      }
+    });
+    it("exercises every Stage C reason and both postback event names", () => {
+      const output = fixture("34-stage-c-apple-meta-attribution").output;
+      const reasons = new Set(output.attributions.map((item: Any) => item.reason_code));
+      for (const reason of [
+        "meta_referrer_decrypted", "meta_referrer_decrypt_failed", "adservices_attributed",
+        "adservices_token_expired", "skan_postback_verified", "skan_signature_invalid",
+        "postback_not_winner", "crowd_anonymity_suppressed", "conversion_value_null",
+      ]) check(reasons.has(reason), `Stage C reason not exercised: ${reason}`);
+      check(output.raw_records.some((item: Any) => item.event_name === "skan_postback"), "Stage C SKAN event not exercised");
+      check(output.raw_records.some((item: Any) => item.event_name === "adattributionkit_postback"), "Stage C AAK event not exercised");
+    });
+    it("keeps unverified Meta provider fields outside the closed contract", () => {
+      const installValidator = validatorFor("urn:open-mmp:schema:event-install:v0.2");
+      const input = fixture("34-stage-c-apple-meta-attribution").input;
+      const decrypted = structuredClone(input.records.find((item: Any) => item.record_id === "meta-click-install-34").payload);
+      decrypted.meta_referrer_context.campaign_id = "unverified-field";
+      check(!installValidator({ event_name: "install", ...decrypted }), "Stage C accepted an unverified Meta decrypted field");
+      const absent = structuredClone(input.records.find((item: Any) => item.record_id === "meta-absent-install-34").payload);
+      absent.meta_referrer_context = { attribution_model: "last_click" };
+      check(!installValidator({ event_name: "install", ...absent }), "Stage C accepted Meta context when status is absent");
+    });
+    it("validates normalized Apple envelopes and aggregate subject namespaces", () => {
+      const value = fixture("34-stage-c-apple-meta-attribution");
+      const skanValidator = validatorFor("urn:open-mmp:schema:event-skan-postback:v0.2");
+      const aakValidator = validatorFor("urn:open-mmp:schema:event-adattributionkit-postback:v0.2");
+      const skan = value.input.records.find((item: Any) => item.record_id === "skan-verified-34").payload;
+      const aak = value.input.records.find((item: Any) => item.record_id === "aak-not-winner-34").payload;
+      check(skanValidator({ event_name: "skan_postback", ...skan }), `Stage C SKAN schema: ${ajv.errorsText(skanValidator.errors)}`);
+      check(aakValidator({ event_name: "adattributionkit_postback", ...aak }), `Stage C AAK schema: ${ajv.errorsText(aakValidator.errors)}`);
+      const reengagement = structuredClone(aak);
+      reengagement.conversion_type = "re-engagement";
+      check(!aakValidator({ event_name: "adattributionkit_postback", ...reengagement }), "Stage C accepted out-of-scope re-engagement");
+      check(value.output.attributions.filter((item: Any) => item.subject_scope === "aggregate").every((item: Any) => item.subject_ref.startsWith(`aggregate:${item.method}:`)), "Stage C aggregate subject namespace");
+    });
+  });
 }
 
 const contractText = capture(() => readFileSync(join(root, "spec", "event-metric-contract-v0.2.md"), "utf8"));
 const fraudSchemaText = capture(() => readFileSync(join(root, "schemas", "fraud-decision.schema.json"), "utf8"));
 const acceptance: Array<[string, () => void]> = [
-  ["AC01 Draft 2020-12 schemas have stable IDs and versions", () => check(schemaPaths.length === 24 && schemaIds.every(Boolean), "AC01")],
+  ["AC01 Draft 2020-12 schemas have stable IDs and versions", () => check(schemaPaths.length === 26 && schemaIds.every(Boolean), "AC01")],
   ["AC02 canonical event names agree across registry and schemas", () => {
     const rawSchema = schemaValues.find(({ value }) => value.$id === outputSchemaIds.raw_records)?.value;
     check(rawSchema, "AC02 raw schema missing");
@@ -1102,7 +1163,7 @@ const acceptance: Array<[string, () => void]> = [
     check(corrections.some((item: Any) => item.correction_type === "retraction"), "AC15 retraction");
     check(fixture("17-redaction-recalculation").output.metric_runs.some((item: Any) => item.supersedes_metric_run_id), "AC15 redaction");
   }],
-  ["AC16 clock referrer prefetch and withdrawal fixtures pass", () => check(scenarios.length === 33 && fixture("11-clock-skew").output.deliveries.some((item: Any) => item.clock_skew_suspected) && fixture("13-referrer-unsupported").output.attributions.length === 2 && fixture("19-bot-prefetch").output.fraud_decisions.length === 1 && fixture("20-timestamp-invalid").output.rejections.some((item: Any) => item.reason_code === "timestamp_invalid"), "AC16")],
+  ["AC16 clock referrer prefetch and withdrawal fixtures pass", () => check(scenarios.length === 34 && fixture("11-clock-skew").output.deliveries.some((item: Any) => item.clock_skew_suspected) && fixture("13-referrer-unsupported").output.attributions.length === 2 && fixture("19-bot-prefetch").output.fraud_decisions.length === 1 && fixture("20-timestamp-invalid").output.rejections.some((item: Any) => item.reason_code === "timestamp_invalid"), "AC16")],
   ["AC17 server-recognized withdrawal rejects and redacts payload", () => {
     for (const name of ["14-withdrawal-after-occurrence", "15-event-after-withdrawal"]) {
       const value = fixture(name).output;
@@ -1142,7 +1203,7 @@ const acceptance: Array<[string, () => void]> = [
     for (const forbidden of ["threshold", "model_weight", "watchlist", "ip_address", "user_agent", "response_timing"]) check(!schemaText.includes(forbidden), `AC20 ${forbidden}`);
     check(specText.includes("remain private"), "AC20 private boundary");
   }],
-  ["AC21 one command validates every schema registry fixture and golden", () => check(schemaPaths.length === 24 && Object.keys(registries).length === 7 && fixtureDirs.length === 33 && outputArtifactCount === 33 * 13, "AC21")],
+  ["AC21 one command validates every schema registry fixture and golden", () => check(schemaPaths.length === 26 && Object.keys(registries).length === 7 && fixtureDirs.length === 34 && outputArtifactCount === 34 * 13, "AC21")],
   ["AC22 repeated and independent evaluators produce identical JCS", () => {
     for (const { output, python } of results.values()) check(equal(output, python), "AC22 evaluator mismatch");
     const vector = { numbers: [333333333.33333329, 1e30, 4.50, 2e-3, 1e-27, -0], string: "€$\u000f\nA'B\"\\\"/" };

@@ -458,6 +458,28 @@ function makeAttribution(
     }
     return result("unattributed", "imported", "provider_reported", "provider_unattributed");
   }
+  if (payload.meta_referrer_status === "decrypted") {
+    return result(
+      "non_organic",
+      "meta_install_referrer",
+      payload.meta_referrer_context.attribution_model,
+      "meta_referrer_decrypted",
+    );
+  }
+  if (payload.meta_referrer_status === "decrypt_failed") {
+    return result(
+      "unattributed",
+      "meta_install_referrer",
+      payload.meta_referrer_context.attribution_model,
+      "meta_referrer_decrypt_failed",
+    );
+  }
+  if (payload.adservices_context?.status === "attributed") {
+    return result("non_organic", "apple_adservices", "last_click", "adservices_attributed");
+  }
+  if (payload.adservices_context?.status === "token_expired") {
+    return result("unattributed", "apple_adservices", "last_click", "adservices_token_expired");
+  }
   if (payload.referrer_status === "none") return result("organic", "none", "none", "no_referrer");
   if (payload.referrer_status === "unsupported") return result("unattributed", "none", "none", "install_referrer_unsupported");
   if (payload.referrer_status === "unavailable") return result("unattributed", "none", "none", "install_referrer_unavailable");
@@ -487,6 +509,58 @@ function makeAttribution(
   return result("non_organic", "install_referrer", "last_click", "valid_install_referrer", {
     evidence_refs: [evidence(click.record.record_id), evidence(install.record_id)],
   });
+}
+
+function makeAggregatePostbackAttribution(
+  attempt: Attempt,
+  lifecycle: Map<string, LifecycleStatus>,
+): Attribution {
+  const { server, record } = attempt;
+  const payload = record.payload;
+  const isSkan = record.event_name === "skan_postback";
+  const method: Attribution["method"] = isSkan ? "skadnetwork" : "adattributionkit";
+  const evidence: EvidenceRef = {
+    tenant_id: server.tenant_id,
+    app_id: server.app_id,
+    ref: record.record_id,
+    lifecycle_status: lifecycle.get(evidenceKey(server.tenant_id, server.app_id, record.record_id)) ?? "available",
+    access_class: "protected",
+  };
+  let status: Attribution["status"] = "non_organic";
+  let reason_code: Attribution["reason_code"] = "skan_postback_verified";
+  if (!payload.signature_verified) {
+    status = "unattributed";
+    reason_code = "skan_signature_invalid";
+  } else if (!payload.did_win) {
+    status = "unattributed";
+    reason_code = "postback_not_winner";
+  } else if (payload.source_identifier === undefined) {
+    status = "unattributed";
+    reason_code = "crowd_anonymity_suppressed";
+  } else if (payload.conversion_value === undefined && payload.coarse_conversion_value === undefined) {
+    status = "unattributed";
+    reason_code = "conversion_value_null";
+  }
+  return {
+    attribution_id: `attr:${record.record_id}`,
+    tenant_id: server.tenant_id,
+    app_id: server.app_id,
+    subject_scope: "aggregate",
+    subject_ref: `aggregate:${method}:${record.record_id}`,
+    status,
+    method,
+    model: "aggregate",
+    reason_code,
+    reason_code_version: CONTRACT_VERSION,
+    evidence_refs: [evidence],
+    effective_at: record.occurred_at,
+    decided_at: server.received_at,
+    input_cutoff_at: server.received_at,
+    finality: "final",
+    rule_bundle_id: "apple-postback-default",
+    rule_bundle_version: CONTRACT_VERSION,
+    rule_bundle_hash: HASH,
+  };
 }
 
 function roundHalfEven(numerator: bigint, denominator: bigint): bigint {
@@ -913,9 +987,14 @@ export function evaluate(input: Any): EvaluationOutput {
     record_lifecycle: "active",
     timeliness: attempt.record.late ? "late" : "on_time",
   })), (event) => [event.logical_event_id, event.tenant_id, event.app_id]);
-  const attributions = sortByKey(acceptedUnique
-    .filter((attempt) => attempt.record.event_name === "install")
-    .map((attempt) => makeAttribution(attempt, all, decisions, lifecycle)),
+  const attributions = sortByKey([
+    ...acceptedUnique
+      .filter((attempt) => attempt.record.event_name === "install")
+      .map((attempt) => makeAttribution(attempt, all, decisions, lifecycle)),
+    ...acceptedUnique
+      .filter((attempt) => ["skan_postback", "adattributionkit_postback"].includes(attempt.record.event_name))
+      .map((attempt) => makeAggregatePostbackAttribution(attempt, lifecycle)),
+  ],
   (attribution) => [attribution.attribution_id, attribution.tenant_id, attribution.app_id]);
   const corrections: Correction[] = [...(input.correction_inputs ?? [])];
   for (const attempt of acceptedUnique.filter((entry) => entry.record.event_name === "refund")) {

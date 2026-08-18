@@ -1,6 +1,6 @@
 # Contract v0.2 fixture provenance
 
-The JSON files in the 33 numbered directories are reviewed, immutable golden contract examples. They are committed as source artifacts; the validation command never creates, updates, or regenerates them.
+The JSON files in the 34 numbered directories are reviewed, immutable golden contract examples. They are committed as source artifacts; the validation command never creates, updates, or regenerates them.
 
 Each fixture has one synthetic input and 13 independently asserted output classes:
 
@@ -66,11 +66,15 @@ Each of the three synthetic EUR revenue events has `amount_unscaled=100000001`, 
 
 The cost dimension object `{campaign_id:"provider-campaign-33",country:"JP",network:"synthetic-network"}` has independently checked JCS/SHA-256 digest `953315226bb75e01e5ed7f838cf9f044cbfe5fb899b5bfa5e42e300a87d2caff`. The later `as_of` row supersedes the earlier row only for current selection; both remain immutable inputs. The aggregate revenue uses the synthetic deployment default USD with `currency_source=default` and is excluded from installation-cohort metrics. The imported timestamp is already normalized by truncation to `2026-08-01T00:00:00.123Z`. The reviewed golden artifacts were checked against these formulas and the output schemas; the validator itself never writes them.
 
+### Fixture 34: Apple and Meta attribution envelopes
+
+The fixture contains eleven synthetic records and no metric, cost, privacy, fraud, correction, or reconciliation input. The four install paths independently map to Meta last-click, Meta view-through, Meta decrypt failure, and the ordinary no-referrer fallback. The two AdServices paths map to attributed and expired-token outcomes. The five aggregate postbacks cover verified SKAdNetwork, invalid SKAdNetwork signature, AdAttributionKit non-winner, source suppression, and null conversion value. Every output cites only its same-scope source record. Public producer suffixes are synthetic; the values are not provider or campaign exports.
+
 ## v0.2 fixture derivations
 
 Fixtures 01 through 19 preserve the reviewed v0.1 scenarios under the v0.2 schemas and semantics. Their per-file changes are recorded in `docs/contract-v0.2-migration.md`. Every fixture now includes reviewed metric definitions and an explicit cost-record output class.
 
-Each new fixture 20 through 33 contains the same 13 `expected_*.json` artifacts listed above. Empty arrays are deliberate reviewed outputs, not missing assertions.
+Each new fixture 20 through 34 contains the same 13 `expected_*.json` artifacts listed above. Empty arrays are deliberate reviewed outputs, not missing assertions.
 
 | Fixture | Independent derivation of the meaningful golden result |
 | --- | --- |
@@ -88,6 +92,7 @@ Each new fixture 20 through 33 contains the same 13 `expected_*.json` artifacts 
 | `31-imported-reconciliation-derived` | Both imported installs start with an empty fixture-authored `reconciliation_inputs` array. The modeled install has a provider install reference and deterministically yields `provider_modeled_conversion` plus `matched`; the provider-unattributed install has no provider install/click reference and yields `provider_unattributed` plus `join_key_missing`. An accepted `adapter:synthetic-network` click exercises the adapter producer independently. |
 | `32-timestamp-stale` | `2026-07-31T23:59:59.999Z` is a real millisecond UTC instant but is one millisecond before `timestamp_stale_policy.before=2026-08-01T00:00:00.000Z`. The independently calculated policy digest is `c034a208b23264f380a2103e28d8f80375eae379ebabb805e1da9238876a05c3` for JCS `{authority:"server",before:"2026-08-01T00:00:00.000Z",policy_version:"retention-v0.2"}`. It is rejected as `timestamp_stale`; delivery and rejection retain that policy provenance, while the payload is discarded and no raw or logical evidence is emitted. Mutations prove equality is accepted, absence disables the policy, the old flat field is rejected, and a mismatched digest fails evaluation. |
 | `33-stage-b-cohort-metrics` | Typed click/install dimensions and `ad_view` evidence are retained. Installation-level revenue joins one install, aggregate revenue does not. The later cost revision is current at the watermark. Per-event half-even FX produces the independently calculated D1/D3/D7 ROAS, D1/D7 retention, D7 cohort LTV, and cohort-size results described above. |
+| `34-stage-c-apple-meta-attribution` | Eleven accepted synthetic records yield eleven same-scope attributions: Meta last-click/view-through decrypted evidence, Meta decrypt failure and absent fallback, AdServices attributed/expired evidence, verified/invalid SKAdNetwork, and AdAttributionKit non-winner/source-suppressed/null-conversion branches. All 13 golden artifact classes were reviewed against the closed event/output schemas and TypeScript/Python parity. |
 
 ## Adding a fixture
 

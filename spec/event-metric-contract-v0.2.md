@@ -127,6 +127,36 @@ An accepted install produced by `import:<provider>` may carry the closed `import
 
 The canonical provider dimension field names are `provider_network`, `provider_site_ref`, and `provider_country`. They implement the Stage A work-order proposals `network`, `site_ref`, and `country` while preserving the v0.2 closed-context namespace.
 
+### Platform attribution envelopes
+
+Platform attribution remains separate from imported provider judgments and first-party Install Referrer attribution. The compatibility registry permits aggregate SKAdNetwork and AdAttributionKit results, installation-level Meta Install Referrer last-click and view-through results, and installation-level Apple AdServices last-click results.
+
+`skan_postback` and `adattributionkit_postback` are protected, aggregate event envelopes. Their authenticated producer uses a deployment-private `postback:<kind>` mapping; public fixtures use only `postback:synthetic-*` values. Signature material and `signature_verified` are separate fields. AdAttributionKit conversion types are limited to download and redownload in v0.2; re-engagement is intentionally outside this work order. The reference evaluator emits:
+
+- `unattributed/skan_signature_invalid` when signature verification fails;
+- `unattributed/postback_not_winner` when a verified postback has `did_win=false`;
+- `unattributed/crowd_anonymity_suppressed` when a winning postback omits its source identifier;
+- `unattributed/conversion_value_null` when a winning postback contains neither a fine nor coarse conversion value; or
+- `non_organic/skan_postback_verified` when the verified winning aggregate envelope contains both source and conversion evidence.
+
+`postback_not_winner` is distinct from crowd-anonymity suppression: a losing-copy signal does not claim that Apple withheld a field for privacy. SKAdNetwork `transaction_id` and AdAttributionKit `postback_identifier` are the source deduplication identifiers. Their signature verification, duplicate rejection, and any deployment-private key material occur before contract evaluation; the public contract stores the normalized result and protected evidence, never a private verification key.
+
+The install envelope may carry a closed `adservices_context`. `status=attributed` requires `attribution=true` and yields `non_organic/apple_adservices/last_click/adservices_attributed`. `status=token_expired` requires `attribution=false` and yields `unattributed/apple_adservices/last_click/adservices_token_expired`. Campaign, ad-group, keyword, ad, placement, country, conversion, claim, click-date, and impression-date values are retained only when supplied by the verified Apple response.
+
+The install envelope may also carry `meta_referrer_status=decrypted | decrypt_failed | absent`. Because the Meta primary documentation was unavailable at verification time, the closed `meta_referrer_context` intentionally contains only the implementation-neutral `attribution_model=last_click | view_through`. A decrypted attributed envelope yields `non_organic/meta_install_referrer/<model>/meta_referrer_decrypted`; a decrypt failure yields `unattributed/meta_install_referrer/<model>/meta_referrer_decrypt_failed`; an absent envelope continues through the ordinary first-party evidence rules. Exact decrypted Meta campaign, ad-group, ad, Instagram, and publisher-platform fields, plus failure and retry semantics, are unverified and therefore are not contract fields. They MUST NOT be smuggled through `extensions` to create attribution semantics.
+
+The following primary Apple documentation was checked on 2026-08-18:
+
+- SKAdNetwork postback parameters: <https://developer.apple.com/documentation/storekit/identifying-the-parameters-in-install-validation-postbacks>
+- SKAdNetwork signature verification: <https://developer.apple.com/documentation/storekit/verifying-an-install-validation-postback>
+- SKAdNetwork multiple conversion windows: <https://developer.apple.com/documentation/storekit/receiving-postbacks-in-multiple-conversion-windows>
+- AdAttributionKit postback parameters: <https://developer.apple.com/documentation/adattributionkit/identifying-the-parameters-in-a-postback>
+- AdAttributionKit postback verification: <https://developer.apple.com/documentation/adattributionkit/verifying-a-postback>
+- AdAttributionKit and SKAdNetwork interoperability: <https://developer.apple.com/documentation/adattributionkit/adattributionkit-skadnetwork-interoperability>
+- Apple AdServices attribution token and response: <https://developer.apple.com/documentation/AdServices/AAAttribution/attributionToken%28%29>
+
+The Meta Install Referrer primary page at <https://developers.facebook.com/docs/app-ads/meta-install-referrer> could not be retrieved on 2026-08-18. No provider-specific decrypted field was inferred from secondary material.
+
 ## Money, FX, cost, and cohort metrics
 
 Source money is:
@@ -227,7 +257,7 @@ Production signals, IP or User-Agent values, live thresholds, model weights, wat
 
 ## Reviewed fixture and validation gate
 
-The reviewed gate compiles 24 schemas and validates 7 registries. The 33 fixture directories contain synthetic input plus 13 reviewed golden output classes: raw records, deliveries, logical events, corrections, privacy requests, privacy tombstones, attributions, metric definitions, metric runs, cost records, public fraud decisions, rejections, and reconciliation. Fixture 10 demonstrates both paid reinstall attribution and no-referrer redownload attribution. Fixtures 28 through 32 exercise imported attribution, automatically derived reconciliation, every registered producer form, and stale-evidence rejection. Fixture 33 exercises reporting dimensions, advertiser-side ad views, installation and aggregate revenue, default-currency provenance, append-only cost revisions, per-event half-even FX, ROAS, retention, and cohort LTV/count. Validation also exercises invalid calendar timestamps, reconciliation reasons, attribution supersession, replay suspicion, retention expiry, impression-to-revenue evidence, reorder invariance, install-type evidence dominance, record-ID collision, click ambiguity, millisecond normalization boundaries, and scoped-reference mutations; golden files remain committed review artifacts.
+The reviewed gate compiles 26 schemas and validates 7 registries. The 34 fixture directories contain synthetic input plus 13 reviewed golden output classes: raw records, deliveries, logical events, corrections, privacy requests, privacy tombstones, attributions, metric definitions, metric runs, cost records, public fraud decisions, rejections, and reconciliation. Fixture 10 demonstrates both paid reinstall attribution and no-referrer redownload attribution. Fixtures 28 through 32 exercise imported attribution, automatically derived reconciliation, every registered producer form, and stale-evidence rejection. Fixture 33 exercises reporting dimensions, advertiser-side ad views, installation and aggregate revenue, default-currency provenance, append-only cost revisions, per-event half-even FX, ROAS, retention, and cohort LTV/count. Fixture 34 exercises every Stage C method/model row, both Apple aggregate event names, every Stage C reason, synthetic postback producers, and the intentionally minimal Meta envelope. Validation also exercises invalid calendar timestamps, reconciliation reasons, attribution supersession, replay suspicion, retention expiry, impression-to-revenue evidence, reorder invariance, install-type evidence dominance, record-ID collision, click ambiguity, millisecond normalization boundaries, and scoped-reference mutations; golden files remain committed review artifacts.
 
 The validation command never writes fixture files. `npm run validate`:
 
@@ -235,8 +265,8 @@ The validation command never writes fixture files. `npm run validate`:
 2. compiles every Draft 2020-12 schema;
 3. validates registry shape, uniqueness, and cross-references;
 4. validates every input event through its event schema;
-5. validates all 384 golden output artifacts;
-6. runs named assertions for all 32 scenarios and 26 acceptance criteria (AC01-AC26);
+5. validates all 442 golden output artifacts;
+6. runs named assertions for all 34 scenarios and 26 acceptance criteria (AC01-AC26);
 7. runs deliberate negative mutations;
 8. runs the TypeScript evaluator twice;
 9. runs the independently implemented Python evaluator;
@@ -256,4 +286,5 @@ Environment setup is `npm ci` and `python -m pip install --require-hashes --requ
 - Metric definitions are reviewed fixture outputs. Eight additional required scenarios cover invalid timestamps, three reconciliation differences, attribution supersession, replay suspicion, retention expiry, and impression-to-revenue linkage.
 - Stage A of the v0.2 extension adds provider-reported attribution as a separate imported method, closed import context, automatic import reconciliation, explicit producer forms, and `timestamp_stale`; none of these changes name or rate an incumbent provider.
 - Stage B adds typed click/install reporting dimensions, advertiser-side `ad_view`, scoped ad revenue, append-only cost records, data-driven metric definitions, per-event half-even conversion, and deterministic ROAS, retention, and cohort metrics.
+- Stage C adds aggregate SKAdNetwork and AdAttributionKit envelopes, a closed minimal Meta Install Referrer envelope, Apple AdServices evidence, platform-specific compatibility rows, and versioned platform attribution reasons. Provider fields that could not be verified from primary documentation are deliberately absent.
 - Full migration details and the golden-change ledger are in `docs/contract-v0.2-migration.md`.
