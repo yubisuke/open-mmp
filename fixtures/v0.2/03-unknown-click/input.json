@@ -26,7 +26,7 @@
       "matching_keys": [
         {
           "type": "provider_click_id",
-          "value": "unknown-click",
+          "value": "unknown-click_0000000000000000",
           "scope": "tenant_app",
           "normalization": "identity",
           "cardinality": "one_to_one",
@@ -75,7 +75,7 @@
         "installation_id": "installation:install-3",
         "install_type": "first_install",
         "referrer_status": "available",
-        "click_id": "unknown-click",
+        "click_id": "unknown-click_0000000000000000",
         "install_begin_at_server_status": "available",
         "install_begin_at_server": "2026-08-12T00:00:00.000Z",
         "protected_referrer_evidence_ref": "protected:referrer:install-3"

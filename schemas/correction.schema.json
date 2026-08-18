@@ -12,7 +12,7 @@
     "correction_id": { "$ref": "common.schema.json#/$defs/id" },
     "corrects_record_id": { "$ref": "common.schema.json#/$defs/id" },
     "correction_type": { "enum": ["correction", "retraction", "redaction"] },
-    "correction_reason": { "type": "string" },
+    "correction_reason": { "enum": ["refund", "privacy_deletion", "retention_expiry", "duplicate_source"] },
     "effective_at": { "$ref": "common.schema.json#/$defs/dateTime" }
   }
 }

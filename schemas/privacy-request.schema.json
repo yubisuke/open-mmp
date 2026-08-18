@@ -15,7 +15,7 @@
     "requested_at": { "$ref": "common.schema.json#/$defs/dateTime" },
     "completed_at": { "$ref": "common.schema.json#/$defs/dateTime" },
     "status": { "enum": ["received", "processing", "completed", "failed"] },
-    "reason_code": { "type": "string", "minLength": 1 },
+    "reason_code": { "enum": ["privacy_deletion", "retention_expiry"] },
     "policy_version": { "type": "string", "minLength": 1 },
     "affected_records": {
       "type": "array",

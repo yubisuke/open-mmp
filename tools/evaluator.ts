@@ -18,7 +18,7 @@ type Reconciliation = EvaluationOutput["reconciliation"][number];
 type EvidenceRef = Attribution["evidence_refs"][number];
 type LifecycleStatus = EvidenceRef["lifecycle_status"];
 
-const CONTRACT_VERSION = "0.2.0";
+const CONTRACT_VERSION = "0.2.0" as const;
 const HASH = "0".repeat(64);
 const DAY_MS = 86_400_000;
 
@@ -327,27 +327,27 @@ function makeAttribution(
     lifecycle_status: lifecycle.get(evidenceKey(server.tenant_id, server.app_id, ref)) ?? "available",
     access_class: "protected",
   });
-  const base: Omit<Attribution, "status" | "method" | "model" | "reason_code"> = {
+  const base = {
     attribution_id: `attr:${install.record_id}`,
     tenant_id: server.tenant_id,
     app_id: server.app_id,
-    subject_scope: "installation_level",
+    subject_scope: "installation_level" as const,
     subject_ref: payload.installation_id,
     reason_code_version: CONTRACT_VERSION,
     evidence_refs: [evidence(install.record_id)],
     effective_at: install.occurred_at,
     decided_at: server.received_at,
     input_cutoff_at: server.received_at,
-    finality: "final",
+    finality: "final" as const,
     rule_bundle_id: "attribution-default",
     rule_bundle_version: CONTRACT_VERSION,
     rule_bundle_hash: HASH,
-  };
+  } satisfies Omit<Attribution, "status" | "method" | "model" | "reason_code">;
   const result = (
     status: Attribution["status"],
     method: Attribution["method"],
     model: Attribution["model"],
-    reason_code: string,
+    reason_code: Attribution["reason_code"],
     extra: Partial<Attribution> = {},
   ): Attribution => ({ ...base, status, method, model, reason_code, ...extra });
   if (payload.referrer_status === "none") return result("organic", "none", "none", "no_referrer");
@@ -583,7 +583,7 @@ export function evaluate(input: Any): EvaluationOutput {
     producer: attempt.record.producer,
     event_id: attempt.record.event_id,
     event_name: attempt.record.event_name,
-    lifecycle: "active",
+    record_lifecycle: "active",
     timeliness: attempt.record.late ? "late" : "on_time",
   })), (event) => [event.logical_event_id, event.tenant_id, event.app_id]);
   const attributions = sortByKey(acceptedUnique

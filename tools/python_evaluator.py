@@ -678,7 +678,7 @@ def evaluate(value: dict[str, Any]) -> dict[str, Any]:
             "producer": attempt["record"]["producer"],
             "event_id": attempt["record"]["event_id"],
             "event_name": attempt["record"]["event_name"],
-            "lifecycle": "active",
+            "record_lifecycle": "active",
             "timeliness": "late" if attempt["record"].get("late") else "on_time",
         }
         for attempt in logical_evidence

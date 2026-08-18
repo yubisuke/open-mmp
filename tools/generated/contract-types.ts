@@ -12,12 +12,45 @@ export type OpenMMPPrivacyRequestV02 = {
   requested_at: string;
   completed_at?: string;
   status: "received" | "processing" | "completed" | "failed";
-  reason_code: string;
+  reason_code: "privacy_deletion" | "retention_expiry";
   policy_version: string;
   affected_records: {
     record_id: string;
     lifecycle_status: "redacted" | "purged";
   }[];
+};
+export type OpenMMPAttributionResultV02 = {
+  [k: string]: unknown;
+} & {
+  attribution_id: string;
+  tenant_id: string;
+  app_id: string;
+  subject_scope: "installation_level" | "aggregate";
+  subject_ref: string;
+  status: "organic" | "non_organic" | "unattributed";
+  method: "install_referrer" | "aggregate_privacy" | "none";
+  model: "last_click" | "aggregate" | "none";
+  reason_code:
+    | "valid_install_referrer"
+    | "no_referrer"
+    | "unknown_click_id"
+    | "window_expired"
+    | "authoritative_time_missing"
+    | "authoritative_time_invalid"
+    | "install_referrer_unsupported"
+    | "install_referrer_unavailable"
+    | "ambiguous_click_id"
+    | "bot_prefetch";
+  reason_code_version: "0.2.0";
+  evidence_refs: EvidenceRef[];
+  effective_at: string;
+  decided_at: string;
+  input_cutoff_at: string;
+  finality: "pending" | "provisional" | "final" | "superseded" | "retracted";
+  rule_bundle_id: string;
+  rule_bundle_version: string;
+  rule_bundle_hash: string;
+  supersedes_attribution_id?: string;
 };
 
 export interface OpenMMPEvaluationOutputV02 {
@@ -53,7 +86,11 @@ export interface OpenMMPRawRecordV02 {
   raw_payload_ref: string;
   processing_purpose_id?: string;
   consent_evaluation_policy_version: string;
-  consent_decision_reason_code: string;
+  consent_decision_reason_code:
+    | "consent_not_required"
+    | "consent_valid_before_withdrawal"
+    | "documented_alternative_legal_basis"
+    | "consent_withdrawn";
   withdrawal_recognized_at?: string;
   alternative_legal_basis_id?: string;
   alternative_legal_basis_policy_version?: string;
@@ -71,10 +108,19 @@ export interface OpenMMPEventDeliveryV02 {
   timeliness: "on_time" | "late";
   clock_skew_suspected: boolean;
   payload_disposition: "protected" | "discarded" | "redacted";
-  reason_code?: string;
+  reason_code?:
+    | "client_scope_mismatch"
+    | "consent_withdrawn"
+    | "aggregate_installation_join_forbidden"
+    | "event_id_conflict"
+    | "record_id_collision";
   processing_purpose_id?: string;
   consent_evaluation_policy_version: string;
-  consent_decision_reason_code: string;
+  consent_decision_reason_code:
+    | "consent_not_required"
+    | "consent_valid_before_withdrawal"
+    | "documented_alternative_legal_basis"
+    | "consent_withdrawn";
   withdrawal_recognized_at?: string;
   alternative_legal_basis_id?: string;
   alternative_legal_basis_policy_version?: string;
@@ -89,7 +135,7 @@ export interface OpenMMPLogicalEventV02 {
   event_id: string;
   event_name:
     "click" | "install" | "session_start" | "ad_impression" | "ad_revenue" | "purchase" | "refund" | "consent_changed";
-  lifecycle: "active" | "retracted" | "redacted";
+  record_lifecycle: "active" | "retracted";
   timeliness: "on_time" | "late";
 }
 export interface OpenMMPCorrectionV02 {
@@ -99,7 +145,7 @@ export interface OpenMMPCorrectionV02 {
   correction_id: string;
   corrects_record_id: string;
   correction_type: "correction" | "retraction" | "redaction";
-  correction_reason: string;
+  correction_reason: "refund" | "privacy_deletion" | "retention_expiry" | "duplicate_source";
   effective_at: string;
 }
 export interface OpenMMPPrivacyTombstoneV02 {
@@ -114,33 +160,12 @@ export interface OpenMMPPrivacyTombstoneV02 {
   provenance_digest: string;
   created_at: string;
 }
-export interface OpenMMPAttributionResultV02 {
-  attribution_id: string;
-  tenant_id: string;
-  app_id: string;
-  subject_scope: "installation_level" | "aggregate";
-  subject_ref: string;
-  status: "organic" | "non_organic" | "unattributed";
-  method: "install_referrer" | "aggregate_privacy" | "none";
-  model: "last_click" | "aggregate" | "none";
-  reason_code: string;
-  reason_code_version: "0.2.0";
-  evidence_refs: EvidenceRef[];
-  effective_at: string;
-  decided_at: string;
-  input_cutoff_at: string;
-  finality: "pending" | "provisional" | "final" | "superseded" | "retracted";
-  rule_bundle_id: string;
-  rule_bundle_version: string;
-  rule_bundle_hash: string;
-  supersedes_attribution_id?: string;
-}
 export interface EvidenceRef {
   tenant_id: string;
   app_id: string;
   ref: string;
   lifecycle_status: "available" | "redacted" | "purged";
-  access_class?: "public" | "protected" | "private";
+  access_class: "public" | "protected" | "private";
 }
 export interface OpenMMPMetricRunV02 {
   metric_run_id: string;
@@ -156,7 +181,7 @@ export interface OpenMMPMetricRunV02 {
   data_freshness: "complete" | "late_excluded" | "recalculated";
   aggregation_time_zone: "UTC" | "Asia/Tokyo";
   rule_bundle_id: string;
-  rule_bundle_version: "0.2.0";
+  rule_bundle_version: string;
   rule_bundle_hash: string;
   fx_rate: string;
   fx_rate_source: string;
@@ -176,7 +201,7 @@ export interface OpenMMPFraudDecisionV02 {
   subject_ref: string;
   decision: "clear" | "suspected" | "confirmed";
   action: "allow" | "flag" | "exclude" | "quarantine";
-  reason_code: string;
+  reason_code: "bot_prefetch" | "replay_suspected";
   reason_code_version: "0.2.0";
   evidence: {
     type: string;
@@ -196,13 +221,22 @@ export interface OpenMMPRejectionV02 {
   record_id: string;
   tenant_id: string;
   app_id: string;
-  reason_code: string;
+  reason_code:
+    | "client_scope_mismatch"
+    | "consent_withdrawn"
+    | "aggregate_installation_join_forbidden"
+    | "event_id_conflict"
+    | "record_id_collision";
   reason_code_version: "0.2.0";
   payload_disposition: "discarded" | "protected";
   retained: "non_identifying_metadata" | "protected_conflict_evidence";
   processing_purpose_id?: string;
   consent_evaluation_policy_version: string;
-  consent_decision_reason_code: string;
+  consent_decision_reason_code:
+    | "consent_not_required"
+    | "consent_valid_before_withdrawal"
+    | "documented_alternative_legal_basis"
+    | "consent_withdrawn";
   withdrawal_recognized_at?: string;
 }
 export interface OpenMMPReconciliationResultV02 {

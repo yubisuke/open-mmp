@@ -4,6 +4,7 @@
   "title": "Open MMP Ad Revenue Event v0.2",
   "type": "object",
   "additionalProperties": false,
+  "allOf": [{ "$ref": "../common.schema.json#/$defs/money" }],
   "required": ["event_name", "installation_id", "impression_id", "ad_unit_id", "ad_network", "amount_unscaled", "amount_scale", "currency", "revenue_source"],
   "properties": {
     "event_name": { "const": "ad_revenue" },
@@ -11,9 +12,9 @@
     "impression_id": { "$ref": "../common.schema.json#/$defs/id" },
     "ad_unit_id": { "$ref": "../common.schema.json#/$defs/id" },
     "ad_network": { "type": "string", "minLength": 1 },
-    "amount_unscaled": { "type": "string", "pattern": "^[0-9]+$" },
-    "amount_scale": { "type": "integer", "minimum": 0, "maximum": 18 },
-    "currency": { "type": "string", "pattern": "^[A-Z]{3}$" },
+    "amount_unscaled": {},
+    "amount_scale": {},
+    "currency": {},
     "revenue_source": { "enum": ["client_estimated", "server_verified", "imported_reported"] },
     "extensions": { "type": "object", "additionalProperties": true }
   }

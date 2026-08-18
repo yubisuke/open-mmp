@@ -54,7 +54,7 @@
         "installation_id": "installation:install-unsupported",
         "install_type": "first_install",
         "referrer_status": "unsupported",
-        "click_id": "click-a",
+        "click_id": "click-a_0000000000000000",
         "install_begin_at_server_status": "missing"
       }
     },
@@ -78,7 +78,7 @@
         "installation_id": "installation:install-unavailable",
         "install_type": "first_install",
         "referrer_status": "unavailable",
-        "click_id": "click-a",
+        "click_id": "click-a_0000000000000000",
         "install_begin_at_server_status": "missing"
       }
     }

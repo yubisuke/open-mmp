@@ -91,7 +91,7 @@
       "processing_purpose_id": "analytics",
       "processing_sequence": 1,
       "payload": {
-        "click_id": "click-a",
+        "click_id": "click-a_0000000000000000",
         "tracking_link_id": "link-a",
         "campaign_id": "campaign-a",
         "redirector_click_at": "2026-08-05T00:00:00.000Z",
@@ -118,7 +118,7 @@
         "installation_id": "installation:install-1",
         "install_type": "first_install",
         "referrer_status": "available",
-        "click_id": "click-a",
+        "click_id": "click-a_0000000000000000",
         "install_begin_at_server_status": "available",
         "install_begin_at_server": "2026-08-06T00:00:00.000Z",
         "protected_referrer_evidence_ref": "protected:referrer:install-1"

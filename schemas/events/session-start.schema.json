@@ -5,5 +5,5 @@
   "type": "object",
   "additionalProperties": false,
   "required": ["event_name", "installation_id", "session_id"],
-  "properties": { "event_name": { "const": "session_start" }, "installation_id": { "type": "string" }, "session_id": { "type": "string" }, "extensions": { "type": "object", "additionalProperties": true } }
+  "properties": { "event_name": { "const": "session_start" }, "installation_id": { "$ref": "../common.schema.json#/$defs/id" }, "session_id": { "$ref": "../common.schema.json#/$defs/id" }, "extensions": { "type": "object", "additionalProperties": true } }
 }

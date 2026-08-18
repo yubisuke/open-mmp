@@ -26,7 +26,7 @@
       "matching_keys": [
         {
           "type": "provider_click_id",
-          "value": "click-prefetch",
+          "value": "click-prefetch_0000000000000000",
           "scope": "tenant_app",
           "normalization": "identity",
           "cardinality": "one_to_one",
@@ -41,7 +41,7 @@
           "matching_keys": [
             {
               "type": "provider_click_id",
-              "value": "click-prefetch",
+              "value": "click-prefetch_0000000000000000",
               "scope": "tenant_app",
               "normalization": "identity",
               "cardinality": "one_to_one",
@@ -92,7 +92,7 @@
       "processing_purpose_id": "analytics",
       "processing_sequence": 1,
       "payload": {
-        "click_id": "click-prefetch",
+        "click_id": "click-prefetch_0000000000000000",
         "tracking_link_id": "link-a",
         "campaign_id": "campaign-a",
         "redirector_click_at": "2026-08-10T00:00:00.000Z",
@@ -120,7 +120,7 @@
         "installation_id": "installation:prefetch-install",
         "install_type": "first_install",
         "referrer_status": "available",
-        "click_id": "click-prefetch",
+        "click_id": "click-prefetch_0000000000000000",
         "install_begin_at_server_status": "available",
         "install_begin_at_server": "2026-08-11T00:00:00.000Z",
         "protected_referrer_evidence_ref": "protected:referrer:prefetch-install"

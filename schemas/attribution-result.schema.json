@@ -14,7 +14,7 @@
     "status": { "enum": ["organic", "non_organic", "unattributed"] },
     "method": { "enum": ["install_referrer", "aggregate_privacy", "none"] },
     "model": { "enum": ["last_click", "aggregate", "none"] },
-    "reason_code": { "type": "string" },
+    "reason_code": { "enum": ["valid_install_referrer", "no_referrer", "unknown_click_id", "window_expired", "authoritative_time_missing", "authoritative_time_invalid", "install_referrer_unsupported", "install_referrer_unavailable", "ambiguous_click_id", "bot_prefetch"] },
     "reason_code_version": { "const": "0.2.0" },
     "evidence_refs": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/evidenceRef" } },
     "effective_at": { "$ref": "common.schema.json#/$defs/dateTime" },
@@ -25,5 +25,15 @@
     "rule_bundle_version": { "type": "string" },
     "rule_bundle_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
     "supersedes_attribution_id": { "$ref": "common.schema.json#/$defs/id" }
-  }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "subject_scope": { "const": "aggregate" } }, "required": ["subject_scope"] },
+      "then": { "properties": { "subject_ref": { "type": "string", "pattern": "^aggregate:" } } }
+    },
+    {
+      "if": { "properties": { "subject_scope": { "const": "installation_level" } }, "required": ["subject_scope"] },
+      "then": { "properties": { "subject_ref": { "type": "string", "pattern": "^installation:" } } }
+    }
+  ]
 }

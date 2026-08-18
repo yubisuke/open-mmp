@@ -16,10 +16,15 @@
       "transitions": [],
       "terminal": ["on_time", "late"]
     },
-    "lifecycle": {
-      "states": ["active", "retracted", "redacted", "purged"],
-      "transitions": [["active", "retracted"], ["active", "redacted"], ["active", "purged"], ["redacted", "purged"]],
-      "terminal": ["retracted", "purged"]
+    "record_lifecycle": {
+      "states": ["active", "retracted"],
+      "transitions": [["active", "retracted"]],
+      "terminal": ["retracted"]
+    },
+    "payload_availability": {
+      "states": ["available", "redacted", "purged"],
+      "transitions": [["available", "redacted"], ["available", "purged"], ["redacted", "purged"]],
+      "terminal": ["purged"]
     },
     "attribution_finality": {
       "states": ["pending", "provisional", "final", "superseded", "retracted"],

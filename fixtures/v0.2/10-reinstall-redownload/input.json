@@ -51,7 +51,7 @@
       "processing_purpose_id": "analytics",
       "processing_sequence": 1,
       "payload": {
-        "click_id": "click-paid-reinstall",
+        "click_id": "click-paid-reinstall_0000000000000000",
         "tracking_link_id": "link-10-paid",
         "campaign_id": "campaign-10-paid",
         "redirector_click_at": "2026-08-11T12:00:00.000Z",
@@ -78,7 +78,7 @@
         "installation_id": "installation:install-10a",
         "install_type": "first_install",
         "referrer_status": "none",
-        "click_id": "click-a",
+        "click_id": "click-a_0000000000000000",
         "install_begin_at_server_status": "missing"
       }
     },
@@ -102,7 +102,7 @@
         "installation_id": "installation:install-10b",
         "install_type": "reinstall",
         "referrer_status": "available",
-        "click_id": "click-paid-reinstall",
+        "click_id": "click-paid-reinstall_0000000000000000",
         "install_begin_at_server": "2026-08-12T00:00:00.000Z",
         "install_begin_at_server_status": "available",
         "prior_installation_id": "installation:install-10a"

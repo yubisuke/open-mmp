@@ -54,7 +54,7 @@
           "processing_purpose_id": "analytics",
           "processing_sequence": 1,
           "payload": {
-            "click_id": "click-a",
+            "click_id": "click-a_0000000000000000",
             "tracking_link_id": "link-a",
             "campaign_id": "campaign-a",
             "redirector_click_at": "2026-08-10T00:00:00.000Z",
@@ -98,7 +98,7 @@
           "processing_purpose_id": "analytics",
           "processing_sequence": 1,
           "payload": {
-            "click_id": "click-a",
+            "click_id": "click-a_0000000000000000",
             "tracking_link_id": "link-a",
             "campaign_id": "campaign-a",
             "redirector_click_at": "2026-08-10T00:00:00.000Z",
@@ -142,7 +142,7 @@
           "processing_purpose_id": "analytics",
           "processing_sequence": 1,
           "payload": {
-            "click_id": "click-a",
+            "click_id": "click-a_0000000000000000",
             "tracking_link_id": "link-a",
             "campaign_id": "campaign-a",
             "redirector_click_at": "2026-08-10T00:00:00.000Z",

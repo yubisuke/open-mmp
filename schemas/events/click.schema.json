@@ -7,9 +7,9 @@
   "required": ["event_name", "click_id", "tracking_link_id", "campaign_id", "redirector_time_status"],
   "properties": {
     "event_name": { "const": "click" },
-    "click_id": { "type": "string" },
-    "tracking_link_id": { "type": "string" },
-    "campaign_id": { "type": "string" },
+    "click_id": { "$ref": "../common.schema.json#/$defs/clickId" },
+    "tracking_link_id": { "$ref": "../common.schema.json#/$defs/id" },
+    "campaign_id": { "$ref": "../common.schema.json#/$defs/id" },
     "redirector_click_at": { "$ref": "../common.schema.json#/$defs/dateTime" },
     "redirector_time_status": { "enum": ["available", "missing", "invalid"] },
     "bot_prefetch": { "type": "boolean" },

@@ -23,10 +23,10 @@
     "timeliness": { "enum": ["on_time", "late"] },
     "clock_skew_suspected": { "type": "boolean" },
     "payload_disposition": { "enum": ["protected", "discarded", "redacted"] },
-    "reason_code": { "type": "string" },
+    "reason_code": { "enum": ["client_scope_mismatch", "consent_withdrawn", "aggregate_installation_join_forbidden", "event_id_conflict", "record_id_collision"] },
     "processing_purpose_id": { "$ref": "common.schema.json#/$defs/id" },
     "consent_evaluation_policy_version": { "type": "string", "minLength": 1 },
-    "consent_decision_reason_code": { "type": "string", "minLength": 1 },
+    "consent_decision_reason_code": { "enum": ["consent_not_required", "consent_valid_before_withdrawal", "documented_alternative_legal_basis", "consent_withdrawn"] },
     "withdrawal_recognized_at": { "$ref": "common.schema.json#/$defs/dateTime" },
     "alternative_legal_basis_id": { "$ref": "common.schema.json#/$defs/id" },
     "alternative_legal_basis_policy_version": { "type": "string", "minLength": 1 }

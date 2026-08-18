@@ -136,6 +136,12 @@ function validatorFor(id: string): Validator {
   return state.validator;
 }
 
+function schemaValue(id: string): Any {
+  const state = schemaStates.find((candidate) => candidate.id === id);
+  check(state?.loaded.ok, `schema value missing: ${id}`);
+  return state.loaded.value;
+}
+
 const registryPaths = {
   events: join(root, "registries", "event-names-v0.2.json"),
   reasons: join(root, "registries", "reason-codes-v0.2.json"),
@@ -423,7 +429,7 @@ if (!summaryOnly) {
         } else if (name === "compatibility") {
           unique(value.attribution.map((entry: Any) => `${entry.subject_scope}|${entry.method}|${entry.model}`), "attribution compatibility row");
         } else if (name === "states") {
-          for (const axis of ["ingestion", "duplicate_resolution", "timeliness", "lifecycle", "attribution_finality", "privacy_request"]) {
+          for (const axis of ["ingestion", "duplicate_resolution", "timeliness", "record_lifecycle", "payload_availability", "attribution_finality", "privacy_request"]) {
             check(value.axes[axis], `missing state axis: ${axis}`);
             unique(value.axes[axis].states, `state in ${axis}`);
             const states = new Set<string>(value.axes[axis].states);
@@ -439,6 +445,28 @@ if (!summaryOnly) {
         }
       });
     }
+    it("keeps registry reason sets equal to schema enums", () => {
+      const surfaces: Array<[string, unknown, unknown]> = [
+        ["attribution", registries.reasons.attribution, schemaValue(outputSchemaIds.attributions).properties.reason_code.enum],
+        ["rejection", registries.reasons.rejection, schemaValue(outputSchemaIds.rejections).properties.reason_code.enum],
+        ["delivery rejection", registries.reasons.rejection, schemaValue(outputSchemaIds.deliveries).properties.reason_code.enum],
+        ["correction", registries.reasons.correction, schemaValue(outputSchemaIds.corrections).properties.correction_reason.enum],
+        ["consent delivery", registries.reasons.consent_decision, schemaValue(outputSchemaIds.deliveries).properties.consent_decision_reason_code.enum],
+        ["consent raw", registries.reasons.consent_decision, schemaValue(outputSchemaIds.raw_records).properties.consent_decision_reason_code.enum],
+        ["fraud", registries.reasons.fraud_public_categories, schemaValue(outputSchemaIds.fraud_decisions).properties.reason_code.enum],
+      ];
+      for (const [label, registrySet, schemaEnum] of surfaces) {
+        check(equal(registrySet, schemaEnum), `registry/schema reason mismatch: ${label}`);
+      }
+    });
+    it("keeps lifecycle state sets equal to schema enums", () => {
+      const logical = schemaValue(outputSchemaIds.logical_events).properties.record_lifecycle.enum;
+      const raw = schemaValue(outputSchemaIds.raw_records).properties.payload_lifecycle_status.enum;
+      const evidence = schemaValue("urn:open-mmp:schema:common:v0.2").$defs.evidenceRef.properties.lifecycle_status.enum;
+      check(equal(stateAxes.record_lifecycle.states, logical), "record lifecycle registry/schema mismatch");
+      check(equal(stateAxes.payload_availability.states, raw), "raw payload availability registry/schema mismatch");
+      check(equal(stateAxes.payload_availability.states, evidence), "evidence payload availability registry/schema mismatch");
+    });
   });
 
   describe("fixture input validation", () => {
@@ -633,7 +661,7 @@ if (!summaryOnly) {
 const contractText = capture(() => readFileSync(join(root, "spec", "event-metric-contract-v0.2.md"), "utf8"));
 const fraudSchemaText = capture(() => readFileSync(join(root, "schemas", "fraud-decision.schema.json"), "utf8"));
 const acceptance: Array<[string, () => void]> = [
-  ["AC01 Draft 2020-12 schemas have stable IDs and versions", () => check(schemaPaths.length === 23 && schemaIds.every(Boolean), "AC01")],
+  ["AC01 Draft 2020-12 schemas have stable IDs and versions", () => check(schemaPaths.length === 22 && schemaIds.every(Boolean), "AC01")],
   ["AC02 canonical event names agree across registry and schemas", () => {
     const rawSchema = schemaValues.find(({ value }) => value.$id === outputSchemaIds.raw_records)?.value;
     check(rawSchema, "AC02 raw schema missing");
@@ -650,7 +678,7 @@ const acceptance: Array<[string, () => void]> = [
     check(fixture("07-same-id-across-tenants").output.raw_records.filter((item: Any) => item.event_id === "shared-event-id").length === 2, "AC04 tenant");
   }],
   ["AC05 server-auth scope rejects client mismatch", () => check(fixture("07-same-id-across-tenants").output.rejections.some((item: Any) => item.reason_code === "client_scope_mismatch"), "AC05")],
-  ["AC06 orthogonal state axes and transitions are machine readable", () => check(Object.keys(stateAxes).length === 6 && stateAxes.privacy_request.states.includes("completed") && stateAxes.lifecycle.states.includes("purged"), "AC06")],
+  ["AC06 orthogonal state axes and transitions are machine readable", () => check(Object.keys(stateAxes).length === 7 && stateAxes.privacy_request.states.includes("completed") && stateAxes.record_lifecycle.states.includes("retracted") && stateAxes.payload_availability.states.includes("purged"), "AC06")],
   ["AC07 attribution includes policy scope method model reason and cutoff", () => {
     for (const { output } of results.values()) for (const item of output.attributions) {
       for (const field of ["subject_scope", "method", "model", "reason_code", "reason_code_version", "input_cutoff_at", "rule_bundle_version", "rule_bundle_hash"]) check(item[field] !== undefined, `AC07 ${field}`);
@@ -659,8 +687,11 @@ const acceptance: Array<[string, () => void]> = [
   ["AC08 organic and unattributed are distinct", () => check(fixture("02-organic-no-referrer").output.attributions[0].status === "organic" && fixture("03-unknown-click").output.attributions[0].status === "unattributed", "AC08")],
   ["AC09 aggregate result cannot carry installation identity", () => {
     const validator = validatorFor(outputSchemaIds.attributions);
-    const aggregate = { ...fixture("02-organic-no-referrer").output.attributions[0], subject_scope: "aggregate", installation_id: "forbidden" };
-    check(!validator(aggregate), "AC09 schema must reject aggregate installation identity");
+    const source = fixture("02-organic-no-referrer").output.attributions[0];
+    const aggregate = { ...source, subject_scope: "aggregate", subject_ref: "aggregate:cohort-test" };
+    check(validator(aggregate), `AC09 aggregate namespace baseline: ${ajv.errorsText(validator.errors)}`);
+    check(!validator({ ...aggregate, subject_ref: "installation:forbidden" }), "AC09 aggregate namespace must reject installation identity");
+    check(!validator({ ...source, subject_ref: "aggregate:forbidden" }), "AC09 installation namespace must reject aggregate identity");
   }],
   ["AC10 subject scope uses installation_level and never user_level", () => {
     check(compatibility.every((row: Any) => row.subject_scope !== "user_level"), "AC10 registry");
@@ -756,7 +787,7 @@ const acceptance: Array<[string, () => void]> = [
     for (const forbidden of ["threshold", "model_weight", "watchlist", "ip_address", "user_agent", "response_timing"]) check(!schemaText.includes(forbidden), `AC20 ${forbidden}`);
     check(specText.includes("remain private"), "AC20 private boundary");
   }],
-  ["AC21 one command validates every schema registry fixture and golden", () => check(schemaPaths.length === 23 && Object.keys(registries).length === 7 && fixtureDirs.length === 19 && outputArtifactCount === 19 * 11, "AC21")],
+  ["AC21 one command validates every schema registry fixture and golden", () => check(schemaPaths.length === 22 && Object.keys(registries).length === 7 && fixtureDirs.length === 19 && outputArtifactCount === 19 * 11, "AC21")],
   ["AC22 repeated and independent evaluators produce identical JCS", () => {
     for (const { output, python } of results.values()) check(equal(output, python), "AC22 evaluator mismatch");
     const vector = { numbers: [333333333.33333329, 1e30, 4.50, 2e-3, 1e-27, -0], string: "€$\u000f\nA'B\"\\\"/" };
@@ -849,6 +880,26 @@ if (!summaryOnly) {
     it("rejects negative ad revenue", () => {
       const adValidator = validatorFor("urn:open-mmp:schema:event-ad-revenue:v0.2");
       check(!adValidator({ ...validRevenue, amount_unscaled: "-1" }), "mutation negative ad revenue was accepted");
+    });
+    it("rejects negative purchase and refund amounts through the common money type", () => {
+      const source = fixture("16-correction-refund").input.records;
+      for (const eventName of ["purchase", "refund"]) {
+        const payload = source.find((record: Any) => record.event_name === eventName).payload;
+        const validator = validatorFor(`urn:open-mmp:schema:event-${eventName}:v0.2`);
+        check(!validator({ ...payload, amount_unscaled: "-1" }), `mutation negative ${eventName} was accepted`);
+      }
+    });
+    it("requires access classification on every evidence reference", () => {
+      const validator = validatorFor(outputSchemaIds.attributions);
+      const attribution = structuredClone(fixture("01-valid-install-referrer").output.attributions[0]);
+      delete attribution.evidence_refs[0].access_class;
+      check(!validator(attribution), "mutation missing evidence access_class was accepted");
+    });
+    it("rejects short click identifiers", () => {
+      const validator = validatorFor("urn:open-mmp:schema:event-click:v0.2");
+      const click = structuredClone(fixture("01-valid-install-referrer").input.records.find((record: Any) => record.event_name === "click").payload);
+      click.click_id = "too-short";
+      check(!validator(click), "mutation short click_id was accepted");
     });
     it("rejects timestamp precision drift", () => {
       const rawValidator = validatorFor(outputSchemaIds.raw_records);
