@@ -59,6 +59,15 @@ docs/
 
 This is a proposed implementation layout, not generated code.
 
+## Current layout (v0.1 contract artifacts)
+
+- `schemas/` — Draft 2020-12 artifact schemas, including event payloads under `schemas/events/`
+- `registries/` — versioned closed vocabularies and compatibility definitions
+- `fixtures/v0.1/` — reviewed synthetic inputs and immutable golden outputs
+- `spec/` — normative contract behavior and serialization rules
+- `tools/` — TypeScript and Python reference evaluators and contract validation
+- `issue-drafts/` — historical design and acceptance records
+
 ## Documents
 
 - [Product scope](docs/product-scope.md)
@@ -73,7 +82,7 @@ This is a proposed implementation layout, not generated code.
 
 ## Contract validation
 
-After installing Node.js 22.18.0 and Python 3.13.5, run:
+Use Node.js 22.18.0 from [`.nvmrc`](.nvmrc), npm 11.6.2 from `package.json#engines`, and Python 3.13.5 from [`.python-version`](.python-version). The repository enforces the Node.js and npm engines through [`.npmrc`](.npmrc). Then run:
 
 ```bash
 npm ci
