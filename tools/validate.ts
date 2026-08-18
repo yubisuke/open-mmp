@@ -1075,6 +1075,9 @@ if (!summaryOnly) {
       delete validV3.source_identifier;
       delete validV3.postback_sequence_index;
       check(skanValidator({ event_name: "skan_postback", ...validV3 }), `Stage C rejected valid SKAN v3 envelope: ${ajv.errorsText(skanValidator.errors)}`);
+      const unsupportedV2 = structuredClone(validV3);
+      unsupportedV2.version = "2.2";
+      check(!skanValidator({ event_name: "skan_postback", ...unsupportedV2 }), "Stage C accepted out-of-scope SKAN v2");
 
       const v4Campaign = structuredClone(skan);
       v4Campaign.campaign_id = 42;
