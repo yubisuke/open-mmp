@@ -27,6 +27,11 @@
         "processing_purpose_id": "analytics",
         "consent_required": false,
         "policy_version": "consent-v0.2"
+      },
+      {
+        "processing_purpose_id": "attribution",
+        "consent_required": false,
+        "policy_version": "attribution-v0.2"
       }
     ],
     "withdrawals": [],
@@ -38,7 +43,7 @@
       "tenant_id": "tenant-a", "app_id": "app-a", "producer": "sdk-android", "producer_version": "fixture-v0.2",
       "event_id": "event:meta-click-install-34", "event_name": "install", "schema_version": "0.2.0",
       "occurred_at": "2026-08-18T01:00:00.000Z", "occurred_at_source": "device", "received_at": "2026-08-18T01:00:01.000Z",
-      "processing_purpose_id": "analytics", "processing_sequence": 1,
+      "processing_purpose_id": "attribution", "processing_sequence": 1,
       "payload": {
         "installation_id": "installation:meta-click-34", "install_type": "first_install", "referrer_status": "unavailable",
         "meta_referrer_status": "decrypted", "meta_referrer_context": { "attribution_model": "last_click" }

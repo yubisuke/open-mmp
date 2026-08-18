@@ -23,7 +23,7 @@ export type OpenMMPEventDeliveryV02 = {
     | "record_id_collision"
     | "timestamp_invalid"
     | "timestamp_stale";
-  processing_purpose_id?: string;
+  processing_purpose_id?: "attribution" | "fraud_prevention" | "analytics" | "revenue_measurement";
   consent_evaluation_policy_version: string;
   consent_decision_reason_code:
     | "consent_not_required"
@@ -219,7 +219,7 @@ export type OpenMMPRejectionV02 = {
   reason_code_version: "0.2.0";
   payload_disposition: "discarded" | "protected";
   retained: "non_identifying_metadata" | "protected_conflict_evidence";
-  processing_purpose_id?: string;
+  processing_purpose_id?: "attribution" | "fraud_prevention" | "analytics" | "revenue_measurement";
   consent_evaluation_policy_version: string;
   consent_decision_reason_code:
     | "consent_not_required"
@@ -275,7 +275,7 @@ export interface OpenMMPRawRecordV02 {
   received_at: string;
   payload_lifecycle_status: "available" | "redacted" | "purged";
   raw_payload_ref: string;
-  processing_purpose_id?: string;
+  processing_purpose_id?: "attribution" | "fraud_prevention" | "analytics" | "revenue_measurement";
   consent_evaluation_policy_version: string;
   consent_decision_reason_code:
     | "consent_not_required"

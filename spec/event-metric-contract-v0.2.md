@@ -89,6 +89,17 @@ Click payloads may carry the typed reporting dimensions `ad_group_id`, `creative
 
 Consent is evaluated per server-configured `processing_purpose_id`.
 
+`registries/processing-purposes-v0.2.json` closes the public purpose vocabulary:
+
+| Purpose | Meaning | Illustrative consent default | Illustrative legal-basis category |
+| --- | --- | --- | --- |
+| `attribution` | Associate eligible evidence with an installation-level or aggregate attribution result. | Required | Consent |
+| `fraud_prevention` | Detect and respond to measurement abuse, replay, injection, and invalid traffic. | Not required | Legitimate interests |
+| `analytics` | Produce product and measurement analytics outside a provider-reported attribution judgment. | Required | Consent |
+| `revenue_measurement` | Process purchase, refund, advertising-revenue, and cost evidence for financial measurement. | Not required | Legitimate interests |
+
+These defaults are contract guidance, not legal advice or runtime authorization. Every deployment must document, version, and approve its purpose-specific policy for each applicable jurisdiction. A deployment may override either default in server configuration; the resulting `consent_required` and `policy_version` are preserved on delivery and raw evidence. An unregistered purpose fails schema validation.
+
 - The server records whether the purpose requires consent and the policy version used.
 - A withdrawal has `withdrawal_recognized_at` and a monotonic `withdrawal_recognized_sequence`.
 - For a consent-required purpose, a record processed at or after the recognition sequence is rejected regardless of `occurred_at`.
@@ -257,7 +268,7 @@ Production signals, IP or User-Agent values, live thresholds, model weights, wat
 
 ## Reviewed fixture and validation gate
 
-The reviewed gate compiles 26 schemas and validates 7 registries. The 34 fixture directories contain synthetic input plus 13 reviewed golden output classes: raw records, deliveries, logical events, corrections, privacy requests, privacy tombstones, attributions, metric definitions, metric runs, cost records, public fraud decisions, rejections, and reconciliation. Fixture 10 demonstrates both paid reinstall attribution and no-referrer redownload attribution. Fixtures 28 through 32 exercise imported attribution, automatically derived reconciliation, every registered producer form, and stale-evidence rejection. Fixture 33 exercises reporting dimensions, advertiser-side ad views, installation and aggregate revenue, default-currency provenance, append-only cost revisions, per-event half-even FX, ROAS, retention, and cohort LTV/count. Fixture 34 exercises every Stage C method/model row, both Apple aggregate event names, every Stage C reason, synthetic postback producers, and the intentionally minimal Meta envelope. Validation also exercises invalid calendar timestamps, reconciliation reasons, attribution supersession, replay suspicion, retention expiry, impression-to-revenue evidence, reorder invariance, install-type evidence dominance, record-ID collision, click ambiguity, millisecond normalization boundaries, and scoped-reference mutations; golden files remain committed review artifacts.
+The reviewed gate compiles 26 schemas and validates 8 registries. The 34 fixture directories contain synthetic input plus 13 reviewed golden output classes: raw records, deliveries, logical events, corrections, privacy requests, privacy tombstones, attributions, metric definitions, metric runs, cost records, public fraud decisions, rejections, and reconciliation. Fixture 10 demonstrates both paid reinstall attribution and no-referrer redownload attribution. Fixtures 28 through 32 exercise imported attribution, automatically derived reconciliation, every registered producer form, and stale-evidence rejection. Fixture 33 exercises reporting dimensions, advertiser-side ad views, installation and aggregate revenue, default-currency provenance, append-only cost revisions, per-event half-even FX, ROAS, retention, and cohort LTV/count. Fixture 34 exercises every Stage C method/model row, both Apple aggregate event names, every Stage C reason, synthetic postback producers, and the intentionally minimal Meta envelope. Fixtures 25, 33, and 34 collectively exercise every registered processing purpose. Validation also exercises invalid calendar timestamps, reconciliation reasons, attribution supersession, replay suspicion, retention expiry, impression-to-revenue evidence, reorder invariance, install-type evidence dominance, record-ID collision, click ambiguity, millisecond normalization boundaries, scoped-reference mutations, and unknown-purpose rejection; golden files remain committed review artifacts.
 
 The validation command never writes fixture files. `npm run validate`:
 
@@ -287,4 +298,5 @@ Environment setup is `npm ci` and `python -m pip install --require-hashes --requ
 - Stage A of the v0.2 extension adds provider-reported attribution as a separate imported method, closed import context, automatic import reconciliation, explicit producer forms, and `timestamp_stale`; none of these changes name or rate an incumbent provider.
 - Stage B adds typed click/install reporting dimensions, advertiser-side `ad_view`, scoped ad revenue, append-only cost records, data-driven metric definitions, per-event half-even conversion, and deterministic ROAS, retention, and cohort metrics.
 - Stage C adds aggregate SKAdNetwork and AdAttributionKit envelopes, a closed minimal Meta Install Referrer envelope, Apple AdServices evidence, platform-specific compatibility rows, and versioned platform attribution reasons. Provider fields that could not be verified from primary documentation are deliberately absent.
+- Stage D adds the closed processing-purpose catalog and schema-level purpose validation. Privacy-request authentication and child-directed audience rules remain on hold pending owner decisions 6-13 and 6-14.
 - Full migration details and the golden-change ledger are in `docs/contract-v0.2-migration.md`.

@@ -119,7 +119,7 @@
             "additionalProperties": false,
             "required": ["processing_purpose_id", "consent_required", "policy_version"],
             "properties": {
-              "processing_purpose_id": { "$ref": "common.schema.json#/$defs/id" },
+              "processing_purpose_id": { "$ref": "common.schema.json#/$defs/processingPurposeId" },
               "consent_required": { "type": "boolean" },
               "policy_version": { "type": "string", "minLength": 1 }
             }
@@ -132,7 +132,7 @@
             "additionalProperties": false,
             "required": ["processing_purpose_id", "withdrawal_recognized_at", "withdrawal_recognized_sequence"],
             "properties": {
-              "processing_purpose_id": { "$ref": "common.schema.json#/$defs/id" },
+              "processing_purpose_id": { "$ref": "common.schema.json#/$defs/processingPurposeId" },
               "withdrawal_recognized_at": { "$ref": "common.schema.json#/$defs/dateTime" },
               "withdrawal_recognized_sequence": { "type": "integer", "minimum": 0 }
             }
@@ -146,7 +146,7 @@
             "required": ["alternative_legal_basis_id", "processing_purpose_id", "legal_basis", "policy_version", "effective_at"],
             "properties": {
               "alternative_legal_basis_id": { "$ref": "common.schema.json#/$defs/id" },
-              "processing_purpose_id": { "$ref": "common.schema.json#/$defs/id" },
+              "processing_purpose_id": { "$ref": "common.schema.json#/$defs/processingPurposeId" },
               "legal_basis": { "type": "string", "minLength": 1 },
               "policy_version": { "type": "string", "minLength": 1 },
               "effective_at": { "$ref": "common.schema.json#/$defs/dateTime" }
@@ -195,7 +195,7 @@
         },
         "late": { "type": "boolean" },
         "subject_scope": { "enum": ["installation_level", "aggregate"] },
-        "processing_purpose_id": { "$ref": "common.schema.json#/$defs/id" },
+        "processing_purpose_id": { "$ref": "common.schema.json#/$defs/processingPurposeId" },
         "processing_sequence": { "type": "integer", "minimum": 0 },
         "alternative_legal_basis_id": { "$ref": "common.schema.json#/$defs/id" }
       }

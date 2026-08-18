@@ -12,7 +12,7 @@
     "timeliness": "on_time",
     "clock_skew_suspected": false,
     "payload_disposition": "protected",
-    "processing_purpose_id": "fraud-prevention",
+    "processing_purpose_id": "fraud_prevention",
     "consent_evaluation_policy_version": "fraud-v0.2",
     "consent_decision_reason_code": "consent_not_required"
   }

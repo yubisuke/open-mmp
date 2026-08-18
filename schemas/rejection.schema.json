@@ -15,7 +15,7 @@
     "reason_code_version": { "const": "0.2.0" },
     "payload_disposition": { "enum": ["discarded", "protected"] },
     "retained": { "enum": ["non_identifying_metadata", "protected_conflict_evidence"] },
-    "processing_purpose_id": { "$ref": "common.schema.json#/$defs/id" },
+    "processing_purpose_id": { "$ref": "common.schema.json#/$defs/processingPurposeId" },
     "consent_evaluation_policy_version": { "type": "string", "minLength": 1 },
     "consent_decision_reason_code": { "enum": ["consent_not_required", "consent_valid_before_withdrawal", "documented_alternative_legal_basis", "consent_withdrawn"] },
     "withdrawal_recognized_at": { "$ref": "common.schema.json#/$defs/dateTime" },

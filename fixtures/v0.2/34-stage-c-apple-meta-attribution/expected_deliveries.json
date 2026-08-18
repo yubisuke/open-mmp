@@ -114,8 +114,8 @@
     "timeliness": "on_time",
     "clock_skew_suspected": false,
     "payload_disposition": "protected",
-    "processing_purpose_id": "analytics",
-    "consent_evaluation_policy_version": "consent-v0.2",
+    "processing_purpose_id": "attribution",
+    "consent_evaluation_policy_version": "attribution-v0.2",
     "consent_decision_reason_code": "consent_not_required"
   },
   {

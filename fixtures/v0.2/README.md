@@ -70,6 +70,10 @@ The cost dimension object `{campaign_id:"provider-campaign-33",country:"JP",netw
 
 The fixture contains eleven synthetic records and no metric, cost, privacy, fraud, correction, or reconciliation input. The four install paths independently map to Meta last-click, Meta view-through, Meta decrypt failure, and the ordinary no-referrer fallback. The two AdServices paths map to attributed and expired-token outcomes. The five aggregate postbacks cover verified SKAdNetwork, invalid SKAdNetwork signature, AdAttributionKit non-winner, source suppression, and null conversion value. Every output cites only its same-scope source record. Public producer suffixes are synthetic; the values are not provider or campaign exports.
 
+### Processing-purpose coverage
+
+The public purpose catalog is exercised without adding real data: fixture 25 uses `fraud_prevention`, fixture 33 uses `analytics` and `revenue_measurement`, and fixture 34 uses `analytics` and `attribution`. The server contexts deliberately demonstrate deployment overrides of the illustrative registry defaults. Raw and delivery goldens preserve the selected purpose and policy version.
+
 ## v0.2 fixture derivations
 
 Fixtures 01 through 19 preserve the reviewed v0.1 scenarios under the v0.2 schemas and semantics. Their per-file changes are recorded in `docs/contract-v0.2-migration.md`. Every fixture now includes reviewed metric definitions and an explicit cost-record output class.

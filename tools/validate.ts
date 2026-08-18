@@ -150,6 +150,7 @@ const registryPaths = {
   states: join(root, "registries", "state-transitions-v0.2.json"),
   compatibility: join(root, "registries", "compatibility-v0.2.json"),
   matchingKeys: join(root, "registries", "matching-key-types-v0.2.json"),
+  processingPurposes: join(root, "registries", "processing-purposes-v0.2.json"),
 };
 type RegistryName = keyof typeof registryPaths;
 const registryStates = Object.fromEntries(
@@ -171,6 +172,7 @@ const registries = {
   states: registryValue("states", { axes: {} }),
   compatibility: registryValue("compatibility", { attribution: [] }),
   matchingKeys: registryValue("matchingKeys", { types: [] }),
+  processingPurposes: registryValue("processingPurposes", { purposes: [] }),
 };
 const eventNames: string[] = Array.isArray(registries.events.event_names) ? registries.events.event_names : [];
 const attributionReasons = new Set<string>(registries.reasons.attribution ?? []);
@@ -206,6 +208,9 @@ function validateSyntheticImportContext(context: Any, label: string): void {
 const matchingDefinitions = new Map<string, Any>((registries.matchingKeys.types ?? []).map((entry: Any) => [entry.type, entry]));
 const stateAxes = registries.states.axes ?? {};
 const compatibility = registries.compatibility.attribution ?? [];
+const processingPurposeIds: string[] = (registries.processingPurposes.purposes ?? [])
+  .map((entry: Any) => entry.processing_purpose_id);
+const processingPurposeSet = new Set<string>(processingPurposeIds);
 
 const outputSchemaIds: Record<string, string> = {
   raw_records: "urn:open-mmp:schema:raw-record:v0.2",
@@ -467,6 +472,18 @@ if (!summaryOnly) {
           unique(value.reasons, "difference reason");
         } else if (name === "matchingKeys") {
           unique(value.types.map((entry: Any) => entry.type), "matching-key type");
+        } else if (name === "processingPurposes") {
+          check(typeof value.legal_notice === "string" && value.legal_notice.length > 0, "processing-purpose legal notice missing");
+          unique(value.purposes.map((entry: Any) => entry.processing_purpose_id), "processing-purpose ID");
+          check(equal(value.purposes.map((entry: Any) => entry.processing_purpose_id), [
+            "attribution", "fraud_prevention", "analytics", "revenue_measurement",
+          ]), "processing-purpose inventory mismatch");
+          for (const purpose of value.purposes) {
+            check(typeof purpose.meaning === "string" && purpose.meaning.length > 0, `processing-purpose meaning: ${purpose.processing_purpose_id}`);
+            check(typeof purpose.default_consent_required === "boolean", `processing-purpose consent default: ${purpose.processing_purpose_id}`);
+            check(["consent", "legitimate_interests"].includes(purpose.assumed_legal_basis_category), `processing-purpose legal-basis category: ${purpose.processing_purpose_id}`);
+            check(purpose.deployment_override_allowed === true, `processing-purpose override: ${purpose.processing_purpose_id}`);
+          }
         } else if (name === "compatibility") {
           unique(value.attribution.map((entry: Any) => `${entry.subject_scope}|${entry.method}|${entry.model}`), "attribution compatibility row");
         } else if (name === "states") {
@@ -507,6 +524,10 @@ if (!summaryOnly) {
       check(equal(stateAxes.record_lifecycle.states, logical), "record lifecycle registry/schema mismatch");
       check(equal(stateAxes.payload_availability.states, raw), "raw payload availability registry/schema mismatch");
       check(equal(stateAxes.payload_availability.states, evidence), "evidence payload availability registry/schema mismatch");
+    });
+    it("keeps processing-purpose registry and schema enum equal", () => {
+      const purposeEnum = schemaValue("urn:open-mmp:schema:common:v0.2").$defs.processingPurposeId.enum;
+      check(equal(processingPurposeIds, purposeEnum), "processing-purpose registry/schema mismatch");
     });
   });
 
@@ -1098,6 +1119,49 @@ if (!summaryOnly) {
       check(value.output.attributions.filter((item: Any) => item.subject_scope === "aggregate").every((item: Any) => item.subject_ref.startsWith(`aggregate:${item.method}:`)), "Stage C aggregate subject namespace");
     });
   });
+
+  describe("WO-3 Stage D processing purposes", () => {
+    it("closes every fixture purpose reference against the registry", () => {
+      const exercised = new Set<string>();
+      for (const state of fixtureStates) {
+        if (!state.input.ok) continue;
+        for (const attempt of fixtureAttempts(state.input.value)) {
+          const purpose = attempt.record.processing_purpose_id;
+          if (purpose !== undefined) {
+            check(processingPurposeSet.has(purpose), `unknown record purpose in ${state.name}: ${purpose}`);
+            exercised.add(purpose);
+          }
+          for (const entry of attempt.server.processing_purposes ?? []) {
+            check(processingPurposeSet.has(entry.processing_purpose_id), `unknown server purpose in ${state.name}: ${entry.processing_purpose_id}`);
+          }
+          for (const entry of attempt.server.withdrawals ?? []) {
+            check(processingPurposeSet.has(entry.processing_purpose_id), `unknown withdrawal purpose in ${state.name}: ${entry.processing_purpose_id}`);
+          }
+          for (const entry of attempt.server.alternative_legal_bases ?? []) {
+            check(processingPurposeSet.has(entry.processing_purpose_id), `unknown alternative-basis purpose in ${state.name}: ${entry.processing_purpose_id}`);
+          }
+        }
+      }
+      check(equal([...exercised].sort(), [...processingPurposeIds].sort()), "not every processing purpose is exercised");
+    });
+    it("rejects unknown purpose IDs at fixture and output boundaries", () => {
+      const invalidInput = structuredClone(fixture("34-stage-c-apple-meta-attribution").input);
+      invalidInput.records[0].processing_purpose_id = "unregistered_purpose";
+      const inputValidator = validatorFor("urn:open-mmp:schema:fixture-input:v0.2");
+      check(!inputValidator(invalidInput), "fixture schema accepted unknown record purpose");
+
+      const invalidDelivery = structuredClone(fixture("34-stage-c-apple-meta-attribution").output.deliveries[0]);
+      invalidDelivery.processing_purpose_id = "unregistered_purpose";
+      check(!validatorFor(outputSchemaIds.deliveries)(invalidDelivery), "delivery schema accepted unknown purpose");
+    });
+    it("keeps owner-dependent privacy authentication and audience fields on hold", () => {
+      const privacy = schemaValue("urn:open-mmp:schema:privacy-request:v0.2");
+      const fixtureSchema = schemaValue("urn:open-mmp:schema:fixture-input:v0.2");
+      check(privacy.properties.requested_via === undefined, "Stage D implemented held requested_via");
+      check(privacy.properties.requester_auth_ref === undefined, "Stage D implemented held requester_auth_ref");
+      check(fixtureSchema.$defs.serverContext.properties.audience === undefined, "Stage D implemented held audience");
+    });
+  });
 }
 
 const contractText = capture(() => readFileSync(join(root, "spec", "event-metric-contract-v0.2.md"), "utf8"));
@@ -1229,7 +1293,7 @@ const acceptance: Array<[string, () => void]> = [
     for (const forbidden of ["threshold", "model_weight", "watchlist", "ip_address", "user_agent", "response_timing"]) check(!schemaText.includes(forbidden), `AC20 ${forbidden}`);
     check(specText.includes("remain private"), "AC20 private boundary");
   }],
-  ["AC21 one command validates every schema registry fixture and golden", () => check(schemaPaths.length === 26 && Object.keys(registries).length === 7 && fixtureDirs.length === 34 && outputArtifactCount === 34 * 13, "AC21")],
+  ["AC21 one command validates every schema registry fixture and golden", () => check(schemaPaths.length === 26 && Object.keys(registries).length === 8 && fixtureDirs.length === 34 && outputArtifactCount === 34 * 13, "AC21")],
   ["AC22 repeated and independent evaluators produce identical JCS", () => {
     for (const { output, python } of results.values()) check(equal(output, python), "AC22 evaluator mismatch");
     const vector = { numbers: [333333333.33333329, 1e30, 4.50, 2e-3, 1e-27, -0], string: "€$\u000f\nA'B\"\\\"/" };
