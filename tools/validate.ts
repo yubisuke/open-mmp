@@ -8,8 +8,10 @@ import { canonicalize } from "json-canonicalize";
 import { evaluate, sha256, TimestampInvalidError } from "./evaluator.js";
 
 type Any = Record<string, any>;
+type Captured<T> = { ok: true; value: T } | { ok: false; error: unknown };
 const root = process.cwd();
 const DRAFT = "https://json-schema.org/draft/2020-12/schema";
+const summaryOnly = process.argv.includes("--summary");
 
 function fail(message: string): never {
   throw new Error(message);
@@ -17,6 +19,22 @@ function fail(message: string): never {
 
 function check(condition: unknown, message: string): asserts condition {
   if (!condition) fail(message);
+}
+
+function capture<T>(operation: () => T): Captured<T> {
+  try {
+    return { ok: true, value: operation() };
+  } catch (error) {
+    return { ok: false, error };
+  }
+}
+
+function capturedValue<T>(captured: Captured<T>, label: string): T {
+  if (!captured.ok) {
+    const detail = captured.error instanceof Error ? captured.error.message : String(captured.error);
+    fail(`${label}: ${detail}`);
+  }
+  return captured.value;
 }
 
 function json(path: string): Any {
@@ -65,72 +83,102 @@ function assertClosedObjects(value: Any, path: string): void {
   }
 }
 
-const schemaPaths = files(join(root, "schemas")).filter((path) => path.endsWith(".json")).sort();
-const schemaValues = schemaPaths.map((path) => ({ path, value: json(path) }));
-const schemaIds = schemaValues.map(({ value }) => value.$id as string);
-unique(schemaIds, "schema $id");
-for (const { path, value } of schemaValues) {
-  check(value.$schema === DRAFT, `wrong schema dialect: ${relative(root, path)}`);
-  check(/^urn:open-mmp:schema:[a-z0-9-]+:v0\.1$/.test(value.$id), `unstable schema id: ${relative(root, path)}`);
-  assertClosedObjects(value, relative(root, path));
-}
-
 const Ajv2020 = Ajv2020Module as unknown as new (options: Any) => {
   addSchema(schema: unknown): void;
   getSchema(id: string): (((value: unknown) => boolean) & { errors?: unknown }) | undefined;
   errorsText(errors: unknown): string;
 };
+type Validator = NonNullable<ReturnType<InstanceType<typeof Ajv2020>["getSchema"]>>;
+
+type SchemaState = {
+  path: string;
+  loaded: Captured<Any>;
+  id?: string;
+  compileError?: unknown;
+  validator?: Validator;
+};
+
+const schemaPaths = files(join(root, "schemas")).filter((path) => path.endsWith(".json")).sort();
+const schemaStates: SchemaState[] = schemaPaths.map((path) => ({ path, loaded: capture(() => json(path)) }));
+const schemaValues = schemaStates.flatMap((state) =>
+  state.loaded.ok ? [{ path: state.path, value: state.loaded.value }] : [],
+);
+const schemaIds = schemaValues
+  .map(({ value }) => value.$id)
+  .filter((value): value is string => typeof value === "string");
 const ajv = new Ajv2020({ allErrors: true, strict: true });
 const addFormats = addFormatsModule as unknown as (instance: unknown) => void;
 addFormats(ajv);
-for (const { value } of schemaValues) ajv.addSchema(fixRefs(value));
-for (const id of schemaIds) check(ajv.getSchema(id), `schema did not compile: ${id}`);
+for (const state of schemaStates) {
+  if (!state.loaded.ok) continue;
+  state.id = typeof state.loaded.value.$id === "string" ? state.loaded.value.$id : undefined;
+  try {
+    ajv.addSchema(fixRefs(state.loaded.value));
+  } catch (error) {
+    state.compileError = error;
+  }
+}
+for (const state of schemaStates) {
+  if (!state.id || state.compileError) continue;
+  try {
+    state.validator = ajv.getSchema(state.id);
+    if (!state.validator) state.compileError = new Error(`schema did not compile: ${state.id}`);
+  } catch (error) {
+    state.compileError = error;
+  }
+}
+
+function validatorFor(id: string): Validator {
+  const state = schemaStates.find((candidate) => candidate.id === id);
+  check(state, `schema state missing: ${id}`);
+  check(!state.compileError, `schema did not compile: ${id}`);
+  check(state.validator, `schema validator missing: ${id}`);
+  return state.validator;
+}
+
+const registryPaths = {
+  events: join(root, "registries", "event-names-v0.1.json"),
+  reasons: join(root, "registries", "reason-codes-v0.1.json"),
+  producers: join(root, "registries", "producer-values-v0.1.json"),
+  differences: join(root, "registries", "difference-reasons-v0.1.json"),
+  states: join(root, "registries", "state-transitions-v0.1.json"),
+  compatibility: join(root, "registries", "compatibility-v0.1.json"),
+  matchingKeys: join(root, "registries", "matching-key-types-v0.1.json"),
+};
+type RegistryName = keyof typeof registryPaths;
+const registryStates = Object.fromEntries(
+  Object.entries(registryPaths).map(([name, path]) => [name, { path, loaded: capture(() => json(path)) }]),
+) as Record<RegistryName, { path: string; loaded: Captured<Any> }>;
+
+function registryValue(name: RegistryName, fallback: Any): Any {
+  const loaded = registryStates[name].loaded;
+  return loaded.ok ? loaded.value : fallback;
+}
 
 const registries = {
-  events: json(join(root, "registries", "event-names-v0.1.json")),
-  reasons: json(join(root, "registries", "reason-codes-v0.1.json")),
-  producers: json(join(root, "registries", "producer-values-v0.1.json")),
-  differences: json(join(root, "registries", "difference-reasons-v0.1.json")),
-  states: json(join(root, "registries", "state-transitions-v0.1.json")),
-  compatibility: json(join(root, "registries", "compatibility-v0.1.json")),
-  matchingKeys: json(join(root, "registries", "matching-key-types-v0.1.json")),
+  events: registryValue("events", { event_names: [] }),
+  reasons: registryValue("reasons", {
+    attribution: [], rejection: [], consent_decision: [], correction: [], fraud_public_categories: [],
+  }),
+  producers: registryValue("producers", { values: [] }),
+  differences: registryValue("differences", { reasons: [] }),
+  states: registryValue("states", { axes: {} }),
+  compatibility: registryValue("compatibility", { attribution: [] }),
+  matchingKeys: registryValue("matchingKeys", { types: [] }),
 };
-for (const [name, value] of Object.entries(registries)) {
-  check(value.contract_version === "0.1.0", `registry version: ${name}`);
-}
-const eventNames: string[] = registries.events.event_names;
-unique(eventNames, "event name");
-check(eventNames.length === 8, "event-name registry must contain the eight v0.1 events");
-const attributionReasons = new Set<string>(registries.reasons.attribution);
-const rejectionReasons = new Set<string>(registries.reasons.rejection);
-const consentReasons = new Set<string>(registries.reasons.consent_decision);
-const correctionReasons = new Set<string>(registries.reasons.correction);
-const fraudReasons = new Set<string>(registries.reasons.fraud_public_categories);
-const differenceReasons = new Set<string>(registries.differences.reasons);
-for (const [name, values] of Object.entries(registries.reasons).filter(([name]) => name !== "contract_version")) {
-  if (Array.isArray(values)) unique(values, `reason code in ${name}`);
-}
-unique(registries.differences.reasons, "difference reason");
-const producerValues: string[] = registries.producers.values.map((entry: Any) => entry.value);
-unique(producerValues, "producer");
+const eventNames: string[] = Array.isArray(registries.events.event_names) ? registries.events.event_names : [];
+const attributionReasons = new Set<string>(registries.reasons.attribution ?? []);
+const rejectionReasons = new Set<string>(registries.reasons.rejection ?? []);
+const consentReasons = new Set<string>(registries.reasons.consent_decision ?? []);
+const correctionReasons = new Set<string>(registries.reasons.correction ?? []);
+const fraudReasons = new Set<string>(registries.reasons.fraud_public_categories ?? []);
+const differenceReasons = new Set<string>(registries.differences.reasons ?? []);
+const producerValues: string[] = (registries.producers.values ?? []).map((entry: Any) => entry.value);
 const producerAllowed = (value: string) =>
   producerValues.includes(value) || (/^import:[a-z0-9-]+$/.test(value) && producerValues.includes("import:<provider>"));
-const matchingDefinitions = new Map<string, Any>(registries.matchingKeys.types.map((entry: Any) => [entry.type, entry]));
-unique([...matchingDefinitions.keys()], "matching-key type");
-const stateAxes = registries.states.axes;
-for (const axis of ["ingestion", "duplicate_resolution", "timeliness", "lifecycle", "attribution_finality", "privacy_request"]) {
-  check(stateAxes[axis], `missing state axis: ${axis}`);
-  unique(stateAxes[axis].states, `state in ${axis}`);
-  const states = new Set<string>(stateAxes[axis].states);
-  const edges = stateAxes[axis].transitions.map((edge: string[]) => edge.join("->"));
-  unique(edges, `transition in ${axis}`);
-  for (const edge of stateAxes[axis].transitions) {
-    check(edge.length === 2 && states.has(edge[0]) && states.has(edge[1]), `invalid transition endpoint in ${axis}`);
-  }
-  for (const terminal of stateAxes[axis].terminal) check(states.has(terminal), `invalid terminal state in ${axis}`);
-}
-const compatibility = registries.compatibility.attribution;
-unique(compatibility.map((entry: Any) => `${entry.subject_scope}|${entry.method}|${entry.model}`), "attribution compatibility row");
+const matchingDefinitions = new Map<string, Any>((registries.matchingKeys.types ?? []).map((entry: Any) => [entry.type, entry]));
+const stateAxes = registries.states.axes ?? {};
+const compatibility = registries.compatibility.attribution ?? [];
 
 const outputSchemaIds: Record<string, string> = {
   raw_records: "urn:open-mmp:schema:raw-record:v0.1",
@@ -148,8 +196,6 @@ const outputSchemaIds: Record<string, string> = {
 const expectedFiles: Record<string, string> = Object.fromEntries(
   Object.keys(outputSchemaIds).map((name) => [name, `expected_${name}.json`]),
 );
-const fixtureValidator = ajv.getSchema("urn:open-mmp:schema:fixture-input:v0.1");
-check(fixtureValidator, "fixture schema missing");
 
 function fixtureAttempts(input: Any): Any[] {
   if (input.batches) {
@@ -240,55 +286,193 @@ const fixtureDirs = readdirSync(fixtureRoot, { withFileTypes: true })
   .filter((entry) => entry.isDirectory())
   .map((entry) => join(fixtureRoot, entry.name))
   .sort();
-check(fixtureDirs.length === 19, `expected 19 fixture directories, found ${fixtureDirs.length}`);
-const results = new Map<string, { input: Any; output: Any; python: Any }>();
-let outputArtifactCount = 0;
-const fixtureInputs = fixtureDirs.map((dir) => json(join(dir, "input.json")));
-const fixturePythonOutputs = pythonOutputs(fixtureInputs);
-for (const [index, dir] of fixtureDirs.entries()) {
+type FixtureState = {
+  dir: string;
+  name: string;
+  input: Captured<Any>;
+  expectedParts: Record<string, Captured<Any>>;
+  expected: Captured<Any>;
+  first: Captured<Any>;
+  second: Captured<Any>;
+  reordered: Captured<Any>;
+  python?: PythonBatchResult;
+};
+
+const fixtureStates: FixtureState[] = fixtureDirs.map((dir) => {
   const name = basename(dir);
-  const input = fixtureInputs[index];
-  check(fixtureValidator(input), `fixture schema failure: ${name}: ${ajv.errorsText(fixtureValidator.errors)}`);
-  for (const attempt of fixtureAttempts(input)) {
-    const record = attempt.record;
-    check(eventNames.includes(record.event_name), `unknown fixture event_name: ${name}`);
-    check(producerAllowed(record.producer), `unknown fixture producer: ${name}`);
-    const eventId = `urn:open-mmp:schema:event-${record.event_name.replaceAll("_", "-")}:v0.1`;
-    const validator = ajv.getSchema(eventId);
-    check(validator, `missing event schema: ${eventId}`);
-    const event = { ...record.payload, event_name: record.event_name };
-    check(validator(event), `event schema failure: ${name}/${record.record_id}: ${ajv.errorsText(validator.errors)}`);
-  }
-  for (const item of input.reconciliation_inputs) {
-    item.matching_keys.forEach((entry: Any) => validateMatchingKey(entry, name));
-    item.candidates.flatMap((candidate: Any) => candidate.matching_keys).forEach((entry: Any) => validateMatchingKey(entry, name));
-  }
-  const expected: Any = {};
-  for (const [kind, fileName] of Object.entries(expectedFiles)) {
-    const path = join(dir, fileName);
-    expected[kind] = json(path);
-    outputArtifactCount += 1;
-    const validator = ajv.getSchema(outputSchemaIds[kind]);
-    check(validator, `missing output schema for ${kind}`);
-    for (const item of expected[kind]) {
-      check(validator(item), `${kind} schema failure: ${name}: ${ajv.errorsText(validator.errors)}`);
-    }
-  }
-  validateRegistryReferences(expected, name);
-  const first = evaluate(input);
-  const second = evaluate(JSON.parse(JSON.stringify(input)));
-  check(equal(first, second), `nondeterministic TypeScript output: ${name}`);
-  check(equal(first, evaluate(reorderedInput(input))), `input reorder changed semantic output: ${name}`);
-  check(equal(first, expected), `reviewed golden mismatch: ${name}`);
-  const python = fixturePythonOutputs[index];
-  check(equal(first, python), `cross-language mismatch: ${name}`);
-  results.set(name, { input, output: first, python });
+  const input = capture(() => json(join(dir, "input.json")));
+  const expectedParts = Object.fromEntries(
+    Object.entries(expectedFiles).map(([kind, fileName]) => [kind, capture(() => json(join(dir, fileName)))]),
+  );
+  const expected = capture(() => Object.fromEntries(
+    Object.entries(expectedParts).map(([kind, loaded]) => [kind, capturedValue(loaded, `${name}/${expectedFiles[kind]}`)]),
+  ));
+  const first = input.ok ? capture(() => evaluate(input.value)) : { ok: false as const, error: input.error };
+  const second = input.ok
+    ? capture(() => evaluate(JSON.parse(JSON.stringify(input.value))))
+    : { ok: false as const, error: input.error };
+  const reordered = input.ok
+    ? capture(() => evaluate(reorderedInput(input.value)))
+    : { ok: false as const, error: input.error };
+  return { dir, name, input, expectedParts, expected, first, second, reordered };
+});
+
+const outputArtifactCount = fixtureStates.reduce(
+  (count, state) => count + Object.values(state.expectedParts).filter((loaded) => loaded.ok).length,
+  0,
+);
+const pythonFixtureStates = fixtureStates.filter((state) => state.input.ok);
+const fixturePythonBatch = capture(() => pythonBatch(
+  pythonFixtureStates.map((state) => capturedValue(state.input, `${state.name}/input.json`)),
+));
+if (fixturePythonBatch.ok) {
+  fixturePythonBatch.value.forEach((result, index) => {
+    const state = pythonFixtureStates[index];
+    if (state) state.python = result;
+  });
+}
+
+const results = new Map<string, { input: Any; output: Any; python: Any }>();
+for (const state of fixtureStates) {
+  if (!state.input.ok || !state.first.ok || !state.python?.ok) continue;
+  results.set(state.name, { input: state.input.value, output: state.first.value, python: state.python.output });
 }
 
 function fixture(name: string): { input: Any; output: Any; python: Any } {
   const value = results.get(name);
   check(value, `missing fixture result: ${name}`);
   return value;
+}
+
+if (!summaryOnly) {
+  describe("schema health", () => {
+    for (const state of schemaStates) {
+      it(relative(root, state.path), () => {
+        const value = capturedValue(state.loaded, `schema load failure: ${relative(root, state.path)}`);
+        check(value.$schema === DRAFT, `wrong schema dialect: ${relative(root, state.path)}`);
+        check(/^urn:open-mmp:schema:[a-z0-9-]+:v0\.1$/.test(value.$id), `unstable schema id: ${relative(root, state.path)}`);
+        assertClosedObjects(value, relative(root, state.path));
+        check(!state.compileError, `schema did not compile: ${value.$id}`);
+        check(state.validator, `schema validator missing: ${value.$id}`);
+      });
+    }
+    it("contains unique schema identifiers", () => unique(schemaIds, "schema $id"));
+  });
+
+  describe("registry health", () => {
+    for (const name of Object.keys(registryPaths) as RegistryName[]) {
+      it(name, () => {
+        const value = capturedValue(registryStates[name].loaded, `registry load failure: ${name}`);
+        check(value.contract_version === "0.1.0", `registry version: ${name}`);
+        if (name === "events") {
+          unique(value.event_names, "event name");
+          check(value.event_names.length === 8, "event-name registry must contain the eight v0.1 events");
+        } else if (name === "reasons") {
+          for (const [reasonName, values] of Object.entries(value).filter(([key]) => key !== "contract_version")) {
+            if (Array.isArray(values)) unique(values, `reason code in ${reasonName}`);
+          }
+        } else if (name === "producers") {
+          unique(value.values.map((entry: Any) => entry.value), "producer");
+        } else if (name === "differences") {
+          unique(value.reasons, "difference reason");
+        } else if (name === "matchingKeys") {
+          unique(value.types.map((entry: Any) => entry.type), "matching-key type");
+        } else if (name === "compatibility") {
+          unique(value.attribution.map((entry: Any) => `${entry.subject_scope}|${entry.method}|${entry.model}`), "attribution compatibility row");
+        } else if (name === "states") {
+          for (const axis of ["ingestion", "duplicate_resolution", "timeliness", "lifecycle", "attribution_finality", "privacy_request"]) {
+            check(value.axes[axis], `missing state axis: ${axis}`);
+            unique(value.axes[axis].states, `state in ${axis}`);
+            const states = new Set<string>(value.axes[axis].states);
+            const edges = value.axes[axis].transitions.map((edge: string[]) => edge.join("->"));
+            unique(edges, `transition in ${axis}`);
+            for (const edge of value.axes[axis].transitions) {
+              check(edge.length === 2 && states.has(edge[0]) && states.has(edge[1]), `invalid transition endpoint in ${axis}`);
+            }
+            for (const terminal of value.axes[axis].terminal) {
+              check(states.has(terminal), `invalid terminal state in ${axis}`);
+            }
+          }
+        }
+      });
+    }
+  });
+
+  describe("fixture input validation", () => {
+    for (const state of fixtureStates) {
+      it(state.name, () => {
+        const input = capturedValue(state.input, `fixture input load failure: ${state.name}`);
+        const fixtureValidator = validatorFor("urn:open-mmp:schema:fixture-input:v0.1");
+        check(fixtureValidator(input), `fixture schema failure: ${state.name}: ${ajv.errorsText(fixtureValidator.errors)}`);
+        for (const attempt of fixtureAttempts(input)) {
+          const record = attempt.record;
+          check(eventNames.includes(record.event_name), `unknown fixture event_name: ${state.name}`);
+          check(producerAllowed(record.producer), `unknown fixture producer: ${state.name}`);
+          const eventId = `urn:open-mmp:schema:event-${record.event_name.replaceAll("_", "-")}:v0.1`;
+          const validator = validatorFor(eventId);
+          const event = { ...record.payload, event_name: record.event_name };
+          check(validator(event), `event schema failure: ${state.name}/${record.record_id}: ${ajv.errorsText(validator.errors)}`);
+        }
+        for (const item of input.reconciliation_inputs) {
+          item.matching_keys.forEach((entry: Any) => validateMatchingKey(entry, state.name));
+          item.candidates.flatMap((candidate: Any) => candidate.matching_keys)
+            .forEach((entry: Any) => validateMatchingKey(entry, state.name));
+        }
+      });
+    }
+    it("contains 19 fixture directories", () => {
+      check(fixtureDirs.length === 19, `expected 19 fixture directories, found ${fixtureDirs.length}`);
+    });
+  });
+
+  describe("fixture golden schemas", () => {
+    for (const state of fixtureStates) {
+      it(state.name, () => {
+        const expected = capturedValue(state.expected, `golden load failure: ${state.name}`);
+        for (const [kind, items] of Object.entries(expected)) {
+          const validator = validatorFor(outputSchemaIds[kind]);
+          for (const item of items as Any[]) {
+            check(validator(item), `${kind} schema failure: ${state.name}: ${ajv.errorsText(validator.errors)}`);
+          }
+        }
+        validateRegistryReferences(expected, state.name);
+      });
+    }
+  });
+
+  describe("fixture TypeScript determinism", () => {
+    for (const state of fixtureStates) {
+      it(state.name, () => {
+        const first = capturedValue(state.first, `TypeScript evaluation failure: ${state.name}`);
+        const second = capturedValue(state.second, `second TypeScript evaluation failure: ${state.name}`);
+        const reordered = capturedValue(state.reordered, `reordered TypeScript evaluation failure: ${state.name}`);
+        check(equal(first, second), `nondeterministic TypeScript output: ${state.name}`);
+        check(equal(first, reordered), `input reorder changed semantic output: ${state.name}`);
+      });
+    }
+  });
+
+  describe("fixture reviewed golden comparison", () => {
+    for (const state of fixtureStates) {
+      it(state.name, () => {
+        const first = capturedValue(state.first, `TypeScript evaluation failure: ${state.name}`);
+        const expected = capturedValue(state.expected, `golden load failure: ${state.name}`);
+        check(equal(first, expected), `reviewed golden mismatch: ${state.name}`);
+      });
+    }
+  });
+
+  describe("fixture TypeScript and Python parity", () => {
+    for (const state of fixtureStates) {
+      it(state.name, () => {
+        const first = capturedValue(state.first, `TypeScript evaluation failure: ${state.name}`);
+        check(fixturePythonBatch.ok, "Python fixture batch failed");
+        check(state.python, `Python fixture result missing: ${state.name}`);
+        check(state.python.ok, `Python fixture failed: ${state.name}`);
+        check(equal(first, state.python.output), `cross-language mismatch: ${state.name}`);
+      });
+    }
+  });
 }
 
 const scenarios: Array<[string, () => void]> = [
@@ -394,22 +578,25 @@ const scenarios: Array<[string, () => void]> = [
     check(value.reconciliation[0].difference_reason_code === "candidate_excluded", "scenario 19 reconciliation");
   }],
 ];
-describe("reviewed scenarios", () => {
-  for (const [name, assertion] of scenarios) it(name, assertion);
-  it("contains 19 scenario assertions", () => {
-    check(scenarios.length === 19, "scenario assertion inventory must contain 19 entries");
+if (!summaryOnly) {
+  describe("reviewed scenarios", () => {
+    for (const [name, assertion] of scenarios) it(name, assertion);
+    it("contains 19 scenario assertions", () => {
+      check(scenarios.length === 19, "scenario assertion inventory must contain 19 entries");
+    });
   });
-});
+}
 
-const rawSchema = schemaValues.find(({ value }) => value.$id === outputSchemaIds.raw_records)!.value;
-const eventEnum = rawSchema.properties.event_name.enum;
-const contractText = readFileSync(join(root, "spec", "event-metric-contract-v0.1.md"), "utf8");
-const fraudSchemaText = readFileSync(join(root, "schemas", "fraud-decision.schema.json"), "utf8");
+const contractText = capture(() => readFileSync(join(root, "spec", "event-metric-contract-v0.1.md"), "utf8"));
+const fraudSchemaText = capture(() => readFileSync(join(root, "schemas", "fraud-decision.schema.json"), "utf8"));
 const acceptance: Array<[string, () => void]> = [
   ["AC01 Draft 2020-12 schemas have stable IDs and versions", () => check(schemaPaths.length === 23 && schemaIds.every(Boolean), "AC01")],
   ["AC02 canonical event names agree across registry and schemas", () => {
+    const rawSchema = schemaValues.find(({ value }) => value.$id === outputSchemaIds.raw_records)?.value;
+    check(rawSchema, "AC02 raw schema missing");
+    const eventEnum = rawSchema.properties.event_name.enum;
     check(equal(eventEnum, eventNames), "AC02 raw registry mismatch");
-    for (const name of eventNames) check(ajv.getSchema(`urn:open-mmp:schema:event-${name.replaceAll("_", "-")}:v0.1`), `AC02 missing event schema: ${name}`);
+    for (const name of eventNames) validatorFor(`urn:open-mmp:schema:event-${name.replaceAll("_", "-")}:v0.1`);
   }],
   ["AC03 raw delivery logical correction and derived artifacts are separate", () => {
     check(Object.keys(outputSchemaIds).length === 11 && Object.values(expectedFiles).every((name) => name.startsWith("expected_")), "AC03");
@@ -428,7 +615,7 @@ const acceptance: Array<[string, () => void]> = [
   }],
   ["AC08 organic and unattributed are distinct", () => check(fixture("02-organic-no-referrer").output.attributions[0].status === "organic" && fixture("03-unknown-click").output.attributions[0].status === "unattributed", "AC08")],
   ["AC09 aggregate result cannot carry installation identity", () => {
-    const validator = ajv.getSchema(outputSchemaIds.attributions)!;
+    const validator = validatorFor(outputSchemaIds.attributions);
     const aggregate = { ...fixture("02-organic-no-referrer").output.attributions[0], subject_scope: "aggregate", installation_id: "forbidden" };
     check(!validator(aggregate), "AC09 schema must reject aggregate installation identity");
   }],
@@ -521,8 +708,10 @@ const acceptance: Array<[string, () => void]> = [
     check(evaluate(ambiguous).reconciliation[0].difference_reason_code === "join_key_ambiguous", "AC19 cardinality");
   }],
   ["AC20 public fraud envelope excludes live defenses", () => {
-    for (const forbidden of ["threshold", "model_weight", "watchlist", "ip_address", "user_agent", "response_timing"]) check(!fraudSchemaText.includes(forbidden), `AC20 ${forbidden}`);
-    check(contractText.includes("remain private"), "AC20 private boundary");
+    const schemaText = capturedValue(fraudSchemaText, "AC20 fraud schema read failure");
+    const specText = capturedValue(contractText, "AC20 contract read failure");
+    for (const forbidden of ["threshold", "model_weight", "watchlist", "ip_address", "user_agent", "response_timing"]) check(!schemaText.includes(forbidden), `AC20 ${forbidden}`);
+    check(specText.includes("remain private"), "AC20 private boundary");
   }],
   ["AC21 one command validates every schema registry fixture and golden", () => check(schemaPaths.length === 23 && Object.keys(registries).length === 7 && fixtureDirs.length === 19 && outputArtifactCount === 19 * 11, "AC21")],
   ["AC22 repeated and independent evaluators produce identical JCS", () => {
@@ -592,129 +781,157 @@ const acceptance: Array<[string, () => void]> = [
     check(rejected, "AC26 self-referential reinstall anchor");
   }],
 ];
-describe("acceptance criteria", () => {
-  for (const [name, assertion] of acceptance) it(name, assertion);
-  it("contains 26 acceptance criteria", () => {
-    check(acceptance.length === 26, "acceptance inventory must contain 26 entries");
+if (!summaryOnly) {
+  describe("acceptance criteria", () => {
+    for (const [name, assertion] of acceptance) it(name, assertion);
+    it("contains 26 acceptance criteria", () => {
+      check(acceptance.length === 26, "acceptance inventory must contain 26 entries");
+    });
   });
-});
+}
 
 // Deliberate in-memory mutations prove that the validator is not a count-only
 // or self-generated-golden check.
-const adValidator = ajv.getSchema("urn:open-mmp:schema:event-ad-revenue:v0.1")!;
 const validRevenue = {
   event_name: "ad_revenue", installation_id: "installation-test", impression_id: "impression-test",
   ad_unit_id: "unit-test", ad_network: "synthetic", amount_unscaled: "1", amount_scale: 18,
   currency: "USD", revenue_source: "server_verified",
 };
-const rawValidator = ajv.getSchema(outputSchemaIds.raw_records)!;
-const rawBaseline = fixture("01-valid-install-referrer").output.raw_records[0];
-describe("semantic mutations", () => {
-  it("accepts the baseline revenue event", () => {
-    check(adValidator(validRevenue), "mutation baseline event invalid");
-  });
-  it("rejects negative ad revenue", () => {
-    check(!adValidator({ ...validRevenue, amount_unscaled: "-1" }), "mutation negative ad revenue was accepted");
-  });
-  it("rejects timestamp precision drift", () => {
-    check(!rawValidator({ ...rawBaseline, occurred_at: "2026-08-12T00:00:00Z" }), "mutation timestamp precision was accepted");
-  });
-  it("detects golden output removal", () => {
-    check(!equal(fixture("01-valid-install-referrer").output, { ...fixture("01-valid-install-referrer").output, raw_records: [] }), "mutation golden comparison did not fail");
-  });
-  it("keeps unknown events out of the registry", () => {
-    check(!eventNames.includes("unknown_event"), "mutation unknown event entered registry");
-  });
-  it("rejects cross-tenant privacy references", () => {
-    const crossTenantPrivacy = structuredClone(fixture("07-same-id-across-tenants").input);
-    crossTenantPrivacy.privacy_requests.push({
-      contract_version: "0.1.0",
-      tenant_id: "tenant-a",
-      app_id: "app-a",
-      privacy_request_id: "cross-tenant-privacy",
-      deletion_subject_ref: "synthetic-subject",
-      deletion_scope: "installation",
-      requested_at: "2026-08-12T00:00:00.000Z",
-      completed_at: "2026-08-12T00:01:00.000Z",
-      status: "completed",
-      reason_code: "privacy_deletion",
-      policy_version: "privacy-v1",
-      affected_records: [{ record_id: "tenant-b-record", lifecycle_status: "redacted" }],
+if (!summaryOnly) {
+  describe("semantic mutations", () => {
+    it("accepts the baseline revenue event", () => {
+      const adValidator = validatorFor("urn:open-mmp:schema:event-ad-revenue:v0.1");
+      check(adValidator(validRevenue), "mutation baseline event invalid");
     });
-    let rejected = false;
-    try { evaluate(crossTenantPrivacy); } catch { rejected = true; }
-    check(rejected, "mutation cross-tenant privacy reference was accepted");
+    it("rejects negative ad revenue", () => {
+      const adValidator = validatorFor("urn:open-mmp:schema:event-ad-revenue:v0.1");
+      check(!adValidator({ ...validRevenue, amount_unscaled: "-1" }), "mutation negative ad revenue was accepted");
+    });
+    it("rejects timestamp precision drift", () => {
+      const rawValidator = validatorFor(outputSchemaIds.raw_records);
+      const rawBaseline = fixture("01-valid-install-referrer").output.raw_records[0];
+      check(!rawValidator({ ...rawBaseline, occurred_at: "2026-08-12T00:00:00Z" }), "mutation timestamp precision was accepted");
+    });
+    it("detects golden output removal", () => {
+      check(!equal(fixture("01-valid-install-referrer").output, { ...fixture("01-valid-install-referrer").output, raw_records: [] }), "mutation golden comparison did not fail");
+    });
+    it("keeps unknown events out of the registry", () => {
+      check(!eventNames.includes("unknown_event"), "mutation unknown event entered registry");
+    });
+    it("rejects cross-tenant privacy references", () => {
+      const crossTenantPrivacy = structuredClone(fixture("07-same-id-across-tenants").input);
+      crossTenantPrivacy.privacy_requests.push({
+        contract_version: "0.1.0",
+        tenant_id: "tenant-a",
+        app_id: "app-a",
+        privacy_request_id: "cross-tenant-privacy",
+        deletion_subject_ref: "synthetic-subject",
+        deletion_scope: "installation",
+        requested_at: "2026-08-12T00:00:00.000Z",
+        completed_at: "2026-08-12T00:01:00.000Z",
+        status: "completed",
+        reason_code: "privacy_deletion",
+        policy_version: "privacy-v1",
+        affected_records: [{ record_id: "tenant-b-record", lifecycle_status: "redacted" }],
+      });
+      let rejected = false;
+      try { evaluate(crossTenantPrivacy); } catch { rejected = true; }
+      check(rejected, "mutation cross-tenant privacy reference was accepted");
+    });
+    it("rejects cross-tenant correction references", () => {
+      const crossTenantCorrection = structuredClone(fixture("16-correction-refund").input);
+      crossTenantCorrection.correction_inputs[0].tenant_id = "tenant-b";
+      let rejected = false;
+      try { evaluate(crossTenantCorrection); } catch { rejected = true; }
+      check(rejected, "mutation cross-tenant correction reference was accepted");
+    });
   });
-  it("rejects cross-tenant correction references", () => {
-    const crossTenantCorrection = structuredClone(fixture("16-correction-refund").input);
-    crossTenantCorrection.correction_inputs[0].tenant_id = "tenant-b";
-    let rejected = false;
-    try { evaluate(crossTenantCorrection); } catch { rejected = true; }
-    check(rejected, "mutation cross-tenant correction reference was accepted");
-  });
-});
+}
 
-type TimestampCase = { name: string; field: string; value: string; input: Any };
+type TimestampCase = { name: string; field: string; value: string };
 const invalidTimestamps = [
   "2026-02-30T00:00:00.000Z",
   "2026-08-12T24:00:00.000Z",
   "not-a-timestamp",
 ];
-const timestampCases: TimestampCase[] = [];
-for (const field of ["occurred_at", "redirector_click_at", "install_begin_at_server"]) {
-  for (const value of invalidTimestamps) {
+const timestampCases: TimestampCase[] = ["occurred_at", "redirector_click_at", "install_begin_at_server"]
+  .flatMap((field) => invalidTimestamps.map((value) => ({
+    name: `${field} rejects ${value}`,
+    field,
+    value,
+  })));
+const timestampStates = timestampCases.map((entry) => ({
+  ...entry,
+  input: capture(() => {
     const input = structuredClone(fixture("01-valid-install-referrer").input);
-    if (field === "occurred_at") input.records[0].occurred_at = value;
-    if (field === "redirector_click_at") input.records.find((record: Any) => record.event_name === "click").payload.redirector_click_at = value;
-    if (field === "install_begin_at_server") input.records.find((record: Any) => record.event_name === "install").payload.install_begin_at_server = value;
-    timestampCases.push({ name: `${field} rejects ${value}`, field, value, input });
-  }
+    if (entry.field === "occurred_at") input.records[0].occurred_at = entry.value;
+    if (entry.field === "redirector_click_at") input.records.find((record: Any) => record.event_name === "click").payload.redirector_click_at = entry.value;
+    if (entry.field === "install_begin_at_server") input.records.find((record: Any) => record.event_name === "install").payload.install_begin_at_server = entry.value;
+    return input;
+  }),
+  python: undefined as PythonBatchResult | undefined,
+}));
+const validTimestampStates = timestampStates.filter((state) => state.input.ok);
+const pythonTimestampBatch = capture(() => pythonBatch(
+  validTimestampStates.map((state) => capturedValue(state.input, state.name)),
+));
+if (pythonTimestampBatch.ok) {
+  pythonTimestampBatch.value.forEach((result, index) => {
+    const state = validTimestampStates[index];
+    if (state) state.python = result;
+  });
 }
-const pythonTimestampResults = pythonBatch(timestampCases.map((entry) => entry.input));
-describe("timestamp validation", () => {
-  for (const [index, entry] of timestampCases.entries()) {
-    it(entry.name, () => {
+if (!summaryOnly) {
+  describe("timestamp validation", () => {
+    for (const entry of timestampStates) {
+      it(entry.name, () => {
+        const input = capturedValue(entry.input, `timestamp fixture preparation failed: ${entry.name}`);
       const schemaRejected = entry.field === "occurred_at"
-        ? !fixtureValidator(entry.input)
+        ? !validatorFor("urn:open-mmp:schema:fixture-input:v0.1")(input)
         : (() => {
             const eventName = entry.field === "redirector_click_at" ? "click" : "install";
-            const record = entry.input.records.find((candidate: Any) => candidate.event_name === eventName);
-            const validator = ajv.getSchema(`urn:open-mmp:schema:event-${eventName}:v0.1`)!;
+            const record = input.records.find((candidate: Any) => candidate.event_name === eventName);
+            const validator = validatorFor(`urn:open-mmp:schema:event-${eventName}:v0.1`);
             return !validator({ ...record.payload, event_name: eventName });
           })();
       check(schemaRejected, `schema accepted invalid ${entry.field}`);
       let failure: { name: string; message: string; exit_code: number } | undefined;
       try {
-        evaluate(entry.input);
+        evaluate(input);
       } catch (error) {
         check(error instanceof TimestampInvalidError, `unexpected TypeScript error for ${entry.field}`);
         failure = { name: error.name, message: error.message, exit_code: error.exitCode };
       }
       check(failure, `TypeScript accepted invalid ${entry.field}`);
-      const python = pythonTimestampResults[index];
+      check(pythonTimestampBatch.ok, "Python timestamp batch failed");
+      const python = entry.python;
+      check(python, `Python timestamp result missing: ${entry.name}`);
       check(!python.ok, `Python accepted invalid ${entry.field}`);
       check(equal(failure, python.error), `timestamp rejection mismatch for ${entry.field}`);
     });
   }
-});
-
-const unicodeInput = structuredClone(fixture("01-valid-install-referrer").input);
-const unicodeReconciliation = unicodeInput.reconciliation_inputs[0];
-const unicodeKey = unicodeReconciliation.matching_keys[0];
-const unicodeValues = ["\u{10000}campaign", "campaign", "\uE000campaign"];
-unicodeReconciliation.matching_keys = unicodeValues.map((value) => ({ ...unicodeKey, value }));
-unicodeReconciliation.candidates[0].matching_keys = unicodeValues.map((value) => ({ ...unicodeKey, value }));
-const unicodeTypeScript = evaluate(unicodeInput);
-const [unicodePython] = pythonOutputs([unicodeInput]);
-describe("UTF-16 output ordering", () => {
-  it("matches the independent Python evaluator for astral text", () => {
-    check(equal(unicodeTypeScript, unicodePython), "UTF-16 cross-language mismatch");
-    check(equal(
-      unicodeTypeScript.reconciliation[0].matching_keys.map((entry: Any) => entry.value),
-      ["campaign", "\u{10000}campaign", "\uE000campaign"],
-    ), "UTF-16 matching-key order");
   });
-});
+}
+
+const unicodeValues = ["\u{10000}campaign", "campaign", "\uE000campaign"];
+if (!summaryOnly) {
+  describe("UTF-16 output ordering", () => {
+    it("matches the independent Python evaluator for astral text", () => {
+      const unicodeInput = structuredClone(fixture("01-valid-install-referrer").input);
+      const unicodeReconciliation = unicodeInput.reconciliation_inputs[0];
+      const unicodeKey = unicodeReconciliation.matching_keys[0];
+      unicodeReconciliation.matching_keys = unicodeValues.map((value) => ({ ...unicodeKey, value }));
+      unicodeReconciliation.candidates[0].matching_keys = unicodeValues.map((value) => ({ ...unicodeKey, value }));
+      const unicodeTypeScript = evaluate(unicodeInput);
+      const [unicodePython] = pythonOutputs([unicodeInput]);
+      check(equal(unicodeTypeScript, unicodePython), "UTF-16 cross-language mismatch");
+      check(equal(
+        unicodeTypeScript.reconciliation[0].matching_keys.map((entry: Any) => entry.value),
+        ["campaign", "\u{10000}campaign", "\uE000campaign"],
+      ), "UTF-16 matching-key order");
+    });
+  });
+}
 
 function shuffled<T>(values: T[], seed: number): T[] {
   const output = [...values];
@@ -739,23 +956,49 @@ function permutedInput(input: Any, seed: number): Any {
   return output;
 }
 
-const permutationCases = fixtureDirs.flatMap((dir, fixtureIndex) =>
+const permutationCases = fixtureStates.flatMap((state, fixtureIndex) =>
   Array.from({ length: 5 }, (_, permutationIndex) => {
-    const name = basename(dir);
     return {
-      name: `${name} permutation ${permutationIndex + 1}`,
-      expected: fixture(name).output,
-      input: permutedInput(fixture(name).input, (fixtureIndex + 1) * 1_000 + permutationIndex + 1),
+      name: `${state.name} permutation ${permutationIndex + 1}`,
+      expected: state.first,
+      input: capture(() => permutedInput(
+        capturedValue(state.input, `permutation input missing: ${state.name}`),
+        (fixtureIndex + 1) * 1_000 + permutationIndex + 1,
+      )),
+      python: undefined as PythonBatchResult | undefined,
     };
   }),
 );
-const permutationPython = pythonOutputs(permutationCases.map((entry) => entry.input));
-describe("input permutations", () => {
-  for (const [index, entry] of permutationCases.entries()) {
-    it(entry.name, () => {
-      const output = evaluate(entry.input);
-      check(equal(output, entry.expected), `TypeScript permutation changed output: ${entry.name}`);
-      check(equal(output, permutationPython[index]), `Python permutation mismatch: ${entry.name}`);
-    });
+const validPermutationCases = permutationCases.filter((entry) => entry.input.ok);
+const permutationPythonBatch = capture(() => pythonBatch(
+  validPermutationCases.map((entry) => capturedValue(entry.input, entry.name)),
+));
+if (permutationPythonBatch.ok) {
+  permutationPythonBatch.value.forEach((result, index) => {
+    const entry = validPermutationCases[index];
+    if (entry) entry.python = result;
+  });
+}
+if (!summaryOnly) {
+  describe("input permutations", () => {
+    for (const entry of permutationCases) {
+      it(entry.name, () => {
+        const input = capturedValue(entry.input, `permutation preparation failed: ${entry.name}`);
+        const expected = capturedValue(entry.expected, `permutation baseline failed: ${entry.name}`);
+        const output = evaluate(input);
+        check(equal(output, expected), `TypeScript permutation changed output: ${entry.name}`);
+        check(permutationPythonBatch.ok, "Python permutation batch failed");
+        check(entry.python, `Python permutation result missing: ${entry.name}`);
+        check(entry.python.ok, `Python permutation failed: ${entry.name}`);
+        check(equal(output, entry.python.output), `Python permutation mismatch: ${entry.name}`);
+      });
+    }
   }
-});
+  );
+}
+
+export function validationSummary(): string {
+  return `Validated ${schemaPaths.length} schemas, ${Object.keys(registryPaths).length} registries, ${fixtureDirs.length} reviewed fixtures, ${outputArtifactCount} golden output artifacts, ${scenarios.length} scenario assertions, ${acceptance.length} acceptance criteria, deterministic TypeScript, independent Python, and RFC 8785 conformance.`;
+}
+
+if (summaryOnly) console.log(validationSummary());

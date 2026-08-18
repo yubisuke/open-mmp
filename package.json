@@ -10,7 +10,7 @@
   },
   "scripts": {
     "generate:types": "tsx tools/generate-contract-types.ts",
-    "validate": "npm run typecheck && node --import tsx --test tools/validate.ts && node -e \"console.log('Validated 23 schemas, 7 registries, 19 reviewed fixtures, 209 golden output artifacts, 19 scenario assertions, 26 acceptance criteria, deterministic TypeScript, independent Python, and RFC 8785 conformance.')\"",
+    "validate": "npm run typecheck && node --import tsx --test tools/validate.ts && node --import tsx tools/validate.ts --summary",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
