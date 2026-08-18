@@ -496,8 +496,8 @@ if (!summaryOnly) {
         }
       });
     }
-    it("contains 20 fixture directories", () => {
-      check(fixtureDirs.length === 20, `expected 20 fixture directories, found ${fixtureDirs.length}`);
+    it("contains 27 fixture directories", () => {
+      check(fixtureDirs.length === 27, `expected 27 fixture directories, found ${fixtureDirs.length}`);
     });
   });
 
@@ -660,12 +660,45 @@ const scenarios: Array<[string, () => void]> = [
     check(value.rejections[0].payload_disposition === "discarded" && value.rejections[0].retained === "non_identifying_metadata", "scenario 20 disposition");
     check(value.raw_records.length === 0 && value.logical_events.length === 0 && value.attributions.length === 0, "scenario 20 no derived evidence");
   }],
+  ["21 reconciliation window mismatch", () => {
+    check(fixture("21-reconciliation-window-mismatch").output.reconciliation[0].difference_reason_code === "window_mismatch", "scenario 21");
+  }],
+  ["22 reconciliation join key missing", () => {
+    check(fixture("22-reconciliation-join-key-missing").output.reconciliation[0].difference_reason_code === "join_key_missing", "scenario 22");
+  }],
+  ["23 reconciliation freshness mismatch", () => {
+    check(fixture("23-reconciliation-freshness-mismatch").output.reconciliation[0].difference_reason_code === "freshness_mismatch", "scenario 23");
+  }],
+  ["24 attribution supersession after redaction", () => {
+    const value = fixture("24-attribution-supersession").output;
+    const attribution = value.attributions[0];
+    check(attribution.finality === "superseded" && attribution.supersedes_attribution_id === "attr:install-24", "scenario 24 supersession");
+    check(attribution.attribution_id === "attr:install-24:recalculated" && attribution.evidence_refs.some((entry: Any) => entry.ref === "click-24" && entry.lifecycle_status === "redacted"), "scenario 24 evidence");
+  }],
+  ["25 replay suspected fraud path", () => {
+    const value = fixture("25-replay-suspected").output;
+    check(value.fraud_decisions.length === 1 && value.fraud_decisions[0].reason_code === "replay_suspected", "scenario 25 fraud");
+    check(value.deliveries[0].duplicate_resolution === "unique" && value.rejections.length === 0, "scenario 25 not transport duplicate");
+  }],
+  ["26 retention-affected recalculation", () => {
+    const value = fixture("26-retention-affected").output;
+    const after = value.metric_runs.filter((item: Any) => item.metric_run_id.startsWith("run-26-after"));
+    check(after.length === 3 && after.every((item: Any) => item.reproducibility_status === "retention_affected" && item.supersedes_metric_run_id), "scenario 26 metrics");
+    check(value.privacy_requests.length === 0 && value.privacy_tombstones.length === 0, "scenario 26 no privacy request");
+  }],
+  ["27 ad impression revenue linkage", () => {
+    const value = fixture("27-ad-impression-revenue-link");
+    const impression = value.input.records.find((item: Any) => item.event_name === "ad_impression");
+    const revenue = value.input.records.find((item: Any) => item.event_name === "ad_revenue");
+    check(impression.payload.impression_id === revenue.payload.impression_id, "scenario 27 impression link");
+    check(value.output.raw_records.length === 3 && value.output.metric_runs.every((item: Any) => item.value_unscaled === "3000000"), "scenario 27 outputs");
+  }],
 ];
 if (!summaryOnly) {
   describe("reviewed scenarios", () => {
     for (const [name, assertion] of scenarios) it(name, assertion);
-    it("contains 20 scenario assertions", () => {
-      check(scenarios.length === 20, "scenario assertion inventory must contain 20 entries");
+    it("contains 27 scenario assertions", () => {
+      check(scenarios.length === 27, "scenario assertion inventory must contain 27 entries");
     });
   });
 }
@@ -759,7 +792,7 @@ const acceptance: Array<[string, () => void]> = [
     check(corrections.some((item: Any) => item.correction_type === "retraction"), "AC15 retraction");
     check(fixture("17-redaction-recalculation").output.metric_runs.some((item: Any) => item.supersedes_metric_run_id), "AC15 redaction");
   }],
-  ["AC16 clock referrer prefetch and withdrawal fixtures pass", () => check(scenarios.length === 20 && fixture("11-clock-skew").output.deliveries.some((item: Any) => item.clock_skew_suspected) && fixture("13-referrer-unsupported").output.attributions.length === 2 && fixture("19-bot-prefetch").output.fraud_decisions.length === 1 && fixture("20-timestamp-invalid").output.rejections.some((item: Any) => item.reason_code === "timestamp_invalid"), "AC16")],
+  ["AC16 clock referrer prefetch and withdrawal fixtures pass", () => check(scenarios.length === 27 && fixture("11-clock-skew").output.deliveries.some((item: Any) => item.clock_skew_suspected) && fixture("13-referrer-unsupported").output.attributions.length === 2 && fixture("19-bot-prefetch").output.fraud_decisions.length === 1 && fixture("20-timestamp-invalid").output.rejections.some((item: Any) => item.reason_code === "timestamp_invalid"), "AC16")],
   ["AC17 server-recognized withdrawal rejects and redacts payload", () => {
     for (const name of ["14-withdrawal-after-occurrence", "15-event-after-withdrawal"]) {
       const value = fixture(name).output;
@@ -799,7 +832,7 @@ const acceptance: Array<[string, () => void]> = [
     for (const forbidden of ["threshold", "model_weight", "watchlist", "ip_address", "user_agent", "response_timing"]) check(!schemaText.includes(forbidden), `AC20 ${forbidden}`);
     check(specText.includes("remain private"), "AC20 private boundary");
   }],
-  ["AC21 one command validates every schema registry fixture and golden", () => check(schemaPaths.length === 22 && Object.keys(registries).length === 7 && fixtureDirs.length === 20 && outputArtifactCount === 20 * 12, "AC21")],
+  ["AC21 one command validates every schema registry fixture and golden", () => check(schemaPaths.length === 22 && Object.keys(registries).length === 7 && fixtureDirs.length === 27 && outputArtifactCount === 27 * 12, "AC21")],
   ["AC22 repeated and independent evaluators produce identical JCS", () => {
     for (const { output, python } of results.values()) check(equal(output, python), "AC22 evaluator mismatch");
     const vector = { numbers: [333333333.33333329, 1e30, 4.50, 2e-3, 1e-27, -0], string: "€$\u000f\nA'B\"\\\"/" };

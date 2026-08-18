@@ -13,6 +13,7 @@
     "redirector_click_at": { "$ref": "../common.schema.json#/$defs/dateTime" },
     "redirector_time_status": { "enum": ["available", "missing", "invalid"] },
     "bot_prefetch": { "type": "boolean" },
+    "replay_suspected": { "type": "boolean" },
     "extensions": { "type": "object", "additionalProperties": true }
   }
 }

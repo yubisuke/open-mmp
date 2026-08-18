@@ -174,6 +174,11 @@ function assertScopedReferences(input: Any, all: Attempt[]): void {
       throw new Error(`cross-scope or missing correction reference: ${correction.correction_id}`);
     }
   }
+  for (const expiration of input.retention_expirations ?? []) {
+    if (!exists(expiration.tenant_id, expiration.app_id, expiration.record_id)) {
+      throw new Error(`cross-scope or missing retention reference: ${expiration.record_id}`);
+    }
+  }
   for (const attempt of all.filter((entry) => entry.record.event_name === "refund")) {
     if (!exists(attempt.server.tenant_id, attempt.server.app_id, attempt.record.payload.correction_target_record_id)) {
       throw new Error(`cross-scope or missing refund target: ${attempt.record.record_id}`);
@@ -312,6 +317,9 @@ function privacyIndex(input: Any): Map<string, "redacted" | "purged"> {
       result.set(evidenceKey(request.tenant_id, request.app_id, affected.record_id), affected.lifecycle_status);
     }
   }
+  for (const expiration of input.retention_expirations ?? []) {
+    result.set(evidenceKey(expiration.tenant_id, expiration.app_id, expiration.record_id), "purged");
+  }
   return result;
 }
 
@@ -383,7 +391,16 @@ function makeAttribution(
     model: Attribution["model"],
     reason_code: Attribution["reason_code"],
     extra: Partial<Attribution> = {},
-  ): Attribution => ({ ...base, status, method, model, reason_code, ...extra });
+  ): Attribution => {
+    const attribution: Attribution = { ...base, status, method, model, reason_code, ...extra };
+    if (!attribution.evidence_refs.some((entry) => entry.lifecycle_status !== "available")) return attribution;
+    return {
+      ...attribution,
+      attribution_id: `${base.attribution_id}:recalculated`,
+      finality: "superseded",
+      supersedes_attribution_id: base.attribution_id,
+    };
+  };
   if (payload.referrer_status === "none") return result("organic", "none", "none", "no_referrer");
   if (payload.referrer_status === "unsupported") return result("unattributed", "none", "none", "install_referrer_unsupported");
   if (payload.referrer_status === "unavailable") return result("unattributed", "none", "none", "install_referrer_unavailable");
@@ -717,25 +734,28 @@ export function evaluate(input: Any): EvaluationOutput {
   const privacy_tombstones = sortByKey(privacyTombstoneValues,
     (tombstone) => [tombstone.privacy_request_id, tombstone.record_id, tombstone.tenant_id, tombstone.app_id]);
   const fraud_decisions = sortByKey(acceptedUnique
-    .filter((attempt) => attempt.record.event_name === "click" && attempt.record.payload.bot_prefetch)
-    .map((attempt): FraudDecision => ({
+    .filter((attempt) => attempt.record.event_name === "click" && (attempt.record.payload.bot_prefetch || attempt.record.payload.replay_suspected))
+    .map((attempt): FraudDecision => {
+      const reason_code: FraudDecision["reason_code"] = attempt.record.payload.replay_suspected ? "replay_suspected" : "bot_prefetch";
+      return ({
       fraud_decision_id: `fraud:${attempt.record.record_id}`,
       subject_ref: attempt.record.record_id,
       decision: "suspected",
       action: "exclude",
-      reason_code: "bot_prefetch",
+      reason_code,
       reason_code_version: CONTRACT_VERSION,
       evidence: [{
-        type: "link_prefetch_category",
+        type: reason_code === "replay_suspected" ? "replay_category" : "link_prefetch_category",
         captured_at: attempt.record.received_at,
-        digest: sha256(["bot_prefetch", attempt.record.record_id]),
+        digest: sha256([reason_code, attempt.record.record_id]),
         access_class: "protected",
       }],
       rule_bundle_id: "fraud-public-envelope",
       rule_bundle_version: CONTRACT_VERSION,
       rule_bundle_hash: HASH,
       evaluated_at: attempt.record.received_at,
-    })), (decision) => [decision.fraud_decision_id]);
+    });
+    }), (decision) => [decision.fraud_decision_id]);
   const rejections = sortByKey(decisionsList
     .filter((decision) => decision.ingestion_status === "rejected")
     .map((decision): Rejection => ({

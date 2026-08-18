@@ -203,6 +203,9 @@ def assert_scoped_references(value: dict[str, Any], attempts: list[dict[str, Any
     for correction in value.get("correction_inputs", []):
         if not exists(correction["tenant_id"], correction["app_id"], correction["corrects_record_id"]):
             raise ValueError(f"cross-scope or missing correction reference: {correction['correction_id']}")
+    for expiration in value.get("retention_expirations", []):
+        if not exists(expiration["tenant_id"], expiration["app_id"], expiration["record_id"]):
+            raise ValueError(f"cross-scope or missing retention reference: {expiration['record_id']}")
     for attempt in (item for item in attempts if item["record"]["event_name"] == "refund"):
         target = attempt["record"]["payload"]["correction_target_record_id"]
         if not exists(attempt["server"]["tenant_id"], attempt["server"]["app_id"], target):
@@ -354,6 +357,8 @@ def lifecycle_index(value: dict[str, Any]) -> dict[tuple[str, str, str], str]:
         if request["status"] == "completed":
             for affected in request.get("affected_records", []):
                 result[evidence_key(request["tenant_id"], request["app_id"], affected["record_id"])] = affected["lifecycle_status"]
+    for expiration in value.get("retention_expirations", []):
+        result[evidence_key(expiration["tenant_id"], expiration["app_id"], expiration["record_id"])] = "purged"
     return result
 
 
@@ -425,7 +430,14 @@ def attribution(
     }
 
     def result(status: str, method: str, model: str, reason: str, extra: dict[str, Any] | None = None) -> dict[str, Any]:
-        return base | {"status": status, "method": method, "model": model, "reason_code": reason} | (extra or {})
+        attribution = base | {"status": status, "method": method, "model": model, "reason_code": reason} | (extra or {})
+        if not any(entry["lifecycle_status"] != "available" for entry in attribution["evidence_refs"]):
+            return attribution
+        return attribution | {
+            "attribution_id": f"{base['attribution_id']}:recalculated",
+            "finality": "superseded",
+            "supersedes_attribution_id": base["attribution_id"],
+        }
 
     if payload["referrer_status"] == "none":
         return result("organic", "none", "none", "no_referrer")
@@ -820,12 +832,15 @@ def evaluate(value: dict[str, Any]) -> dict[str, Any]:
             "subject_ref": attempt["record"]["record_id"],
             "decision": "suspected",
             "action": "exclude",
-            "reason_code": "bot_prefetch",
+            "reason_code": "replay_suspected" if attempt["record"]["payload"].get("replay_suspected") else "bot_prefetch",
             "reason_code_version": CONTRACT_VERSION,
             "evidence": [{
-                "type": "link_prefetch_category",
+                "type": "replay_category" if attempt["record"]["payload"].get("replay_suspected") else "link_prefetch_category",
                 "captured_at": attempt["record"]["received_at"],
-                "digest": digest(["bot_prefetch", attempt["record"]["record_id"]]),
+                "digest": digest([
+                    "replay_suspected" if attempt["record"]["payload"].get("replay_suspected") else "bot_prefetch",
+                    attempt["record"]["record_id"],
+                ]),
                 "access_class": "protected",
             }],
             "rule_bundle_id": "fraud-public-envelope",
@@ -834,7 +849,8 @@ def evaluate(value: dict[str, Any]) -> dict[str, Any]:
             "evaluated_at": attempt["record"]["received_at"],
         }
         for attempt in accepted
-        if attempt["record"]["event_name"] == "click" and attempt["record"]["payload"].get("bot_prefetch")
+        if attempt["record"]["event_name"] == "click"
+        and (attempt["record"]["payload"].get("bot_prefetch") or attempt["record"]["payload"].get("replay_suspected"))
     ], fraud_decision_sort_key)
     rejections = sort_by_key([
         {
