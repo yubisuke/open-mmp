@@ -63,6 +63,19 @@ The following six component identifiers are mechanically matched to the M1a thre
 <!-- m1-component:runtime-ci -->
 - `runtime-ci`: Linux/PostgreSQL migration, unit/integration, golden parity, Compose smoke, threat coverage, and per-workspace SBOM gate.
 
+### M2 component inventory
+
+The following four identifiers are covered mechanically. The two device components remain implementation-pending until M2b; listing their boundary here does not claim that the SDKs exist yet.
+
+<!-- m1-component:redirector -->
+- `redirector`: portable Node HTTP shell and shared deterministic core for stored measurement links, Play referrers, click evidence, safe fallback, and memory-only source-IP rate limiting.
+<!-- m1-component:sdk-ingestion -->
+- `sdk-ingestion`: app-key enrollment, per-installation credentials, HMAC request integrity, ephemeral nonce replay defence, durable batch inbox, ordered worker drain, and on-device deletion authorization.
+<!-- m1-component:sdk-android -->
+- `sdk-android`: planned M2b Kotlin client boundary for Install Referrer, Meta evidence, durable delivery, consent, and collection lifecycle.
+<!-- m1-component:unity-bridge -->
+- `unity-bridge`: planned M2b C# to Kotlin boundary for Unity lifecycle and MAX impression-revenue callbacks.
+
 ### Redirector
 
 - Accepts `GET /r/{slug}`

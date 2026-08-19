@@ -55,6 +55,8 @@ jobs:
           npm run test:integration
           npm run test:db-invariants
           npm run test:env-coverage
+      - name: Run M2a redirector, signed-ingestion, replay, worker, and deletion gates
+        run: npm run test:m2a
       - name: Reproduce contract goldens through PostgreSQL
         run: npm run seed && npm run verify:parity
       - name: Verify SQL cohort metrics against the contract evaluator

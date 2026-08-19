@@ -70,6 +70,8 @@ Evidence gate: A dated owner decision identifies the selected path and the evide
 
 ## M2 Android, Unity, and redirector
 
+M2a server work is implemented and synthetically validated: the Node redirector, stored tracking links, HMAC SDK enrollment and ingestion, ephemeral replay state, encrypted durable batches, ordered worker drain, late-click supersession, and credential-bound on-device deletion are present. M2b remains open and owns the Kotlin SDK, Unity bridge, emulator workflow, Android artifact SBOM, and operator device checklist. M2 is not complete until those device deliverables and their synthetic gates exist; real-device and live-campaign evidence remains separately operator-verified.
+
 - Unity C# SDK and Android Kotlin bridge
 - Google Play Install Referrer client and deterministic first-party attribution
 - Portable Node.js redirector; a Cloudflare Workers redirector may be offered as an optional adapter

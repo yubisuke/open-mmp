@@ -1,5 +1,7 @@
 import { readFileSync } from "node:fs";
 import { expectedMaxTokenAll } from "../apps/api/src/max-receiver.js";
+import { signSdkRequest } from "../apps/api/src/sdk-auth.js";
+import { randomBytes } from "node:crypto";
 
 function readRepositoryEnv(): Record<string, string> {
   try {
@@ -22,6 +24,9 @@ const required = (name: string): string => {
 };
 const port = process.env.OPENMMP_API_HOST_PORT ?? env.OPENMMP_API_HOST_PORT ?? "8080";
 const base = `http://127.0.0.1:${port}`;
+const redirectorPort = process.env.OPENMMP_REDIRECTOR_HOST_PORT ?? env.OPENMMP_REDIRECTOR_HOST_PORT ?? "8090";
+const redirectorBase = process.env.OPENMMP_REDIRECTOR_BASE_URL ?? env.OPENMMP_REDIRECTOR_BASE_URL
+  ?? `http://127.0.0.1:${redirectorPort}`;
 const health = await fetch(`${base}/health`);
 if (!health.ok) throw new Error(`health smoke failed with ${health.status}`);
 const parameters = new URLSearchParams({
@@ -39,4 +44,63 @@ if (accepted.status !== 204) throw new Error(`valid MAX smoke returned ${accepte
 parameters.set("event_token_all", "0".repeat(64));
 const tampered = await fetch(`${base}${path}?${parameters}`);
 if (tampered.status !== 401) throw new Error(`tampered MAX smoke returned ${tampered.status}`);
-console.log("Runtime smoke passed: health=200 valid_max=204 tampered_max=401.");
+
+const linkResponse = await fetch(`${base}/v1/admin/tracking-links`, {
+  method: "POST",
+  headers: { authorization: `Bearer ${required("OPENMMP_ADMIN_KEY")}`, "content-type": "application/json" },
+  body: JSON.stringify({
+    destination_kind: "play_store",
+    destination_url: "https://play.google.com/store/apps/details?id=dev.openmmp.synthetic",
+    play_package_name: "dev.openmmp.synthetic",
+    campaign_id: "campaign-runtime-smoke",
+  }),
+});
+if (linkResponse.status !== 201) throw new Error(`tracking-link smoke returned ${linkResponse.status}`);
+const link = await linkResponse.json() as { slug: string };
+const redirected = await fetch(`${redirectorBase}/r/${link.slug}?destination=https://attacker.invalid`, {
+  redirect: "manual", headers: { "user-agent": "Synthetic Android" },
+});
+if (redirected.status !== 302 || !redirected.headers.get("location")?.startsWith("https://play.google.com/")) {
+  throw new Error(`redirector smoke returned ${redirected.status}`);
+}
+
+const sdkKeyId = required("OPENMMP_SDK_KEY_ID");
+const sdkSecret = required("OPENMMP_SDK_KEY");
+const signedPost = async (path: string, value: unknown, installation?: { keyId: string; secret: string }): Promise<Response> => {
+  const body = Buffer.from(JSON.stringify(value), "utf8");
+  const timestampMs = Date.now();
+  const nonce = randomBytes(18).toString("base64url");
+  const installationKeyId = installation?.keyId;
+  return fetch(`${base}${path}`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-openmmp-sdk-key-id": sdkKeyId,
+      "x-openmmp-installation-key-id": installationKeyId ?? "-",
+      "x-openmmp-timestamp-ms": String(timestampMs),
+      "x-openmmp-nonce": nonce,
+      "x-openmmp-signature": signSdkRequest(installation?.secret ?? sdkSecret, {
+        method: "POST", path, sdkKeyId, installationKeyId, timestampMs, nonce, body,
+      }),
+    },
+    body,
+  });
+};
+const smokeId = randomBytes(8).toString("hex");
+const installationId = `installation:runtime-smoke-${smokeId}`;
+const enrolled = await signedPost("/v1/installations", { installation_id: installationId });
+if (enrolled.status !== 201) throw new Error(`installation enrollment smoke returned ${enrolled.status}`);
+const credential = await enrolled.json() as { installation_key_id: string; installation_secret: string };
+const batch = await signedPost("/v1/events/batch", { records: [{
+  producer_version: "runtime-smoke",
+  event_id: `event:runtime-smoke-session-${smokeId}`,
+  event_name: "session_start",
+  occurred_at: new Date().toISOString(),
+  occurred_at_source: "device",
+  processing_purpose_id: "analytics",
+  processing_sequence: 1,
+  payload: { event_name: "session_start", installation_id: installationId, session_id: `session:runtime-smoke-${smokeId}` },
+}] }, { keyId: credential.installation_key_id, secret: credential.installation_secret });
+if (batch.status !== 202) throw new Error(`signed SDK batch smoke returned ${batch.status}`);
+
+console.log("Runtime smoke passed: health=200 valid_max=204 tampered_max=401 redirect=302 enrollment=201 sdk_batch=202.");

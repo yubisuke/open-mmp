@@ -75,6 +75,8 @@ There is no code deliverable. The owner uses the M1a/M1b evidence, operator-run 
 
 ### Phase 2: Android, Unity, and redirector
 
+M2a server implementation is complete on synthetic evidence: portable redirector, tracking-link allowlist, HMAC app and installation authentication, replay window, durable batch inbox, ordered evaluation, late-click supersession, and credential-authorized deletion. M2b is the next phase and must add the Kotlin SDK, Unity bridge, emulator evidence, Android SBOM, and operator checklist without changing contract v0.3.
+
 - Unity C# SDK and Android Kotlin bridge
 - Google Play Install Referrer and versioned deterministic attribution
 - Portable Node.js redirector, with an optional Cloudflare Workers adapter only for that redirector

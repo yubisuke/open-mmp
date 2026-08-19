@@ -95,6 +95,21 @@ services:
       migrate:
         condition: service_completed_successfully
 
+  redirector:
+    <<: *app
+    command: ["/bin/sh", "-c", "set -a && . /run/openmmp/app/runtime.env && set +a && node --import tsx apps/redirector/src/server.ts"]
+    volumes:
+      - app-secrets:/run/openmmp/app:ro
+      - payload-objects:/run/openmmp/payloads
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - "${OPENMMP_REDIRECTOR_HOST_PORT:-8090}:8090"
+    networks:
+      - backend
+      - edge
+
   seed:
     <<: *app
     profiles: ["seed"]

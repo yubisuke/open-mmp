@@ -16,7 +16,7 @@ This project is licensed under the [Apache License 2.0](LICENSE); attribution is
 
 ## Current status
 
-This project contains the v0.3.0 contract, the M1a Shadow ledger/import foundation, and the M1b cohort metric and difference-audit runtime. The local runtime has a PostgreSQL append-only ledger, schema-validated existing-MMP imports, synthetic Meta and Google Ads cost adapters, manual cost normalization, MAX S2S receipt and Reporting API normalization, recalculable SQL cohort metrics, authenticated JSON/CSV reporting, append-only reconciliation results, admin deletion, encrypted payload objects, rate limits, runtime CI, and workspace SBOM generation. Local synthetic gates pass. Real provider connectivity, operator data validation, device validation, a production deployment, and exact 4-vCPU/8-GB capacity validation have not been demonstrated. Immutable baselines are available at the `contract-v0.1` and `contract-v0.2.1` Git tags.
+This project contains the v0.3.0 contract, the M1a Shadow ledger/import foundation, the M1b cohort metric and difference-audit runtime, and the M2a server foundation. The local runtime adds a portable measurement-link redirector, app-key enrollment, per-installation credentials, HMAC-authenticated durable SDK batches, replay and rate controls, ordered worker drain, late-click supersession, and credential-bound on-device deletion. Local synthetic gates pass. The Kotlin SDK, Unity bridge, Android emulator gate, real provider connectivity, operator data validation, device validation, a production deployment, and exact 4-vCPU/8-GB capacity validation have not been demonstrated. Immutable baselines are available at the `contract-v0.1` and `contract-v0.2.1` Git tags.
 
 The first product entry point is a Shadow MMP that runs alongside an existing provider. It normalizes first-party events, existing MMP exports, media cost, and revenue into a common contract, then explains neutral differences through candidate evidence, exclusion reasons, attribution windows, ID joins, and recalculation history. Difference reasons describe measurement semantics, not provider quality. It must not be treated as the primary MMP until a real shadow pilot has produced sufficient evidence.
 
@@ -51,13 +51,15 @@ apps/
 packages/
   contracts/           # API schemas and shared types
   attribution-core/    # Pure attribution logic
+  redirector-core/     # Portable redirect and referrer behavior
+  meta-install-referrer/ # Synthetic AES-GCM decryption core
 sdks/
   android/             # Kotlin SDK and Unity bridge
   ios/                 # Swift SDK, Phase 2
 docs/
 ```
 
-Implemented M1a code lives in `apps/api`, `apps/worker`, `apps/runtime`, `packages/contracts`, and `packages/attribution-core`. Later SDK, redirector, and dashboard directories remain planned.
+Implemented runtime code lives in `apps/api`, `apps/redirector`, `apps/worker`, `apps/runtime`, `packages/contracts`, `packages/attribution-core`, `packages/redirector-core`, and `packages/meta-install-referrer`. The Android SDK, Unity bridge, iOS SDK, and dashboard remain planned.
 
 ## Current layout (v0.3 contract artifacts)
 
@@ -93,6 +95,8 @@ npm run demo:metrics
 ```
 
 The bootstrap service generates local secrets, migrations run automatically, and the API and worker start only after PostgreSQL is healthy. `demo:metrics` prints tenant-scoped ledger counts plus a clearly labelled contract-synthetic preview. The preview is calculated from fixture 33 and does not claim that a real provider or campaign was queried. Its key values are:
+
+The API listens on `http://localhost:8080` and the portable redirector on `http://localhost:8090`. Tracking links are created through the authenticated management route; request query parameters and headers can never override their stored destinations. SDK enrollment and event delivery use the HMAC signing string fixed in [M2 Design Baseline](docs/design/m2-baseline.md).
 
 ```json
 {

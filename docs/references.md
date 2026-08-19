@@ -33,6 +33,12 @@ Design implications:
 - The initial MVP does not collect Advertising ID.
 - SDK providers and app developers remain responsible for identifier and user-data policy compliance.
 
+Primary M2 verification recorded on 2026-08-19:
+
+- [Install Referrer AIDL response bundle](https://developer.android.com/google/play/installreferrer/igetinstallreferrerservice) lists the server click/install timestamps and install-version fields used by the v0.3 contract.
+- [Google Play Data safety guidance](https://support.google.com/googleplay/android-developer/answer/10787469?hl=en) requires operators to account for SDK collection and location derived from IP; the default redirector does not derive location.
+- [Meta Install Referrer](https://developers.facebook.com/documentation/app-ads/meta-install-referrer) exposes `install_referrer`, `is_ct`, and `actual_timestamp`. Live value semantics remain operator-verified, and synthetic crypto vectors do not establish campaign behavior.
+
 ## Licensing and consent
 
 - [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0.txt)

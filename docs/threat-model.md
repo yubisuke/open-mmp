@@ -54,7 +54,20 @@ Contract v0.3 does not select among multiple accepted clicks with one `click_id`
 <!-- threat-component:postgres-ledger -->
 | `postgres-ledger` | Cross-tenant reads/writes, evidence overwrite, ambiguous delivery identity, and destructive deletion | FORCE RLS with transaction-local tenant; app role lacks DDL/update/delete; high-value append-only triggers; separate deliveries and logical IDs; redaction as state/tombstone/correction rows | Backup restore, high availability, and production database hardening require operator evidence. |
 <!-- threat-component:runtime-ci -->
-| `runtime-ci` | Migration drift, self-consistent evaluator errors, missing runtime security tests, or incomplete dependency inventory | Pinned Linux job; PostgreSQL 17; double migration and schema snapshot; unit/integration; seed-to-golden parity; Compose smoke; component coverage; five CycloneDX SBOMs with missing-file failure | CI is synthetic evidence and cannot prove real account, device, campaign, capacity, or production TLS behavior. |
+| `runtime-ci` | Migration drift, self-consistent evaluator errors, missing runtime security tests, or incomplete dependency inventory | Pinned Linux job; PostgreSQL 17; double migration and schema snapshot; unit/integration; seed-to-golden parity; Compose smoke; component coverage; one CycloneDX SBOM per npm workspace with missing-file failure | CI is synthetic evidence and cannot prove real account, device, campaign, capacity, or production TLS behavior. |
+
+## M2 trust-boundary additions
+
+| Component | Boundary and primary threats | Implemented or required controls | Residual risk |
+| --- | --- | --- | --- |
+<!-- threat-component:redirector -->
+| `redirector` | Open-redirect abuse, slug enumeration, click flooding, source-IP retention, User-Agent fingerprinting, click injection, and redirect availability | Destination allowlist at link creation; stored destination only; CSPRNG slug and click ID; byte-identical safe fallback; bounded in-memory source-IP bucket; no source-IP persistence; country derivation off by default; server-authoritative click time; durable click inbox | A hostile tenant can still publish an approved-domain link with harmful content. Proxy logs and horizontal rate limiting remain deployment controls. |
+<!-- threat-component:sdk-ingestion -->
+| `sdk-ingestion` | Body tampering, replay, app/installation impersonation, oversized batches, forged deletion, worker crash, and cross-tenant evidence | Raw-body HMAC before JSON parsing; configured tenant/app scope; two-key overlap; per-installation random secret; tenant/app keyed installation digest; constant-time verification; bounded rates and size; deletable non-evidence nonce table; durable encrypted inbox before `202`; append-only processing states; credential-bound deletion and audit | **M2 does not prevent an attacker who possesses the APK from enrolling installations and delivering fabricated installs or events.** Enrollment limits, event idempotency, signatures, nonce expiry, and audit make the activity bounded and visible; Play Integrity remains M5. Compromise of both PostgreSQL and the payload KEK permits request forgery. |
+<!-- threat-component:sdk-android -->
+| `sdk-android` | Planned M2b boundary: queue leakage, backup-restored identifiers, unauthorized provider reads, consent-withdrawal delivery, and client secret extraction | M2b must add excluded storage, durable queue tests, purpose-table purge, collection disablement, and provider mapping tests before this component is accepted | No Android artifact exists in M2a; APK extraction means the app-level SDK secret cannot establish a trusted device. |
+<!-- threat-component:unity-bridge -->
+| `unity-bridge` | Planned M2b boundary: callback thread misuse, JNI lifetime leaks, event-field drift, and missing ad-format subscriptions | M2b must add a typed C#/Kotlin bridge, main-thread dispatch, allocation tests, and reflection coverage | No Unity package exists in M2a; real Unity export and live MAX behavior remain operator-verified. |
 
 ## Residual risk and release gates
 

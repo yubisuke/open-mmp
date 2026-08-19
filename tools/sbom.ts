@@ -6,8 +6,11 @@ const workspaces = [
   "@open-mmp/api",
   "@open-mmp/runtime",
   "@open-mmp/worker",
+  "@open-mmp/redirector",
   "@open-mmp/attribution-core",
   "@open-mmp/contracts",
+  "@open-mmp/meta-install-referrer",
+  "@open-mmp/redirector-core",
 ];
 const root = join(process.cwd(), "sbom");
 rmSync(root, { recursive: true, force: true });
