@@ -56,14 +56,20 @@ async function snapshotRecords(
   client: Queryable,
   scope: Scope,
   watermark: string,
+  privacyState: "before" | "after",
 ): Promise<SnapshotRecord[]> {
   const result = await client.query<SnapshotRecord>(
-    `SELECT tenant_id, app_id, record_id, received_at,
-            payload_lifecycle_status AS lifecycle_status
-     FROM ledger.raw_records_current
-     WHERE tenant_id=$1 AND app_id=$2 AND received_at <= $3
-     ORDER BY received_at, record_id`,
-    [scope.tenant_id, scope.app_id, watermark],
+    `SELECT raw.tenant_id, raw.app_id, raw.record_id, raw.received_at,
+            CASE WHEN $4='before' THEN 'available'
+                 ELSE raw.payload_lifecycle_status END AS lifecycle_status
+     FROM ledger.raw_records_current AS raw
+     JOIN ledger.logical_events AS logical
+       ON logical.record_id=raw.record_id
+      AND logical.tenant_id=raw.tenant_id
+      AND logical.app_id=raw.app_id
+     WHERE raw.tenant_id=$1 AND raw.app_id=$2 AND raw.received_at <= $3
+     ORDER BY raw.received_at, raw.record_id`,
+    [scope.tenant_id, scope.app_id, watermark, privacyState],
   );
   return result.rows;
 }
@@ -110,6 +116,7 @@ async function metricValue(
   grouping: Any,
   definition: Any,
   fxPolicy: Any,
+  privacyState: "before" | "after",
 ): Promise<string> {
   const calculation = definition.definition.calculation;
   const activityEvents = definition.activity_events ?? ["session_start"];
@@ -129,28 +136,38 @@ async function metricValue(
            AS rate(currency text, rate_unscaled text, rate_scale integer)
        ),
        cohort AS (
-         SELECT installation_id, occurred_at_ts AS installed_at
-         FROM ledger.install_facts
-         WHERE tenant_id=$1 AND app_id=$2 AND occurred_at IS NOT NULL
-           AND ($4::text IS NULL OR campaign_id=$4)
-           AND ($5::text IS NULL OR network=$5)
-           AND ($6::text IS NULL OR country=$6)
-           AND ($7::text IS NULL OR timezone($8, occurred_at_ts)::date::text=$7)
+         SELECT install.installation_id, install.occurred_at_ts AS installed_at
+         FROM ledger.install_facts AS install
+         JOIN ledger.logical_events AS logical
+           ON logical.logical_event_id=install.logical_event_id
+         JOIN ledger.raw_records_current AS raw
+           ON raw.record_id=logical.record_id
+          AND raw.tenant_id=logical.tenant_id
+          AND raw.app_id=logical.app_id
+         WHERE install.tenant_id=$1 AND install.app_id=$2 AND install.occurred_at IS NOT NULL
+           AND raw.received_at <= $3
+           AND ($15='before' OR raw.payload_lifecycle_status='available')
+           AND ($4::text IS NULL OR install.campaign_id=$4)
+           AND ($5::text IS NULL OR install.network=$5)
+           AND ($6::text IS NULL OR install.country=$6)
+           AND ($7::text IS NULL OR timezone($8, install.occurred_at_ts)::date::text=$7)
        ),
        revenue_candidates AS (
          SELECT revenue.*, cohort.installed_at, rate.rate_unscaled, rate.rate_scale
          FROM ledger.ad_revenue_facts AS revenue
          JOIN cohort USING (installation_id)
+         JOIN ledger.logical_events AS logical
+           ON logical.logical_event_id=revenue.logical_event_id
+         JOIN ledger.raw_records_current AS raw
+           ON raw.record_id=logical.record_id
+          AND raw.tenant_id=logical.tenant_id
+          AND raw.app_id=logical.app_id
          LEFT JOIN rates AS rate ON rate.currency=revenue.currency
          WHERE revenue.tenant_id=$1 AND revenue.app_id=$2
+           AND raw.received_at <= $3
+           AND ($15='before' OR raw.payload_lifecycle_status='available')
            AND revenue.occurred_at_ts >= cohort.installed_at
            AND revenue.occurred_at_ts < cohort.installed_at + (($9 + 1) * interval '1 day')
-           AND EXISTS (
-             SELECT 1 FROM ledger.raw_records AS raw
-             JOIN ledger.logical_events AS logical ON logical.record_id=raw.record_id
-             WHERE logical.logical_event_id=revenue.logical_event_id
-               AND raw.received_at <= $3
-           )
        ),
        revenue AS (
          SELECT coalesce(sum(ledger.half_even_div(
@@ -164,7 +181,15 @@ async function metricValue(
          SELECT count(DISTINCT session.installation_id)::numeric AS value
          FROM ledger.session_facts AS session
          JOIN cohort USING (installation_id)
+         JOIN ledger.logical_events AS logical
+           ON logical.logical_event_id=session.logical_event_id
+         JOIN ledger.raw_records_current AS raw
+           ON raw.record_id=logical.record_id
+          AND raw.tenant_id=logical.tenant_id
+          AND raw.app_id=logical.app_id
          WHERE session.tenant_id=$1 AND session.app_id=$2
+           AND raw.received_at <= $3
+           AND ($15='before' OR raw.payload_lifecycle_status='available')
            AND session.occurred_at_ts >= cohort.installed_at + ($9 * interval '1 day')
            AND session.occurred_at_ts < cohort.installed_at + (($9 + 1) * interval '1 day')
        ),
@@ -231,6 +256,7 @@ async function metricValue(
       JSON.stringify(fxPolicy.rates),
       fxPolicy.target_scale,
       definition.ratio_scale ?? 0,
+      privacyState,
     ],
   );
   const row = result.rows[0];
@@ -244,7 +270,7 @@ async function metricValue(
 
 async function persistMetricRun(client: Queryable, scope: Scope, artifact: Any): Promise<void> {
   const grouping = artifact.grouping?.dimensions ?? {};
-  await client.query(
+  const result = await client.query(
     `INSERT INTO ledger.metric_runs (
       metric_run_id, tenant_id, app_id, metric_name, metric_definition_version,
       grouping, grouping_digest, input_snapshot_id, input_received_at_watermark,
@@ -256,7 +282,8 @@ async function persistMetricRun(client: Queryable, scope: Scope, artifact: Any):
     ) VALUES (
       $1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,
       $19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30::jsonb
-    ) ON CONFLICT (metric_run_id) DO NOTHING`,
+    ) ON CONFLICT (metric_run_id) DO NOTHING
+    RETURNING metric_run_id`,
     [
       artifact.metric_run_id, scope.tenant_id, scope.app_id, artifact.metric_name,
       artifact.metric_definition_version, JSON.stringify(grouping),
@@ -272,6 +299,9 @@ async function persistMetricRun(client: Queryable, scope: Scope, artifact: Any):
       artifact.supersedes_metric_run_id ?? null, JSON.stringify(artifact),
     ],
   );
+  if (result.rowCount !== 1) {
+    throw new Error(`metric run already exists: ${artifact.metric_run_id}`);
+  }
 }
 
 export async function computeSqlMetricRunsWithClient(
@@ -294,7 +324,12 @@ export async function computeSqlMetricRunsWithClient(
   const output: Any[] = [];
 
   for (const evaluation of input.metric_evaluations ?? []) {
-    const records = await snapshotRecords(client, scope, evaluation.input_received_at_watermark);
+    const records = await snapshotRecords(
+      client,
+      scope,
+      evaluation.input_received_at_watermark,
+      evaluation.privacy_state,
+    );
     const grouping = evaluation.grouping;
     const costs = await currentCosts(client, scope, evaluation.input_received_at_watermark, grouping);
     const snapshotRows = records.map((record) => {
@@ -341,6 +376,7 @@ export async function computeSqlMetricRunsWithClient(
         grouping,
         definition,
         fxPolicy,
+        evaluation.privacy_state,
       );
       const moneyFields = definition.value_type === "money" ? {
         fx_rate_unscaled: fxRate.rate_unscaled,

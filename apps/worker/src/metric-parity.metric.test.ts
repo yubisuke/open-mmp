@@ -14,6 +14,7 @@ const fixtureDirectory = join(process.cwd(), "fixtures", "v0.2", fixtureName);
 const input: Any = JSON.parse(readFileSync(join(fixtureDirectory, "input.json"), "utf8"));
 const goldenPath = join(fixtureDirectory, "expected_metric_runs.json");
 const goldenBefore = readFileSync(goldenPath);
+const golden: Any[] = JSON.parse(goldenBefore.toString("utf8"));
 const oracle = evaluate(input).metric_runs;
 
 let appPool: Pool;
@@ -26,8 +27,18 @@ describe("M1b SQL metric parity", { concurrency: false }, () => {
     appPool = createAppPool();
     seedPool = createSeedPool();
     await ingestFixture(fixtureName, input, appPool, seedPool);
-    sqlRuns = await computeSqlMetricRuns(appPool, input, true);
     const scope = input.server_context;
+    const expectedIds = oracle.map((run: Any) => run.metric_run_id);
+    const preexistingCount = await withTenant(appPool, scope.tenant_id, async (client) => {
+      const result = await client.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM ledger.metric_runs
+         WHERE tenant_id=$1 AND app_id=$2 AND metric_run_id = ANY($3::text[])`,
+        [scope.tenant_id, scope.app_id, expectedIds],
+      );
+      return result.rows[0].count;
+    });
+    assert.equal(preexistingCount, "0", "fixture ingestion must not pre-seed SQL cohort outputs");
+    sqlRuns = await computeSqlMetricRuns(appPool, input, true);
     const ids = sqlRuns.map((run) => run.metric_run_id);
     persistedRuns = await withTenant(appPool, scope.tenant_id, async (client) => {
       const result = await client.query<{ artifact: Any }>(
@@ -47,6 +58,7 @@ describe("M1b SQL metric parity", { concurrency: false }, () => {
 
   it("B2 SQL cohort metric_runs are JCS-byte-identical to evaluator", () => {
     assert.equal(sqlRuns.length, 7);
+    assert.equal(Buffer.compare(Buffer.from(jcs(oracle)), Buffer.from(jcs(golden))), 0);
     assert.equal(Buffer.compare(Buffer.from(jcs(sqlRuns)), Buffer.from(jcs(oracle))), 0);
     assert.equal(Buffer.compare(Buffer.from(jcs(persistedRuns)), Buffer.from(jcs(oracle))), 0);
   });
@@ -115,5 +127,70 @@ describe("M1b SQL metric parity", { concurrency: false }, () => {
     assert.equal(jcs(restored), jcs(oracle));
     assert.equal(sha256(readFileSync(goldenPath)), sha256(goldenBefore));
     assert.equal(Buffer.compare(readFileSync(goldenPath), goldenBefore), 0);
+  });
+
+  it("B2 excludes sessions received after the fixed watermark", async () => {
+    const mutation = structuredClone(input);
+    mutation.metric_evaluations[0] = {
+      ...mutation.metric_evaluations[0],
+      metric_run_id_prefix: "run-33-late-session",
+      input_received_at_watermark: "2026-08-07T23:59:59.999Z",
+      metric_names: ["retention_d7", "cohort_install_count"],
+    };
+    await ingestFixture(fixtureName, mutation, appPool, seedPool);
+    const expected = evaluate(mutation).metric_runs;
+    const actual = await computeSqlMetricRuns(appPool, mutation, false);
+    assert.equal(jcs(actual), jcs(expected));
+    assert.equal(actual.find((run) => run.metric_name === "retention_d7")?.value_unscaled, "0");
+  });
+
+  it("B2 excludes installs received after the fixed watermark", async () => {
+    const mutation = structuredClone(input);
+    mutation.records.find((record: Any) => record.record_id === "install-33").received_at =
+      "2026-08-09T00:00:00.001Z";
+    mutation.metric_evaluations[0] = {
+      ...mutation.metric_evaluations[0],
+      metric_run_id_prefix: "run-33-late-install",
+      metric_names: ["cohort_install_count"],
+    };
+    await ingestFixture(fixtureName, mutation, appPool, seedPool);
+    const expected = evaluate(mutation).metric_runs;
+    const actual = await computeSqlMetricRuns(appPool, mutation, false);
+    assert.equal(jcs(actual), jcs(expected));
+    assert.equal(actual[0]?.value_unscaled, "0");
+  });
+
+  it("B2 excludes event conflicts from snapshot and cohort values", async () => {
+    const mutation = structuredClone(input);
+    mutation.metric_evaluations[0] = {
+      ...mutation.metric_evaluations[0],
+      metric_run_id_prefix: "run-33-conflict",
+      metric_names: ["cohort_ltv_d7_usd", "cohort_install_count"],
+    };
+    const source = mutation.records.find((record: Any) => record.record_id === "revenue-33-a");
+    mutation.records.push(
+      {
+        ...structuredClone(source),
+        record_id: "revenue-33-conflict-a",
+        delivery_id: "delivery:revenue-33-conflict-a",
+        event_id: "event:revenue-33-conflict",
+        received_at: "2026-08-01T13:00:01.000Z",
+        processing_sequence: 10,
+        payload: { ...structuredClone(source.payload), amount_unscaled: "400000001" },
+      },
+      {
+        ...structuredClone(source),
+        record_id: "revenue-33-conflict-b",
+        delivery_id: "delivery:revenue-33-conflict-b",
+        event_id: "event:revenue-33-conflict",
+        received_at: "2026-08-01T13:00:02.000Z",
+        processing_sequence: 11,
+        payload: { ...structuredClone(source.payload), amount_unscaled: "500000001" },
+      },
+    );
+    await ingestFixture(fixtureName, mutation, appPool, seedPool);
+    const expected = evaluate(mutation).metric_runs;
+    const actual = await computeSqlMetricRuns(appPool, mutation, false);
+    assert.equal(jcs(actual), jcs(expected));
   });
 });

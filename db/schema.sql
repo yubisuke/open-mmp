@@ -752,3 +752,7 @@ $$;
 REVOKE ALL ON FUNCTION ledger.half_even_div(numeric, numeric) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION ledger.half_even_div(numeric, numeric)
   TO openmmp_app, openmmp_reader, openmmp_seed;
+
+-- 006_metric_engine_indexes.sql
+CREATE INDEX ad_revenue_facts_installation_time_idx
+  ON ledger.ad_revenue_facts (tenant_id, app_id, installation_id, occurred_at_ts);
