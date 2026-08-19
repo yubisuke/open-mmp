@@ -169,6 +169,7 @@ Stage A also hardens the provider-key inputs introduced with fixtures 21 through
 | 32 `timestamp-stale` | Rejected delivery/rejection with `timestamp_stale`, server-authoritative policy version/digest provenance, discarded payload, and no raw/logical evidence. | WO-3 A5. |
 | 33 `stage-b-cohort-metrics` | Typed click/install/ad-view evidence, installation and aggregate revenue, current append-only cost revision, seven data-driven metric definitions, and independently reviewed D1/D3/D7 ROAS, D1/D7 retention, D7 LTV, and cohort-size runs. | WO-3 B1-B9. |
 | 34 `stage-c-apple-meta-attribution` | Eleven accepted synthetic events and eleven attributions exercise SKAdNetwork, AdAttributionKit, Meta Install Referrer, Apple AdServices, both new aggregate event names, every Stage C compatibility method/model row, and every Stage C reason including the distinct non-winner reason. | WO-3 C1-C3. |
+| 35 `privacy-request-auth-scope` | Two synthetic session records exercise authenticated tenant-admin deletion and an active same-installation on-device request. The completed admin path yields one correction and tombstone; the on-device path retains only a non-identifying authentication-decision reference. | R-19 / WO-3 D2. |
 
 ### Stage B golden-change ledger
 
@@ -197,19 +198,22 @@ This ledger is exhaustive relative to the final Stage C commit `d3eb86b`.
 | 25 `replay-suspected` | Renames `fraud-prevention` to the canonical `fraud_prevention` in server configuration and the record. | `expected_raw_records.json` and `expected_deliveries.json` rename the same purpose; no fraud-decision field changes. |
 | 33 `stage-b-cohort-metrics` | Adds the `revenue_measurement` server purpose and assigns it to `revenue-33-a`. | The matching raw record and delivery change `processing_purpose_id` plus `consent_evaluation_policy_version=revenue-v0.2`; payload digest and every metric value remain unchanged. |
 | 34 `stage-c-apple-meta-attribution` | Adds the `attribution` server purpose and assigns it to `meta-click-install-34`. | The matching raw record and delivery change `processing_purpose_id` plus `consent_evaluation_policy_version=attribution-v0.2`; payload digest and attribution result remain unchanged. |
+| 17 `redaction-recalculation` | Adds required `requested_via=tenant_admin_api` and the synthetic non-identifying `requester_auth_ref`. | `expected_privacy_requests.json` adds the same authentication provenance; deletion, tombstone, and metric values are unchanged. |
+| 24 `attribution-supersession` | Adds required `requested_via=tenant_admin_api` and the synthetic non-identifying `requester_auth_ref`. | `expected_privacy_requests.json` adds the same authentication provenance; attribution supersession is unchanged. |
+| 35 `privacy-request-auth-scope` | Adds one synthetic input containing the two R-19 request routes. | Adds all 13 reviewed golden artifacts. The admin request produces one correction and tombstone; the on-device request remains active and targets only its own installation-scoped session. |
 
-No other fixture input or golden file changes in Stage D. D2 (`requested_via` and `requester_auth_ref`) and D3 (`audience`) remain intentionally absent pending owner decisions 6-13 and 6-14.
+No other fixture input or golden file changes in Stage D. R-19 resolves D2. D3 (`audience`) remains intentionally absent pending owner decision 6-14.
 
 ## Inventory reconciliation
 
-The v0.2 fixture tree contains 34 `input.json` files and `34 * 13 = 442` golden output files, plus this README: 477 paths in the resulting tree. The base migration changes every inherited fixture-tree path because the version directory moves from v0.1 to v0.2; Git may display unchanged files as renames. Relative to the completed WO-2 tree, WO-3 Stage A adds five inputs and 60 reviewed golden files, and content-updates exactly five existing reconciliation goldens: fixtures 01, 03, 19, 21, and 23. Stage B then adds one input, 13 fixture-33 goldens, 32 explicit cost-output goldens, and the exact existing-content changes listed above. Stage C adds one input and 13 fixture-34 goldens without changing fixtures 01-33. Stage D changes exactly six existing golden files in fixtures 25, 33, and 34 as listed above, without adding a fixture or artifact class. Use:
+The v0.2 fixture tree contains 35 `input.json` files and `35 * 13 = 455` golden output files, plus this README: 491 paths in the resulting tree. The base migration changes every inherited fixture-tree path because the version directory moves from v0.1 to v0.2; Git may display unchanged files as renames. Relative to the completed WO-2 tree, WO-3 Stage A adds five inputs and 60 reviewed golden files, and content-updates exactly five existing reconciliation goldens: fixtures 01, 03, 19, 21, and 23. Stage B then adds one input, 13 fixture-33 goldens, 32 explicit cost-output goldens, and the exact existing-content changes listed above. Stage C adds one input and 13 fixture-34 goldens without changing fixtures 01-33. Stage D changes exactly eight existing golden files in fixtures 17, 24, 25, 33, and 34 as listed above, and adds fixture 35 without adding an artifact class. Use:
 
 ```bash
 git diff --name-status --find-renames contract-v0.1..HEAD -- fixtures/
 git diff --stat contract-v0.1..HEAD -- fixtures/
 ```
 
-The expected new-side inventory is 34 inputs, 442 golden files, and one README. The tables above account for every content-changed inherited golden and every new golden; all remaining inherited goldens are path-only moves.
+The expected new-side inventory is 35 inputs, 455 golden files, and one README. The tables above account for every content-changed inherited golden and every new golden; all remaining inherited goldens are path-only moves.
 
 ## Consumer migration
 

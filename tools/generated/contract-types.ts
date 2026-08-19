@@ -47,6 +47,11 @@ export type OpenMMPPrivacyRequestV02 = {
   deletion_subject_ref?: string;
   deletion_subject_digest?: string;
   deletion_scope: "installation" | "app" | "tenant";
+  requested_via: "on_device_sdk" | "tenant_admin_api";
+  /**
+   * Opaque, non-identifying reference to a server-side authentication decision. Raw credentials, tokens, installation IDs, device identifiers, and personal data are forbidden.
+   */
+  requester_auth_ref: string;
   requested_at: string;
   completed_at?: string;
   status: "received" | "processing" | "completed" | "failed";

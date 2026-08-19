@@ -215,9 +215,22 @@ def assert_scoped_references(value: dict[str, Any], attempts: list[dict[str, Any
 
     for request in value.get("privacy_requests", []):
         for affected in request.get("affected_records", []):
-            if not exists(request["tenant_id"], request["app_id"], affected["record_id"]):
+            target = next((
+                attempt for attempt in attempts
+                if attempt["server"]["tenant_id"] == request["tenant_id"]
+                and attempt["server"]["app_id"] == request["app_id"]
+                and attempt["record"]["record_id"] == affected["record_id"]
+            ), None)
+            if target is None:
                 raise ValueError(
                     f"cross-scope or missing privacy reference: {request['privacy_request_id']}/{affected['record_id']}"
+                )
+            if (
+                request.get("requested_via") == "on_device_sdk"
+                and target["record"]["payload"].get("installation_id") != request.get("deletion_subject_ref")
+            ):
+                raise ValueError(
+                    f"on-device privacy request targets another installation: {request['privacy_request_id']}/{affected['record_id']}"
                 )
     for correction in value.get("correction_inputs", []):
         if not exists(correction["tenant_id"], correction["app_id"], correction["corrects_record_id"]):

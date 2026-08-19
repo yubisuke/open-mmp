@@ -6,6 +6,8 @@
     "privacy_request_id": "privacy-17",
     "deletion_subject_digest": "1111111111111111111111111111111111111111111111111111111111111111",
     "deletion_scope": "installation",
+    "requested_via": "tenant_admin_api",
+    "requester_auth_ref": "admin_key:synthetic-key-17",
     "requested_at": "2026-08-12T01:30:00.000Z",
     "status": "completed",
     "reason_code": "privacy_deletion",

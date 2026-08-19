@@ -553,8 +553,8 @@ if (!summaryOnly) {
         }
       });
     }
-    it("contains 34 fixture directories", () => {
-      check(fixtureDirs.length === 34, `expected 34 fixture directories, found ${fixtureDirs.length}`);
+    it("contains 35 fixture directories", () => {
+      check(fixtureDirs.length === 35, `expected 35 fixture directories, found ${fixtureDirs.length}`);
     });
   });
 
@@ -796,12 +796,20 @@ const scenarios: Array<[string, () => void]> = [
     ]) check(reasons.has(reason), `scenario 34 missing ${reason}`);
     check(value.attributions.filter((item: Any) => item.subject_scope === "aggregate").length === 5, "scenario 34 aggregate attribution count");
   }],
+  ["35 privacy request authentication scope", () => {
+    const value = fixture("35-privacy-request-auth-scope").output;
+    const requests = Object.fromEntries(value.privacy_requests.map((item: Any) => [item.privacy_request_id, item]));
+    check(requests["privacy-admin-35"].requested_via === "tenant_admin_api", "scenario 35 admin route");
+    check(requests["privacy-device-35"].requested_via === "on_device_sdk", "scenario 35 on-device route");
+    check(requests["privacy-device-35"].deletion_subject_ref === "installation:device-35", "scenario 35 on-device subject");
+    check(value.privacy_tombstones.length === 1 && value.corrections.length === 1, "scenario 35 completed admin deletion");
+  }],
 ];
 if (!summaryOnly) {
   describe("reviewed scenarios", () => {
     for (const [name, assertion] of scenarios) it(name, assertion);
-    it("contains 34 scenario assertions", () => {
-      check(scenarios.length === 34, "scenario assertion inventory must contain 34 entries");
+    it("contains 35 scenario assertions", () => {
+      check(scenarios.length === 35, "scenario assertion inventory must contain 35 entries");
     });
   });
 
@@ -1154,11 +1162,11 @@ if (!summaryOnly) {
       invalidDelivery.processing_purpose_id = "unregistered_purpose";
       check(!validatorFor(outputSchemaIds.deliveries)(invalidDelivery), "delivery schema accepted unknown purpose");
     });
-    it("keeps owner-dependent privacy authentication and audience fields on hold", () => {
+    it("requires privacy authentication provenance and keeps audience on hold", () => {
       const privacy = schemaValue("urn:open-mmp:schema:privacy-request:v0.2");
       const fixtureSchema = schemaValue("urn:open-mmp:schema:fixture-input:v0.2");
-      check(privacy.properties.requested_via === undefined, "Stage D implemented held requested_via");
-      check(privacy.properties.requester_auth_ref === undefined, "Stage D implemented held requester_auth_ref");
+      check(equal(privacy.properties.requested_via.enum, ["on_device_sdk", "tenant_admin_api"]), "privacy request route enum mismatch");
+      check(privacy.required.includes("requested_via") && privacy.required.includes("requester_auth_ref"), "privacy authentication provenance is optional");
       check(fixtureSchema.$defs.serverContext.properties.audience === undefined, "Stage D implemented held audience");
     });
   });
@@ -1253,7 +1261,7 @@ const acceptance: Array<[string, () => void]> = [
     check(corrections.some((item: Any) => item.correction_type === "retraction"), "AC15 retraction");
     check(fixture("17-redaction-recalculation").output.metric_runs.some((item: Any) => item.supersedes_metric_run_id), "AC15 redaction");
   }],
-  ["AC16 clock referrer prefetch and withdrawal fixtures pass", () => check(scenarios.length === 34 && fixture("11-clock-skew").output.deliveries.some((item: Any) => item.clock_skew_suspected) && fixture("13-referrer-unsupported").output.attributions.length === 2 && fixture("19-bot-prefetch").output.fraud_decisions.length === 1 && fixture("20-timestamp-invalid").output.rejections.some((item: Any) => item.reason_code === "timestamp_invalid"), "AC16")],
+  ["AC16 clock referrer prefetch and withdrawal fixtures pass", () => check(scenarios.length === 35 && fixture("11-clock-skew").output.deliveries.some((item: Any) => item.clock_skew_suspected) && fixture("13-referrer-unsupported").output.attributions.length === 2 && fixture("19-bot-prefetch").output.fraud_decisions.length === 1 && fixture("20-timestamp-invalid").output.rejections.some((item: Any) => item.reason_code === "timestamp_invalid"), "AC16")],
   ["AC17 server-recognized withdrawal rejects and redacts payload", () => {
     for (const name of ["14-withdrawal-after-occurrence", "15-event-after-withdrawal"]) {
       const value = fixture(name).output;
@@ -1293,7 +1301,7 @@ const acceptance: Array<[string, () => void]> = [
     for (const forbidden of ["threshold", "model_weight", "watchlist", "ip_address", "user_agent", "response_timing"]) check(!schemaText.includes(forbidden), `AC20 ${forbidden}`);
     check(specText.includes("remain private"), "AC20 private boundary");
   }],
-  ["AC21 one command validates every schema registry fixture and golden", () => check(schemaPaths.length === 26 && Object.keys(registries).length === 8 && fixtureDirs.length === 34 && outputArtifactCount === 34 * 13, "AC21")],
+  ["AC21 one command validates every schema registry fixture and golden", () => check(schemaPaths.length === 26 && Object.keys(registries).length === 8 && fixtureDirs.length === 35 && outputArtifactCount === 35 * 13, "AC21")],
   ["AC22 repeated and independent evaluators produce identical JCS", () => {
     for (const { output, python } of results.values()) check(equal(output, python), "AC22 evaluator mismatch");
     const vector = { numbers: [333333333.33333329, 1e30, 4.50, 2e-3, 1e-27, -0], string: "€$\u000f\nA'B\"\\\"/" };
@@ -1436,11 +1444,12 @@ if (!summaryOnly) {
         tenant_id: "tenant-a",
         app_id: "app-a",
         privacy_request_id: "cross-tenant-privacy",
-        deletion_subject_ref: "synthetic-subject",
+        deletion_subject_ref: "installation:synthetic-subject",
         deletion_scope: "installation",
+        requested_via: "on_device_sdk",
+        requester_auth_ref: "device_auth:synthetic-cross-tenant",
         requested_at: "2026-08-12T00:00:00.000Z",
-        completed_at: "2026-08-12T00:01:00.000Z",
-        status: "completed",
+        status: "received",
         reason_code: "privacy_deletion",
         policy_version: "privacy-v1",
         affected_records: [{ record_id: "tenant-b-record", lifecycle_status: "redacted" }],
@@ -1448,6 +1457,24 @@ if (!summaryOnly) {
       let rejected = false;
       try { evaluate(crossTenantPrivacy); } catch { rejected = true; }
       check(rejected, "mutation cross-tenant privacy reference was accepted");
+    });
+    it("requires privacy route and authentication provenance", () => {
+      const validator = validatorFor(outputSchemaIds.privacy_requests);
+      const request = structuredClone(fixture("35-privacy-request-auth-scope").output.privacy_requests[1]);
+      check(validator(request), "mutation baseline on-device privacy request invalid");
+      const missingAuth = structuredClone(request);
+      delete missingAuth.requester_auth_ref;
+      check(!validator(missingAuth), "mutation missing privacy authentication reference was accepted");
+      check(!validator({ ...request, requested_via: "unknown_route" }), "mutation unknown privacy route was accepted");
+      check(!validator({ ...request, deletion_scope: "app" }), "mutation on-device app deletion scope was accepted");
+    });
+    it("rejects an on-device request for another installation in both evaluators", () => {
+      const invalid = structuredClone(fixture("35-privacy-request-auth-scope").input);
+      const request = invalid.privacy_requests.find((item: Any) => item.requested_via === "on_device_sdk");
+      request.deletion_subject_ref = "installation:admin-35";
+      const typescript = capture(() => evaluate(invalid));
+      const python = pythonBatch([invalid])[0];
+      check(!typescript.ok && !python.ok, "mutation cross-installation privacy request was accepted");
     });
     it("rejects cross-tenant correction references", () => {
       const crossTenantCorrection = structuredClone(fixture("16-correction-refund").input);

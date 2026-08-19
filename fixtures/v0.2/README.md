@@ -1,6 +1,6 @@
 # Contract v0.2 fixture provenance
 
-The JSON files in the 34 numbered directories are reviewed, immutable golden contract examples. They are committed as source artifacts; the validation command never creates, updates, or regenerates them.
+The JSON files in the 35 numbered directories are reviewed, immutable golden contract examples. They are committed as source artifacts; the validation command never creates, updates, or regenerates them.
 
 Each fixture has one synthetic input and 13 independently asserted output classes:
 
@@ -78,7 +78,7 @@ The public purpose catalog is exercised without adding real data: fixture 25 use
 
 Fixtures 01 through 19 preserve the reviewed v0.1 scenarios under the v0.2 schemas and semantics. Their per-file changes are recorded in `docs/contract-v0.2-migration.md`. Every fixture now includes reviewed metric definitions and an explicit cost-record output class.
 
-Each new fixture 20 through 34 contains the same 13 `expected_*.json` artifacts listed above. Empty arrays are deliberate reviewed outputs, not missing assertions.
+Each new fixture 20 through 35 contains the same 13 `expected_*.json` artifacts listed above. Empty arrays are deliberate reviewed outputs, not missing assertions.
 
 | Fixture | Independent derivation of the meaningful golden result |
 | --- | --- |
@@ -97,6 +97,7 @@ Each new fixture 20 through 34 contains the same 13 `expected_*.json` artifacts 
 | `32-timestamp-stale` | `2026-07-31T23:59:59.999Z` is a real millisecond UTC instant but is one millisecond before `timestamp_stale_policy.before=2026-08-01T00:00:00.000Z`. The independently calculated policy digest is `c034a208b23264f380a2103e28d8f80375eae379ebabb805e1da9238876a05c3` for JCS `{authority:"server",before:"2026-08-01T00:00:00.000Z",policy_version:"retention-v0.2"}`. It is rejected as `timestamp_stale`; delivery and rejection retain that policy provenance, while the payload is discarded and no raw or logical evidence is emitted. Mutations prove equality is accepted, absence disables the policy, the old flat field is rejected, and a mismatched digest fails evaluation. |
 | `33-stage-b-cohort-metrics` | Typed click/install dimensions and `ad_view` evidence are retained. Installation-level revenue joins one install, aggregate revenue does not. The later cost revision is current at the watermark. Per-event half-even FX produces the independently calculated D1/D3/D7 ROAS, D1/D7 retention, D7 cohort LTV, and cohort-size results described above. |
 | `34-stage-c-apple-meta-attribution` | Eleven accepted synthetic records yield eleven same-scope attributions: Meta last-click/view-through decrypted evidence, Meta decrypt failure and absent fallback, AdServices attributed/expired evidence, verified/invalid SKAdNetwork, and AdAttributionKit non-winner/source-suppressed/null-conversion branches. All 13 golden artifact classes were reviewed against the closed event/output schemas and TypeScript/Python parity. |
+| `35-privacy-request-auth-scope` | A completed synthetic tenant-admin request purges one session record and yields one correction plus one tombstone. A separate received on-device request carries an opaque authentication-decision reference and targets only the installation ID in its own synthetic session record. Mutations prove that missing authentication provenance, unknown routes, app-wide on-device scope, and a different installation target fail closed in both evaluators. No credential or device identifier is stored in `requester_auth_ref`. |
 
 ## Adding a fixture
 

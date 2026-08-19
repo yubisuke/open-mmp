@@ -184,8 +184,16 @@ function assertScopedReferences(input: Any, all: Attempt[]): void {
     );
   for (const request of input.privacy_requests ?? []) {
     for (const affected of request.affected_records ?? []) {
-      if (!exists(request.tenant_id, request.app_id, affected.record_id)) {
+      const target = all.find((attempt) =>
+        attempt.server.tenant_id === request.tenant_id && attempt.server.app_id === request.app_id &&
+        attempt.record.record_id === affected.record_id,
+      );
+      if (!target) {
         throw new Error(`cross-scope or missing privacy reference: ${request.privacy_request_id}/${affected.record_id}`);
+      }
+      if (request.requested_via === "on_device_sdk" &&
+          target.record.payload.installation_id !== request.deletion_subject_ref) {
+        throw new Error(`on-device privacy request targets another installation: ${request.privacy_request_id}/${affected.record_id}`);
       }
     }
   }
@@ -1032,6 +1040,8 @@ export function evaluate(input: Any): EvaluationOutput {
     ...(request.deletion_subject_ref ? { deletion_subject_ref: request.deletion_subject_ref } : {}),
     ...(request.deletion_subject_digest ? { deletion_subject_digest: request.deletion_subject_digest } : {}),
     deletion_scope: request.deletion_scope,
+    requested_via: request.requested_via,
+    requester_auth_ref: request.requester_auth_ref,
     requested_at: request.requested_at,
     status: request.status,
     reason_code: request.reason_code,
