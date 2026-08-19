@@ -132,7 +132,33 @@ describe("MAX receiver integration", () => {
     await withTenant(appPool, "tenant-local", async (client) => {
       const audit = await client.query("SELECT count(*)::int AS count FROM ledger.audit_logs WHERE outcome='failed'");
       assert.ok(audit.rows[0].count >= 2);
+      const denied = await client.query(
+        "SELECT count(*)::int AS count FROM ledger.ingest_inbox WHERE artifact::text LIKE $1",
+        ["%synthetic-denied-id%"],
+      );
+      assert.equal(denied.rows[0].count, 0);
     });
+    assert.equal(await payloadStore.scanFor("synthetic-denied-id"), false);
+  });
+
+  it("A10 rejects a postback above the parameter limit before persistence", async () => {
+    const limited = { ...config, maxParameters: 2 };
+    const before = await withTenant(appPool, "tenant-local", async (client) =>
+      (await client.query("SELECT count(*)::int AS count FROM ledger.ingest_inbox")).rows[0].count,
+    );
+    const parameters = new URLSearchParams({ event_id: "parameter-limit-synthetic", revenue: "0.1", ts: "1787097600" });
+    parameters.set("event_token_all", expectedMaxTokenAll(parameters, limited.eventKey));
+    const response = responseCapture();
+    await receiveMax(
+      { url: `/v1/ingest/max/synthetic-path?${parameters}` } as IncomingMessage,
+      response.value,
+      { pool: appPool, payloadStore, config: limited },
+    );
+    const after = await withTenant(appPool, "tenant-local", async (client) =>
+      (await client.query("SELECT count(*)::int AS count FROM ledger.ingest_inbox")).rows[0].count,
+    );
+    assert.equal(response.status(), 400);
+    assert.equal(after, before);
   });
 
   it("A10 returns 429 before a second postback is persisted", async () => {
