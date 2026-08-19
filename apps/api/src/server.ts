@@ -1,11 +1,14 @@
 import { createServer } from "node:http";
 import { createAppPool, EnvironmentSecretStore, LocalPayloadStore } from "@open-mmp/runtime";
 import { assertSafeMaxTemplate, receiveMax, type MaxReceiverConfig } from "./max-receiver.js";
+import { ensureAdminKeys } from "./admin-auth.js";
+import { createRequestHandler } from "./router.js";
 
 const port = Number(process.env.OPENMMP_API_PORT ?? "8080");
 const baseUrl = process.env.OPENMMP_PUBLIC_BASE_URL ?? `http://localhost:${port}`;
 const secrets = new EnvironmentSecretStore({
   OPENMMP_ADMIN_KEY: { value: process.env.OPENMMP_ADMIN_KEY, file: process.env.OPENMMP_ADMIN_KEY_FILE },
+  OPENMMP_ADMIN_KEY_PREVIOUS: { value: process.env.OPENMMP_ADMIN_KEY_PREVIOUS, file: process.env.OPENMMP_ADMIN_KEY_PREVIOUS_FILE },
   OPENMMP_MAX_PATH_SECRET: { value: process.env.OPENMMP_MAX_PATH_SECRET, file: process.env.OPENMMP_MAX_PATH_SECRET_FILE },
   OPENMMP_MAX_EVENT_KEY: { value: process.env.OPENMMP_MAX_EVENT_KEY, file: process.env.OPENMMP_MAX_EVENT_KEY_FILE },
 });
@@ -25,20 +28,13 @@ const maxConfig: MaxReceiverConfig = {
 };
 const maxTemplate = `${baseUrl}/v1/ingest/max/${maxPathSecret}?event_token_all={EVENT_TOKEN_ALL}&event_id={EVENT_ID}&revenue={REVENUE}&ts={TS}`;
 assertSafeMaxTemplate(maxTemplate);
+await ensureAdminKeys(
+  pool,
+  { tenantId: maxConfig.tenantId, appId: maxConfig.appId },
+  [adminKey, secrets.read("OPENMMP_ADMIN_KEY_PREVIOUS")].filter((value): value is string => !!value),
+);
 
-const server = createServer(async (request, response) => {
-  if (request.method === "GET" && request.url === "/health") {
-    response.writeHead(200, { "content-type": "application/json" });
-    response.end('{"status":"ok"}\n');
-    return;
-  }
-  if (request.method === "GET" && request.url?.startsWith(`/v1/ingest/max/${maxPathSecret}?`)) {
-    await receiveMax(request, response, { pool, payloadStore, config: maxConfig });
-    return;
-  }
-  response.writeHead(404, { "content-type": "application/json" });
-  response.end('{"error":"not_found"}\n');
-});
+const server = createServer(createRequestHandler({ pool, payloadStore, maxConfig }));
 
 server.listen(port, "0.0.0.0", () => {
   console.log(`Open MMP API listening on ${port}`);

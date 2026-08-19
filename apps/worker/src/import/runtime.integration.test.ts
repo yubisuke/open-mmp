@@ -4,11 +4,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { createServer } from "node:http";
 import { createAppPool, createMigrationPool, LocalPayloadStore, withTenant } from "@open-mmp/runtime";
 import { runMmpImport } from "./runner.js";
 import { persistCostImport } from "./cost.js";
 import { expectedMaxTokenAll, receiveMax, type MaxReceiverConfig } from "../../../api/src/max-receiver.js";
 import { processMaxInbox } from "./max-worker.js";
+import { ensureAdminKeys } from "../../../api/src/admin-auth.js";
+import { createRequestHandler } from "../../../api/src/router.js";
 
 const appPool = createAppPool();
 const ownerPool = createMigrationPool();
@@ -126,6 +129,70 @@ describe("MAX receiver integration", () => {
     await withTenant(appPool, "tenant-local", async (client) => {
       const audit = await client.query("SELECT count(*)::int AS count FROM ledger.audit_logs WHERE outcome='failed'");
       assert.ok(audit.rows[0].count >= 2);
+    });
+  });
+});
+
+describe("admin privacy integration", () => {
+  it("A9 authenticates, deletes through append-only artifacts, supersedes D0, and rejects the device path", async () => {
+    const adminKey = "synthetic-admin-key-00000000000000000000000000000001";
+    const previousKey = "synthetic-admin-key-previous-000000000000000000000001";
+    await ensureAdminKeys(appPool, { tenantId: "tenant-local", appId: "app-local" }, [adminKey, previousKey], "2026-08-19T13:00:00.000Z");
+    const metric = {
+      metric_run_id: "metric:privacy-baseline", metric_name: "d0_install_to_24h_ad_revenue_usd",
+      metric_definition_version: "0.2.0", input_snapshot_id: "a".repeat(64),
+      input_received_at_watermark: "2026-08-19T12:59:59.999Z", input_ledger_position: "2026-08-19T12:00:00.000Z|synthetic",
+      computed_at: "2026-08-19T13:00:00.000Z", data_freshness: "complete", aggregation_time_zone: "UTC",
+      rule_bundle_id: "metric-default", rule_bundle_version: "0.2.0", rule_bundle_hash: "b".repeat(64),
+      rounding_mode: "half_even", reproducibility_status: "fully_reproducible",
+      value_type: "money", value_unscaled: "0", amount_scale: 6, currency: "USD",
+    };
+    await withTenant(appPool, "tenant-local", (client) => client.query(
+      `INSERT INTO ledger.metric_runs (
+        metric_run_id, tenant_id, app_id, metric_name, metric_definition_version,
+        grouping, grouping_digest, input_snapshot_id, input_received_at_watermark,
+        input_ledger_position, computed_at, data_freshness, aggregation_time_zone,
+        rule_bundle_id, rule_bundle_version, rule_bundle_hash, rounding_mode,
+        reproducibility_status, value_type, value_unscaled, amount_scale, currency, artifact
+      ) VALUES ($1,'tenant-local','app-local',$2,$3,'{}'::jsonb,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20::jsonb)
+      ON CONFLICT DO NOTHING`,
+      [metric.metric_run_id, metric.metric_name, metric.metric_definition_version, "c".repeat(64), metric.input_snapshot_id,
+        metric.input_received_at_watermark, metric.input_ledger_position, metric.computed_at, metric.data_freshness,
+        metric.aggregation_time_zone, metric.rule_bundle_id, metric.rule_bundle_version, metric.rule_bundle_hash,
+        metric.rounding_mode, metric.reproducibility_status, metric.value_type, metric.value_unscaled,
+        metric.amount_scale, metric.currency, JSON.stringify(metric)],
+    ).then(() => undefined));
+    const config: MaxReceiverConfig = {
+      tenantId: "tenant-local", appId: "app-local", pathSecret: "synthetic-path",
+      eventKey: "synthetic-event-key", tokenMode: "all", maxParameters: 40, maxQueryBytes: 8192,
+    };
+    const server = createServer(createRequestHandler({ pool: appPool, payloadStore: new LocalPayloadStore(join(temporary, "privacy-payloads")), maxConfig: config }));
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    assert.ok(address && typeof address === "object");
+    const endpoint = `http://127.0.0.1:${address.port}/v1/admin/privacy-requests`;
+    const base = { tenant_id: "tenant-local", app_id: "app-local", deletion_scope: "app", deletion_subject_ref: "app-local" };
+    try {
+      const unauthorized = await fetch(endpoint, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...base, requested_via: "tenant_admin_api" }) });
+      assert.equal(unauthorized.status, 401);
+      const device = await fetch(endpoint, { method: "POST", headers: { authorization: `Bearer ${adminKey}`, "content-type": "application/json" }, body: JSON.stringify({ ...base, deletion_scope: "installation", deletion_subject_ref: "installation:synthetic", requested_via: "on_device_sdk" }) });
+      assert.equal(device.status, 501);
+      assert.deepEqual(await device.json(), { error: "on_device_path_not_implemented" });
+      const success = await fetch(endpoint, { method: "POST", headers: { authorization: `Bearer ${previousKey}`, "content-type": "application/json" }, body: JSON.stringify({ ...base, requested_via: "tenant_admin_api" }) });
+      assert.equal(success.status, 201);
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+    await withTenant(appPool, "tenant-local", async (client) => {
+      const counts = await client.query(`SELECT
+        (SELECT count(*) FROM ledger.privacy_tombstones)::int AS tombstones,
+        (SELECT count(*) FROM ledger.corrections)::int AS corrections,
+        (SELECT count(*) FROM ledger.metric_runs WHERE supersedes_metric_run_id='metric:privacy-baseline')::int AS superseding,
+        (SELECT count(*) FROM ledger.audit_logs WHERE actor_type='admin_key' AND outcome='succeeded')::int AS audits`);
+      assert.ok(counts.rows[0].tombstones > 0);
+      assert.ok(counts.rows[0].corrections > 0);
+      assert.equal(counts.rows[0].superseding, 1);
+      assert.equal(counts.rows[0].audits, 1);
     });
   });
 });
