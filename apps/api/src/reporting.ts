@@ -33,7 +33,7 @@ function metricRow(artifact: Any): Any {
     data_freshness: artifact.data_freshness,
     value_state: artifact.value_state ?? "present",
     undefined_reason: artifact.undefined_reason ?? null,
-    value_unscaled: artifact.value_unscaled ?? null,
+    ...(artifact.value_unscaled === undefined ? {} : { value_unscaled: artifact.value_unscaled }),
     value_type: artifact.value_type,
     currency: artifact.currency ?? null,
     amount_scale: artifact.amount_scale ?? null,

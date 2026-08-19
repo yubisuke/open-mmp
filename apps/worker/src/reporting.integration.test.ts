@@ -115,7 +115,7 @@ describe("M1b reporting and difference audit", { concurrency: false }, () => {
     assert.equal(response.status, 200);
     assert.equal(body.data[0].value_state, "undefined");
     assert.equal(body.data[0].undefined_reason, "no_attributed_cost");
-    assert.equal(body.data[0].value_unscaled, null);
+    assert.equal("value_unscaled" in body.data[0], false);
   });
 
   for (const [name, reason] of [
