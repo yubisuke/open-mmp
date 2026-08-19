@@ -5,7 +5,7 @@ const env = Object.fromEntries(readFileSync(".env", "utf8").split(/\r?\n/).flatM
   const separator = line.indexOf("=");
   return separator > 0 ? [[line.slice(0, separator), line.slice(separator + 1)]] : [];
 }));
-const port = env.OPENMMP_API_HOST_PORT ?? "8080";
+const port = process.env.OPENMMP_API_HOST_PORT ?? env.OPENMMP_API_HOST_PORT ?? "8080";
 const base = `http://127.0.0.1:${port}`;
 const health = await fetch(`${base}/health`);
 if (!health.ok) throw new Error(`health smoke failed with ${health.status}`);

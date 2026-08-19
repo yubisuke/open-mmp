@@ -175,7 +175,7 @@ try {
   await appClient.query("ROLLBACK");
   console.log("A7 tenant isolation passed: unset=0, cross-tenant=0, mismatched INSERT and cross-scope reference rejected.");
   console.log(`A8 append-only database controls passed for ${ledgerTables.rowCount} ledger tables; raw row remained byte-identical.`);
-  console.log("A8 payload decryption check is deferred to Stage 5 envelope encryption.");
+  console.log("A8 payload encryption, decryption, and purge behavior is covered by the Stage 5 integration suite.");
 } catch (error) {
   try {
     await appClient.query("ROLLBACK");
