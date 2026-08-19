@@ -589,8 +589,11 @@ export async function ingestFixture(
   appPool: Pool,
   seedPool: Pool,
 ): Promise<number> {
+  console.log(`Fixture ingest ${fixtureName}: reset ledger`);
   await resetLedger(seedPool);
+  console.log(`Fixture ingest ${fixtureName}: ensure apps`);
   await ensureApps(appPool, input);
+  console.log(`Fixture ingest ${fixtureName}: stage candidates`);
   const candidates = await PostgresCandidateProvider.stageAndLoad(seedPool, fixtureName, input);
   const providerFactory = (values: readonly CandidateAttempt[]): CandidateProvider => {
     candidates.assertEvaluationAttempts(values);
@@ -598,6 +601,7 @@ export async function ingestFixture(
   };
   const baseOutput = evaluate(withoutLifecycleChanges(input), providerFactory);
   const output = evaluate(input, providerFactory);
+  console.log(`Fixture ingest ${fixtureName}: evaluated`);
 
   await seedPool.query("DELETE FROM testing.fixture_artifacts WHERE fixture_name = $1", [fixtureName]);
   await seedPool.query(
@@ -620,11 +624,13 @@ export async function ingestFixture(
       );
     });
   }
+  console.log(`Fixture ingest ${fixtureName}: raw records persisted`);
   for (const logical of baseOutput.logical_events) {
     const stored = await persistLogical(appPool, logical);
     assertRoundTrip(logical, stored, `${fixtureName}/base logical/${logical.logical_event_id}`);
     await persistProjection(appPool, logical, input);
   }
+  console.log(`Fixture ingest ${fixtureName}: logical events persisted`);
   await persistFixtureCosts(appPool, input);
   await persistLifecycle(appPool, input);
   for (const reconciliation of output.reconciliation ?? []) {
@@ -656,6 +662,7 @@ export async function ingestFixture(
       count += 1;
     }
   }
+  console.log(`Fixture ingest ${fixtureName}: complete`);
   return count;
 }
 
