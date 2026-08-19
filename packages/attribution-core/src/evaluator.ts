@@ -75,7 +75,8 @@ function dateAt(value: string, zone: "UTC" | "Asia/Tokyo", field: string): strin
   return new Date(time(value, field) + offset).toISOString().slice(0, 10);
 }
 
-type Attempt = { server: Any; record: Any; batch_id: string };
+export type CandidateAttempt = { server: Any; record: Any; batch_id: string };
+type Attempt = CandidateAttempt;
 
 function attempts(input: Any): Attempt[] {
   if (Array.isArray(input.batches)) {
@@ -105,7 +106,7 @@ function assertRevenueAnchorSources(all: Attempt[]): void {
   }
 }
 
-function attemptOrder(a: Attempt, b: Attempt): number {
+export function compareCandidateAttempts(a: CandidateAttempt, b: CandidateAttempt): number {
   const aKey = [
     a.record.received_at, a.record.record_id, a.record.delivery_id,
     a.server.tenant_id, a.server.app_id, a.record.schema_version, sha256(a.record),
@@ -125,6 +126,89 @@ function scopeKey(attempt: Attempt): string {
   const { server, record } = attempt;
   return compositeKey([server.tenant_id, server.app_id, record.producer, record.event_id]);
 }
+
+function clickKey(tenantId: string, appId: string, clickId: string): string {
+  return compositeKey([tenantId, appId, clickId]);
+}
+
+export interface CandidateProvider {
+  all(): readonly CandidateAttempt[];
+  byRecordId(recordId: string): readonly CandidateAttempt[];
+  byLogicalScope(attempt: CandidateAttempt): readonly CandidateAttempt[];
+  clickCandidates(tenantId: string, appId: string, clickId: string): readonly CandidateAttempt[];
+}
+
+export type CandidateProviderFactory = (attempts: readonly CandidateAttempt[]) => CandidateProvider;
+
+export class FixtureArrayCandidateProvider implements CandidateProvider {
+  constructor(private readonly ordered: readonly CandidateAttempt[]) {}
+
+  all(): readonly CandidateAttempt[] {
+    return this.ordered;
+  }
+
+  byRecordId(recordId: string): readonly CandidateAttempt[] {
+    return this.ordered.filter((candidate) => candidate.record.record_id === recordId);
+  }
+
+  byLogicalScope(attempt: CandidateAttempt): readonly CandidateAttempt[] {
+    return this.ordered.filter((candidate) => scopeKey(candidate) === scopeKey(attempt));
+  }
+
+  clickCandidates(tenantId: string, appId: string, candidateClickId: string): readonly CandidateAttempt[] {
+    return this.ordered.filter((candidate) =>
+      candidate.server.tenant_id === tenantId && candidate.server.app_id === appId &&
+      candidate.record.event_name === "click" && candidate.record.payload.click_id === candidateClickId,
+    );
+  }
+}
+
+export class IndexedCandidateProvider implements CandidateProvider {
+  private readonly records = new Map<string, CandidateAttempt[]>();
+  private readonly logicalScopes = new Map<string, CandidateAttempt[]>();
+  private readonly clicks = new Map<string, CandidateAttempt[]>();
+
+  constructor(private readonly ordered: readonly CandidateAttempt[]) {
+    for (const attempt of ordered) {
+      this.add(this.records, attempt.record.record_id, attempt);
+      this.add(this.logicalScopes, scopeKey(attempt), attempt);
+      if (attempt.record.event_name === "click") {
+        this.add(
+          this.clicks,
+          clickKey(attempt.server.tenant_id, attempt.server.app_id, attempt.record.payload.click_id),
+          attempt,
+        );
+      }
+    }
+  }
+
+  private add(index: Map<string, CandidateAttempt[]>, key: string, attempt: CandidateAttempt): void {
+    const values = index.get(key) ?? [];
+    values.push(attempt);
+    index.set(key, values);
+  }
+
+  all(): readonly CandidateAttempt[] {
+    return this.ordered;
+  }
+
+  byRecordId(recordId: string): readonly CandidateAttempt[] {
+    return this.records.get(recordId) ?? [];
+  }
+
+  byLogicalScope(attempt: CandidateAttempt): readonly CandidateAttempt[] {
+    return this.logicalScopes.get(scopeKey(attempt)) ?? [];
+  }
+
+  clickCandidates(tenantId: string, appId: string, candidateClickId: string): readonly CandidateAttempt[] {
+    return this.clicks.get(clickKey(tenantId, appId, candidateClickId)) ?? [];
+  }
+}
+
+export const createFixtureCandidateProvider: CandidateProviderFactory =
+  (values) => new FixtureArrayCandidateProvider(values);
+export const createIndexedCandidateProvider: CandidateProviderFactory =
+  (values) => new IndexedCandidateProvider(values);
 
 function evidenceKey(tenantId: string, appId: string, recordId: string): string {
   return compositeKey([tenantId, appId, recordId]);
@@ -286,7 +370,7 @@ function timestampInvalidDecision(attempt: Attempt): Any {
   };
 }
 
-function decide(attempt: Attempt, orderedAttempts: Attempt[]): Any {
+function decide(attempt: Attempt, candidates: CandidateProvider): Any {
   const { server, record } = attempt;
   if (server.timestamp_stale_policy) {
     const expectedDigest = sha256({
@@ -298,12 +382,12 @@ function decide(attempt: Attempt, orderedAttempts: Attempt[]): Any {
       throw new Error("timestamp_stale_policy.policy_digest does not match its canonical policy fields");
     }
   }
-  const sameRecordId = orderedAttempts.filter((candidate) => candidate.record.record_id === record.record_id);
-  const sameKey = orderedAttempts.filter((candidate) => scopeKey(candidate) === scopeKey(attempt));
+  const sameRecordId = candidates.byRecordId(record.record_id);
+  const sameKey = candidates.byLogicalScope(attempt);
   const first = sameKey[0];
   const duplicate_resolution = sameRecordId.length > 1
     ? "record_id_collision"
-    : first === attempt
+    : attemptDecisionKey(first) === attemptDecisionKey(attempt)
     ? "unique"
     : sha256(first.record.payload) === sha256(record.payload)
       ? "duplicate_delivery"
@@ -403,7 +487,7 @@ function makeRawRecord(attempt: Attempt, lifecycle: "available" | "redacted" | "
 
 function makeAttribution(
   attempt: Attempt,
-  all: Attempt[],
+  candidates: CandidateProvider,
   decisions: Map<string, Any>,
   lifecycle: Map<string, LifecycleStatus>,
 ): Attribution {
@@ -491,9 +575,7 @@ function makeAttribution(
   if (payload.referrer_status === "none") return result("organic", "none", "none", "no_referrer");
   if (payload.referrer_status === "unsupported") return result("unattributed", "none", "none", "install_referrer_unsupported");
   if (payload.referrer_status === "unavailable") return result("unattributed", "none", "none", "install_referrer_unavailable");
-  const clicks = all.filter((candidate) =>
-    candidate.server.tenant_id === server.tenant_id && candidate.server.app_id === server.app_id &&
-    candidate.record.event_name === "click" && candidate.record.payload.click_id === payload.click_id &&
+  const clicks = candidates.clickCandidates(server.tenant_id, server.app_id, payload.click_id).filter((candidate) =>
     decisionFor(decisions, candidate).ingestion_status === "accepted" &&
     decisionFor(decisions, candidate).duplicate_resolution === "unique",
   );
@@ -665,7 +747,7 @@ function metricRuns(
       decisionFor(decisions, attempt).duplicate_resolution === "unique" &&
       compareText(attempt.record.received_at, evaluation.input_received_at_watermark) <= 0,
     );
-    const recordSnapshotRows = [...included].sort(attemptOrder).map((attempt) => [
+    const recordSnapshotRows = [...included].sort(compareCandidateAttempts).map((attempt) => [
       attempt.record.received_at,
       attempt.record.record_id,
       evaluation.privacy_state === "after" ? (lifecycle.get(attemptEvidenceKey(attempt)) ?? "available") : "available",
@@ -683,7 +765,7 @@ function metricRuns(
       ? "redaction_affected"
       : affectedStates.includes("purged") ? "retention_affected" : "fully_reproducible";
     const ledger = recordSnapshotRows.at(-1);
-    const recordEvidence: MetricRun["evidence_refs"] = [...included].sort(attemptOrder).map((attempt) => ({
+    const recordEvidence: MetricRun["evidence_refs"] = [...included].sort(compareCandidateAttempts).map((attempt) => ({
       tenant_id: attempt.server.tenant_id,
       app_id: attempt.server.app_id,
       ref: attempt.record.record_id,
@@ -927,14 +1009,18 @@ function reconciliationResults(input: Any, accepted: Attempt[]): Reconciliation[
   return sortByKey(output, (result) => [result.reconciliation_id, result.tenant_id, result.app_id]);
 }
 
-export function evaluate(input: Any): EvaluationOutput {
-  const all = attempts(input).sort(attemptOrder);
+export function evaluate(
+  input: Any,
+  candidateProviderFactory: CandidateProviderFactory = createFixtureCandidateProvider,
+): EvaluationOutput {
+  const all = attempts(input).sort(compareCandidateAttempts);
+  const candidates = candidateProviderFactory(all);
   assertImportProviderContexts(all);
   assertRevenueAnchorSources(all);
   assertScopedReferences(input, all);
   const decisionsList = all.map((attempt) => {
     try {
-      return decide(attempt, all);
+      return decide(attempt, candidates);
     } catch (error) {
       if (error instanceof TimestampInvalidError) return timestampInvalidDecision(attempt);
       throw error;
@@ -998,7 +1084,7 @@ export function evaluate(input: Any): EvaluationOutput {
   const attributions = sortByKey([
     ...acceptedUnique
       .filter((attempt) => attempt.record.event_name === "install")
-      .map((attempt) => makeAttribution(attempt, all, decisions, lifecycle)),
+      .map((attempt) => makeAttribution(attempt, candidates, decisions, lifecycle)),
     ...acceptedUnique
       .filter((attempt) => ["skan_postback", "adattributionkit_postback"].includes(attempt.record.event_name))
       .map((attempt) => makeAggregatePostbackAttribution(attempt, lifecycle)),
