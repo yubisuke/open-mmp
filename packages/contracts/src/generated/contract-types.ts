@@ -189,7 +189,12 @@ export type OpenMMPMetricRunV02 = {
   rounding_mode: "half_even";
   reproducibility_status: "fully_reproducible" | "redaction_affected" | "retention_affected";
   value_type: "money" | "ratio" | "count";
-  value_unscaled: string;
+  /**
+   * Absence is semantically present for v0.2.0 compatibility.
+   */
+  value_state?: "present" | "undefined";
+  undefined_reason?: "no_attributed_cost" | "no_activity_events" | "empty_cohort";
+  value_unscaled?: string;
   amount_scale?: number;
   ratio_scale?: number;
   currency?: string;
@@ -235,6 +240,38 @@ export type OpenMMPRejectionV02 = {
   staleness_policy_version?: string;
   staleness_policy_digest?: string;
   staleness_authority?: "server";
+};
+export type OpenMMPReconciliationResultV02 = {
+  [k: string]: unknown;
+} & {
+  reconciliation_id: string;
+  tenant_id: string;
+  app_id: string;
+  input_snapshot_id: string;
+  external_snapshot_id: string;
+  difference_reason_code:
+    | "matched"
+    | "candidate_missing"
+    | "candidate_excluded"
+    | "window_mismatch"
+    | "join_key_missing"
+    | "join_key_ambiguous"
+    | "freshness_mismatch"
+    | "external_row_unmatched"
+    | "redaction_caused_recalculation"
+    | "currency_policy_mismatch"
+    | "scope_mismatch"
+    | "provider_modeled_conversion";
+  difference_reason_version: "0.2.0" | "0.2.1";
+  matching_keys: {
+    [k: string]: unknown;
+  }[];
+  candidates: string[];
+  exclusions: string[];
+  windows: string[];
+  joins: string[];
+  freshness: "current" | "stale" | "recalculated";
+  supersedes_reconciliation_id?: string;
 };
 
 export interface OpenMMPEvaluationOutputV02 {
@@ -367,33 +404,4 @@ export interface OpenMMPFraudDecisionV02 {
   rule_bundle_hash: string;
   evaluated_at: string;
   supersedes_fraud_decision_id?: string;
-}
-export interface OpenMMPReconciliationResultV02 {
-  reconciliation_id: string;
-  tenant_id: string;
-  app_id: string;
-  input_snapshot_id: string;
-  external_snapshot_id: string;
-  difference_reason_code:
-    | "matched"
-    | "candidate_missing"
-    | "candidate_excluded"
-    | "window_mismatch"
-    | "join_key_missing"
-    | "join_key_ambiguous"
-    | "freshness_mismatch"
-    | "external_row_unmatched"
-    | "redaction_caused_recalculation"
-    | "currency_policy_mismatch"
-    | "scope_mismatch";
-  difference_reason_version: "0.2.0";
-  matching_keys: {
-    [k: string]: unknown;
-  }[];
-  candidates: string[];
-  exclusions: string[];
-  windows: string[];
-  joins: string[];
-  freshness: "current" | "stale" | "recalculated";
-  supersedes_reconciliation_id?: string;
 }

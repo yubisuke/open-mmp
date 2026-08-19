@@ -848,6 +848,8 @@ def metric_runs(
             cohort_ids = {install["record"]["payload"]["installation_id"] for install in installs}
             cohort_size = len(cohort_ids)
             calculation = definition["definition"]["calculation"]
+            amount: int | None = None
+            undefined_reason: str | None = None
             if calculation == "revenue_sum":
                 amount = revenue_value
             elif calculation == "revenue_over_cost":
@@ -857,28 +859,31 @@ def metric_runs(
                         raise ValueError(f"cost currency mismatch: {cost['cost_record_id']}")
                     cost_value += scale_money(cost, int(policy["target_scale"]))
                 if cost_value == 0:
-                    raise ValueError(f"undefined ROAS without cost: {metric_name}")
-                amount = round_half_even(revenue_value * 10 ** int(definition.get("ratio_scale", 6)), cost_value)
+                    undefined_reason = "no_attributed_cost"
+                else:
+                    amount = round_half_even(revenue_value * 10 ** int(definition.get("ratio_scale", 6)), cost_value)
             elif calculation == "active_installations_over_cohort":
                 if cohort_size == 0:
-                    raise ValueError(f"undefined retention without cohort: {metric_name}")
-                event_names = set(definition.get("activity_events", ["session_start"]))
-                active: set[str] = set()
-                for activity in (item for item in activities if item["record"]["event_name"] in event_names):
-                    installation = next((candidate for candidate in installs
-                                         if candidate["server"]["tenant_id"] == activity["server"]["tenant_id"]
-                                         and candidate["server"]["app_id"] == activity["server"]["app_id"]
-                                         and candidate["record"]["payload"]["installation_id"] == activity["record"]["payload"].get("installation_id")), None)
-                    if installation is None:
-                        continue
-                    day_index = (timestamp(activity["record"]["occurred_at"], "occurred_at") - timestamp(installation["record"]["occurred_at"], "occurred_at")).days
-                    if day_index == definition["definition"]["window"]["day"]:
-                        active.add(installation["record"]["payload"]["installation_id"])
-                amount = round_half_even(len(active) * 10 ** int(definition.get("ratio_scale", 6)), cohort_size)
+                    undefined_reason = "empty_cohort"
+                else:
+                    event_names = set(definition.get("activity_events", ["session_start"]))
+                    active: set[str] = set()
+                    for activity in (item for item in activities if item["record"]["event_name"] in event_names):
+                        installation = next((candidate for candidate in installs
+                                             if candidate["server"]["tenant_id"] == activity["server"]["tenant_id"]
+                                             and candidate["server"]["app_id"] == activity["server"]["app_id"]
+                                             and candidate["record"]["payload"]["installation_id"] == activity["record"]["payload"].get("installation_id")), None)
+                        if installation is None:
+                            continue
+                        day_index = (timestamp(activity["record"]["occurred_at"], "occurred_at") - timestamp(installation["record"]["occurred_at"], "occurred_at")).days
+                        if day_index == definition["definition"]["window"]["day"]:
+                            active.add(installation["record"]["payload"]["installation_id"])
+                    amount = round_half_even(len(active) * 10 ** int(definition.get("ratio_scale", 6)), cohort_size)
             elif calculation == "revenue_over_cohort":
                 if cohort_size == 0:
-                    raise ValueError(f"undefined LTV without cohort: {metric_name}")
-                amount = round_half_even(revenue_value, cohort_size)
+                    undefined_reason = "empty_cohort"
+                else:
+                    amount = round_half_even(revenue_value, cohort_size)
             elif calculation == "cohort_size":
                 amount = cohort_size
             else:
@@ -899,10 +904,13 @@ def metric_runs(
                 "rounding_mode": policy["rounding_mode"],
                 "reproducibility_status": reproducibility,
                 "value_type": definition["value_type"],
-                "value_unscaled": str(amount),
                 "evidence_refs": evidence,
             }
-            if definition["value_type"] == "money":
+            if amount is None:
+                run |= {"value_state": "undefined", "undefined_reason": undefined_reason}
+            else:
+                run["value_unscaled"] = str(amount)
+            if definition["value_type"] == "money" and amount is not None:
                 run |= {
                     "fx_rate_unscaled": only_rate["rate_unscaled"],
                     "fx_rate_scale": only_rate["rate_scale"],
@@ -957,6 +965,9 @@ def imported_reconciliation_inputs(accepted: list[dict[str, Any]]) -> list[dict[
             "input_snapshot_id": f"snapshot:internal:{record['record_id']}",
             "external_snapshot_id": f"snapshot:provider:{record['record_id']}",
             "matching_keys": matching_keys,
+            "provider_modeled_without_candidate": (
+                context.get("provider_attribution_strategy") == "modeled" and not matching_keys
+            ),
             "candidates": [],
             "freshness": "current",
         }
@@ -998,6 +1009,8 @@ def reconciliation_results(value: dict[str, Any], accepted: list[dict[str, Any]]
         ]
         if item.get("privacy_effect") == "redaction":
             reason = "redaction_caused_recalculation"
+        elif item.get("provider_modeled_without_candidate") and not matched:
+            reason = "provider_modeled_conversion"
         elif not external:
             reason = "join_key_missing"
         elif not matched:
@@ -1020,7 +1033,7 @@ def reconciliation_results(value: dict[str, Any], accepted: list[dict[str, Any]]
             "input_snapshot_id": item["input_snapshot_id"],
             "external_snapshot_id": item["external_snapshot_id"],
             "difference_reason_code": reason,
-            "difference_reason_version": CONTRACT_VERSION,
+            "difference_reason_version": "0.2.1" if reason == "provider_modeled_conversion" else CONTRACT_VERSION,
             "matching_keys": matching_keys,
             "candidates": sorted((candidate["candidate_id"] for candidate in matched), key=utf16_key),
             "exclusions": sorted((candidate["exclusion_reason"] for candidate in matched if candidate["excluded"]), key=utf16_key),

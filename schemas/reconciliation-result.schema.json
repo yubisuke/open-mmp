@@ -15,8 +15,8 @@
     "app_id": { "$ref": "common.schema.json#/$defs/id" },
     "input_snapshot_id": { "$ref": "common.schema.json#/$defs/id" },
     "external_snapshot_id": { "$ref": "common.schema.json#/$defs/id" },
-    "difference_reason_code": { "enum": ["matched", "candidate_missing", "candidate_excluded", "window_mismatch", "join_key_missing", "join_key_ambiguous", "freshness_mismatch", "external_row_unmatched", "redaction_caused_recalculation", "currency_policy_mismatch", "scope_mismatch"] },
-    "difference_reason_version": { "const": "0.2.0" },
+    "difference_reason_code": { "enum": ["matched", "candidate_missing", "candidate_excluded", "window_mismatch", "join_key_missing", "join_key_ambiguous", "freshness_mismatch", "external_row_unmatched", "redaction_caused_recalculation", "currency_policy_mismatch", "scope_mismatch", "provider_modeled_conversion"] },
+    "difference_reason_version": { "enum": ["0.2.0", "0.2.1"] },
     "matching_keys": {
       "type": "array",
       "items": {
@@ -55,5 +55,19 @@
     "joins": { "type": "array", "items": { "type": "string" } },
     "freshness": { "enum": ["current", "stale", "recalculated"] },
     "supersedes_reconciliation_id": { "$ref": "common.schema.json#/$defs/id" }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "difference_reason_code": { "const": "provider_modeled_conversion" } },
+        "required": ["difference_reason_code"]
+      },
+      "then": {
+        "properties": { "difference_reason_version": { "const": "0.2.1" } }
+      },
+      "else": {
+        "properties": { "difference_reason_version": { "const": "0.2.0" } }
+      }
+    }
+  ]
 }

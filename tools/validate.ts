@@ -456,7 +456,8 @@ if (!summaryOnly) {
     for (const name of Object.keys(registryPaths) as RegistryName[]) {
       it(name, () => {
         const value = capturedValue(registryStates[name].loaded, `registry load failure: ${name}`);
-        check(value.contract_version === "0.2.0", `registry version: ${name}`);
+        const expectedVersion = name === "differences" ? "0.2.1" : "0.2.0";
+        check(value.contract_version === expectedVersion, `registry version: ${name}`);
         if (name === "events") {
           unique(value.event_names, "event name");
           check(value.event_names.length === 11, "event-name registry must contain the eleven Stage C v0.2 events");
@@ -510,6 +511,7 @@ if (!summaryOnly) {
         ["consent delivery", registries.reasons.consent_decision, schemaValue(outputSchemaIds.deliveries).properties.consent_decision_reason_code.enum],
         ["consent raw", registries.reasons.consent_decision, schemaValue(outputSchemaIds.raw_records).properties.consent_decision_reason_code.enum],
         ["fraud", registries.reasons.fraud_public_categories, schemaValue(outputSchemaIds.fraud_decisions).properties.reason_code.enum],
+        ["difference", registries.differences.reasons, schemaValue(outputSchemaIds.reconciliation).properties.difference_reason_code.enum],
       ];
       for (const [label, registrySet, schemaEnum] of surfaces) {
         check(equal(registrySet, schemaEnum), `registry/schema reason mismatch: ${label}`);
