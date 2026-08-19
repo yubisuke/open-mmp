@@ -7,7 +7,7 @@ Repository location: `docs/design/m1-baseline.md`.
 Baseline commit: `main` = `1b6fa44`. Contract gate re-run on 2026-08-19: `516` `node --test` assertions pass and the summary line reads
 
 ```
-Validated 26 schemas, 8 registries, 36 reviewed fixtures, 468 golden output artifacts, 36 scenario assertions, 26 acceptance criteria, deterministic TypeScript, independent Python, and RFC 8785 conformance.
+Validated 26 schemas, 8 registries, 38 reviewed fixtures, 494 golden output artifacts, 38 scenario assertions, 26 acceptance criteria, deterministic TypeScript, independent Python, and RFC 8785 conformance.
 ```
 
 Contract v0.2 (WO-2 consistency + WO-3 extension) is landed. The original contract handoffs are recorded as resolved under [Handoffs to contract v0.2](#handoffs-to-contract-v02).
@@ -750,8 +750,8 @@ PostgreSQL's `round(numeric, int)` rounds half **away from zero**, not half to e
 
 Three consequences that must be visible in the design, not discovered in the data:
 
-1. **Organic and unattributed cohorts have no cost.** ROAS for them is undefined. It is emitted as absent with an explicit `cost_unavailable` reason, never as `0`, infinity, or part of a blended number. Acceptance criterion B8 tests this.
-2. **Retention needs activity events, and M1 has no SDK.** The only source is the imported provider export, and not every provider exports sessions. Retention is computed only when the import profile carries at least one configured activity event; otherwise it is absent with `activity_events_unavailable`.
+1. **Organic and unattributed cohorts have no attributed cost.** ROAS for them is undefined. It is emitted with `value_state=undefined` and `undefined_reason=no_attributed_cost`, never as `0`, infinity, or part of a blended number. Acceptance criterion B8 tests this.
+2. **Retention needs activity events, and M1 has no SDK.** The only source is the imported provider export, and not every provider exports sessions. Retention is computed only when the import profile carries at least one configured activity event; otherwise it is emitted with `value_state=undefined` and `undefined_reason=no_activity_events`.
 3. **Cost is a spend-day fact; a cohort is an install-day fact.** `cost_records_current` supplies cost on the cohort acquisition date for the same campaign and country. This convention is part of every ROAS definition through `cost_basis: cohort_acquisition_day_current_snapshot`; alternative spend allocation must use another versioned definition.
 
 ---

@@ -553,8 +553,8 @@ if (!summaryOnly) {
         }
       });
     }
-    it("contains 36 fixture directories", () => {
-      check(fixtureDirs.length === 36, `expected 36 fixture directories, found ${fixtureDirs.length}`);
+    it("contains 38 fixture directories", () => {
+      check(fixtureDirs.length === 38, `expected 38 fixture directories, found ${fixtureDirs.length}`);
     });
   });
 
@@ -809,12 +809,24 @@ const scenarios: Array<[string, () => void]> = [
     check(value.input.server_context.audience === "child_directed", "scenario 36 audience");
     check(value.output.raw_records.length === 1 && value.output.rejections.length === 0, "scenario 36 safe event");
   }],
+  ["37 undefined organic ROAS", () => {
+    const value = fixture("37-undefined-organic-roas").output;
+    check(value.attributions[0].status === "organic", "scenario 37 organic cohort");
+    check(value.metric_runs.length === 1 && value.metric_runs[0].value_state === "undefined", "scenario 37 value state");
+    check(value.metric_runs[0].undefined_reason === "no_attributed_cost" && value.metric_runs[0].value_unscaled === undefined, "scenario 37 undefined reason");
+  }],
+  ["38 provider-modeled reconciliation", () => {
+    const value = fixture("38-provider-modeled-reconciliation").output;
+    check(value.reconciliation.length === 1, "scenario 38 reconciliation count");
+    check(value.reconciliation[0].difference_reason_code === "provider_modeled_conversion", "scenario 38 reason");
+    check(value.reconciliation[0].difference_reason_version === "0.2.1" && value.reconciliation[0].candidates.length === 0, "scenario 38 classification");
+  }],
 ];
 if (!summaryOnly) {
   describe("reviewed scenarios", () => {
     for (const [name, assertion] of scenarios) it(name, assertion);
-    it("contains 36 scenario assertions", () => {
-      check(scenarios.length === 36, "scenario assertion inventory must contain 36 entries");
+    it("contains 38 scenario assertions", () => {
+      check(scenarios.length === 38, "scenario assertion inventory must contain 38 entries");
     });
   });
 
@@ -1268,7 +1280,7 @@ const acceptance: Array<[string, () => void]> = [
     check(corrections.some((item: Any) => item.correction_type === "retraction"), "AC15 retraction");
     check(fixture("17-redaction-recalculation").output.metric_runs.some((item: Any) => item.supersedes_metric_run_id), "AC15 redaction");
   }],
-  ["AC16 clock referrer prefetch and withdrawal fixtures pass", () => check(scenarios.length === 36 && fixture("11-clock-skew").output.deliveries.some((item: Any) => item.clock_skew_suspected) && fixture("13-referrer-unsupported").output.attributions.length === 2 && fixture("19-bot-prefetch").output.fraud_decisions.length === 1 && fixture("20-timestamp-invalid").output.rejections.some((item: Any) => item.reason_code === "timestamp_invalid"), "AC16")],
+  ["AC16 clock referrer prefetch and withdrawal fixtures pass", () => check(scenarios.length === 38 && fixture("11-clock-skew").output.deliveries.some((item: Any) => item.clock_skew_suspected) && fixture("13-referrer-unsupported").output.attributions.length === 2 && fixture("19-bot-prefetch").output.fraud_decisions.length === 1 && fixture("20-timestamp-invalid").output.rejections.some((item: Any) => item.reason_code === "timestamp_invalid"), "AC16")],
   ["AC17 server-recognized withdrawal rejects and redacts payload", () => {
     for (const name of ["14-withdrawal-after-occurrence", "15-event-after-withdrawal"]) {
       const value = fixture(name).output;
@@ -1308,7 +1320,7 @@ const acceptance: Array<[string, () => void]> = [
     for (const forbidden of ["threshold", "model_weight", "watchlist", "ip_address", "user_agent", "response_timing"]) check(!schemaText.includes(forbidden), `AC20 ${forbidden}`);
     check(specText.includes("remain private"), "AC20 private boundary");
   }],
-  ["AC21 one command validates every schema registry fixture and golden", () => check(schemaPaths.length === 26 && Object.keys(registries).length === 8 && fixtureDirs.length === 36 && outputArtifactCount === 36 * 13, "AC21")],
+  ["AC21 one command validates every schema registry fixture and golden", () => check(schemaPaths.length === 26 && Object.keys(registries).length === 8 && fixtureDirs.length === 38 && outputArtifactCount === 38 * 13, "AC21")],
   ["AC22 repeated and independent evaluators produce identical JCS", () => {
     for (const { output, python } of results.values()) check(equal(output, python), "AC22 evaluator mismatch");
     const vector = { numbers: [333333333.33333329, 1e30, 4.50, 2e-3, 1e-27, -0], string: "€$\u000f\nA'B\"\\\"/" };
@@ -1394,6 +1406,31 @@ const validRevenue = {
 };
 if (!summaryOnly) {
   describe("semantic mutations", () => {
+    it("enforces present and undefined metric value shapes", () => {
+      const validator = validatorFor(outputSchemaIds.metric_runs);
+      const present = structuredClone(fixture("33-stage-b-cohort-metrics").output.metric_runs[0]);
+      check(validator(present), "legacy present metric run is invalid");
+      check(validator({ ...present, value_state: "present" }), "explicit present metric run is invalid");
+      const presentWithoutValue = { ...present, value_state: "present" };
+      delete presentWithoutValue.value_unscaled;
+      check(!validator(presentWithoutValue), "present metric run without value was accepted");
+
+      const undefinedRatio = structuredClone(fixture("37-undefined-organic-roas").output.metric_runs[0]);
+      check(validator(undefinedRatio), "undefined ratio metric run is invalid");
+      check(!validator({ ...undefinedRatio, value_unscaled: "0" }), "undefined metric run with numeric value was accepted");
+      const undefinedWithoutReason = { ...undefinedRatio };
+      delete undefinedWithoutReason.undefined_reason;
+      check(!validator(undefinedWithoutReason), "undefined metric run without reason was accepted");
+
+      const undefinedMoney = structuredClone(fixture("08-late-ad-revenue").output.metric_runs[0]);
+      for (const field of [
+        "value_unscaled", "currency", "amount_scale", "fx_rate_unscaled", "fx_rate_scale",
+        "fx_rate_source", "fx_rate_as_of", "fx_rate_snapshot_id", "fx_policy_version",
+      ]) delete undefinedMoney[field];
+      undefinedMoney.value_state = "undefined";
+      undefinedMoney.undefined_reason = "empty_cohort";
+      check(validator(undefinedMoney), "undefined money metric run wrongly requires numeric or currency fields");
+    });
     it("rejects empty rule bundle versions across derived artifacts", () => {
       const artifacts: Array<[keyof typeof outputSchemaIds, Any]> = [
         ["attributions", fixture("01-valid-install-referrer").output.attributions[0]],
