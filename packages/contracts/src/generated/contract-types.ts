@@ -84,6 +84,8 @@ export type OpenMMPAttributionResultV03 = {
   reason_code:
     | "valid_install_referrer"
     | "no_referrer"
+    | "no_first_party_referrer"
+    | "foreign_referrer_unresolved"
     | "unknown_click_id"
     | "window_expired"
     | "authoritative_time_missing"
@@ -161,6 +163,10 @@ export type OpenMMPMetricDefinitionV03 = {
    * @minItems 1
    */
   activity_events?: string[];
+  /**
+   * @minItems 1
+   */
+  grouping_dimensions?: ("campaign_id" | "network" | "country" | "cohort_date" | "attribution_status")[];
   rule_bundle_id: string;
   rule_bundle_version: string;
   rule_bundle_hash: string;
@@ -204,6 +210,7 @@ export type OpenMMPMetricRunV03 = {
       network?: string;
       country?: string;
       cohort_date?: string;
+      attribution_status?: "organic" | "non_organic" | "unattributed";
     };
     dimension_digest: string;
   };

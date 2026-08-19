@@ -10,6 +10,13 @@
       {
         "tenant_id": "tenant-a",
         "app_id": "app-a",
+        "ref": "import-click-28",
+        "lifecycle_status": "available",
+        "access_class": "protected"
+      },
+      {
+        "tenant_id": "tenant-a",
+        "app_id": "app-a",
         "ref": "import-install-28",
         "lifecycle_status": "available",
         "access_class": "protected"

@@ -60,6 +60,7 @@
       "value_type": "ratio",
       "ratio_scale": 6,
       "definition": { "calculation": "revenue_over_cost", "window": { "type": "elapsed", "day": 1 }, "numerator": "revenue", "denominator": "cost", "cost_basis": "cohort_acquisition_day_current_snapshot" },
+      "grouping_dimensions": ["campaign_id", "network", "country", "cohort_date", "attribution_status"],
       "rule_bundle_id": "metric-stage-b",
       "rule_bundle_version": "0.3.0",
       "rule_bundle_hash": "2222222222222222222222222222222222222222222222222222222222222222"
@@ -147,7 +148,16 @@
       "data_freshness": "complete",
       "privacy_state": "before",
       "metric_names": ["d1_roas", "d3_roas", "d7_roas", "retention_d1", "retention_d7", "cohort_ltv_d7_usd", "cohort_install_count"],
-      "grouping": { "campaign_id": "provider-campaign-33", "network": "synthetic-network", "country": "JP", "cohort_date": "2026-08-01" }
+      "grouping": { "campaign_id": "provider-campaign-33", "network": "synthetic-network", "country": "JP", "cohort_date": "2026-08-01", "attribution_status": "non_organic" }
+    },
+    {
+      "metric_run_id_prefix": "run-33-organic",
+      "input_received_at_watermark": "2026-08-09T00:00:00.000Z",
+      "computed_at": "2026-08-09T00:01:00.000Z",
+      "data_freshness": "complete",
+      "privacy_state": "before",
+      "metric_names": ["d1_roas"],
+      "grouping": { "campaign_id": "provider-campaign-33", "network": "synthetic-network", "country": "JP", "cohort_date": "2026-08-01", "attribution_status": "organic" }
     }
   ],
   "reconciliation_inputs": [],
@@ -209,6 +219,11 @@
       "contract_version": "0.3.0", "record_id": "aggregate-revenue-33", "delivery_id": "delivery:aggregate-revenue-33", "tenant_id": "tenant-a", "app_id": "app-a", "producer": "import:synthetic-provider", "producer_version": "fixture-v0.2", "event_id": "event:aggregate-revenue-33", "event_name": "ad_revenue", "schema_version": "0.3.0",
       "occurred_at": "2026-08-02T12:00:00.123Z", "occurred_at_source": "import", "received_at": "2026-08-02T12:00:01.000Z", "processing_purpose_id": "analytics", "processing_sequence": 9,
       "payload": { "subject_scope": "aggregate", "ad_network": "synthetic-network", "amount_unscaled": "2000000", "amount_scale": 6, "currency": "USD", "currency_source": "default", "revenue_source": "imported_reported", "import_context": { "provider": "synthetic-provider", "provider_attributed": false, "provider_attribution_strategy": "organic", "provider_campaign_ref": "provider-campaign-33", "provider_network": "synthetic-network", "provider_country": "JP", "provider_confirmed_at": "2026-08-02T12:00:00.123Z" } }
+    },
+    {
+      "contract_version": "0.3.0", "record_id": "organic-install-33", "delivery_id": "delivery:organic-install-33", "tenant_id": "tenant-a", "app_id": "app-a", "producer": "import:synthetic-provider", "producer_version": "fixture-v0.2", "event_id": "event:organic-install-33", "event_name": "install", "schema_version": "0.3.0",
+      "occurred_at": "2026-08-01T01:00:00.000Z", "occurred_at_source": "import", "received_at": "2026-08-01T01:00:01.000Z", "processing_purpose_id": "analytics", "processing_sequence": 10,
+      "payload": { "installation_id": "installation:organic-33", "install_type": "first_install", "referrer_status": "none", "country": "JP", "import_context": { "provider": "synthetic-provider", "provider_attributed": false, "provider_attribution_strategy": "organic", "provider_campaign_ref": "provider-campaign-33", "provider_network": "synthetic-network", "provider_country": "JP", "provider_confirmed_at": "2026-08-01T01:00:00.000Z" } }
     }
   ]
 }

@@ -42,7 +42,7 @@
       "properties": {
         "provider": { "type": "string", "pattern": "^[a-z0-9-]{1,64}$" },
         "provider_attributed": { "type": "boolean" },
-        "provider_attribution_strategy": { "enum": ["click_through", "view_through", "modeled", "organic", "unattributed"] },
+        "provider_attribution_strategy": { "enum": ["click_through", "view_through", "modeled", "self_attributed_network", "organic", "unattributed"] },
         "provider_install_ref": { "type": "string", "minLength": 1, "maxLength": 256 },
         "provider_click_ref": { "type": "string", "minLength": 1, "maxLength": 256 },
         "provider_campaign_ref": { "type": "string", "minLength": 1, "maxLength": 256 },
@@ -56,7 +56,7 @@
       "allOf": [
         {
           "if": { "properties": { "provider_attributed": { "const": true } }, "required": ["provider_attributed"] },
-          "then": { "properties": { "provider_attribution_strategy": { "enum": ["click_through", "view_through", "modeled"] } } },
+          "then": { "properties": { "provider_attribution_strategy": { "enum": ["click_through", "view_through", "modeled", "self_attributed_network"] } } },
           "else": { "properties": { "provider_attribution_strategy": { "enum": ["organic", "unattributed"] } } }
         }
       ]

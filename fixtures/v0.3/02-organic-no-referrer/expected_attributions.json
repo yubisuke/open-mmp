@@ -25,6 +25,6 @@
     "status": "organic",
     "method": "none",
     "model": "none",
-    "reason_code": "no_referrer"
+    "reason_code": "no_first_party_referrer"
   }
 ]

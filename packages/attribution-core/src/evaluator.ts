@@ -536,14 +536,26 @@ function makeAttribution(
   const imported = importedProducer ? payload.import_context : undefined;
   if (importedProducer) {
     if (!imported) return result("unattributed", "imported", "provider_reported", "provider_unattributed");
+    const referencedClicks = imported.provider_click_ref
+      ? candidates.all().filter((candidate) =>
+        candidate.server.tenant_id === server.tenant_id && candidate.server.app_id === server.app_id &&
+        candidate.record.event_name === "click" && candidate.record.producer === "redirector" &&
+        candidate.record.payload.remote_click_ref === imported.provider_click_ref &&
+        decisionFor(decisions, candidate).ingestion_status === "accepted" &&
+        decisionFor(decisions, candidate).duplicate_resolution === "unique",
+      )
+      : [];
+    const importedEvidence = referencedClicks.length === 1
+      ? { evidence_refs: [evidence(referencedClicks[0].record.record_id), evidence(install.record_id)] }
+      : {};
     if (imported.provider_attributed) {
       if (imported.provider_attribution_strategy === "modeled") {
-        return result("non_organic", "imported", "provider_reported", "provider_modeled_conversion");
+        return result("non_organic", "imported", "provider_reported", "provider_modeled_conversion", importedEvidence);
       }
       if (!imported.provider_confirmed_at) {
-        return result("non_organic", "imported", "provider_reported", "provider_time_authority_unavailable");
+        return result("non_organic", "imported", "provider_reported", "provider_time_authority_unavailable", importedEvidence);
       }
-      return result("non_organic", "imported", "provider_reported", "provider_attributed");
+      return result("non_organic", "imported", "provider_reported", "provider_attributed", importedEvidence);
     }
     if (imported.provider_attribution_strategy === "organic") {
       return result("organic", "imported", "provider_reported", "provider_organic");
@@ -558,11 +570,11 @@ function makeAttribution(
       "meta_referrer_decrypted",
     );
   }
-  if (payload.meta_referrer_status === "decrypt_failed") {
+  if (["decrypt_failed", "auth_failed"].includes(payload.meta_referrer_status)) {
     return result(
       "unattributed",
       "meta_install_referrer",
-      payload.meta_referrer_context.attribution_model,
+      payload.meta_referrer_context?.attribution_model ?? "last_click",
       "meta_referrer_decrypt_failed",
     );
   }
@@ -573,6 +585,11 @@ function makeAttribution(
     return result("unattributed", "apple_adservices", "last_click", "adservices_token_expired");
   }
   if (payload.referrer_status === "none") return result("organic", "none", "none", "no_referrer");
+  if (payload.referrer_status === "third_party") {
+    return payload.third_party_referrer_classification === "play_organic_marker"
+      ? result("organic", "none", "none", "no_first_party_referrer")
+      : result("unattributed", "none", "none", "foreign_referrer_unresolved");
+  }
   if (payload.referrer_status === "unsupported") return result("unattributed", "none", "none", "install_referrer_unsupported");
   if (payload.referrer_status === "unavailable") return result("unattributed", "none", "none", "install_referrer_unavailable");
   const clicks = candidates.clickCandidates(server.tenant_id, server.app_id, payload.click_id).filter((candidate) =>
@@ -733,6 +750,7 @@ function metricRuns(
   all: Attempt[],
   decisions: Map<string, Any>,
   lifecycle: Map<string, LifecycleStatus>,
+  attributions: Attribution[],
 ): MetricRun[] {
   const evaluations = input.metric_evaluations ?? [];
   if (!evaluations.length) return [];
@@ -740,6 +758,12 @@ function metricRuns(
   const definitions = metricDefinitions(input);
   const definitionsByName = new Map(definitions.map((definition) => [definition.metric_name, definition]));
   const cost_records = costRecords(input);
+  const attributionStatuses = new Map(attributions
+    .filter((attribution) => attribution.subject_scope === "installation_level")
+    .map((attribution) => [
+      compositeKey([attribution.tenant_id, attribution.app_id, attribution.subject_ref]),
+      attribution.status,
+    ]));
   const output: MetricRun[] = [];
   for (const evaluation of evaluations) {
     const included = all.filter((attempt) =>
@@ -754,7 +778,8 @@ function metricRuns(
       attempt.server.policy_digest,
     ]);
     const visible = included.filter((attempt) => evaluation.privacy_state !== "after" || !lifecycle.has(attemptEvidenceKey(attempt)));
-    const installs = visible.filter((attempt) => attempt.record.event_name === "install" && matchesGrouping(attempt, evaluation.grouping));
+    const installs = visible.filter((attempt) => attempt.record.event_name === "install" &&
+      matchesGrouping(attempt, evaluation.grouping, attributionStatuses));
     const revenue = visible.filter((attempt) => attempt.record.event_name === "ad_revenue" &&
       attempt.record.payload.subject_scope === "installation_level");
     const activities = visible;
@@ -775,6 +800,7 @@ function metricRuns(
     const cohortScopes = new Set(installs.map((install) => compositeKey([install.server.tenant_id, install.server.app_id])));
     const groupedCosts = cost_records.filter((cost) => {
       const grouping = evaluation.grouping;
+      if (grouping?.attribution_status !== undefined && grouping.attribution_status !== "non_organic") return false;
       if (compareText(cost.as_of, evaluation.input_received_at_watermark) > 0) return false;
       if (cohortScopes.size && !cohortScopes.has(compositeKey([cost.tenant_id, cost.app_id]))) return false;
       if (!grouping) return true;
@@ -806,6 +832,12 @@ function metricRuns(
     for (const metricName of selectedNames) {
       const definition = definitionsByName.get(metricName);
       if (!definition) throw new Error(`unknown metric definition: ${metricName}`);
+      if (evaluation.grouping && definition.grouping_dimensions) {
+        const groupingDimensions = new Set<string>(definition.grouping_dimensions);
+        const unsupported = Object.keys(evaluation.grouping)
+          .filter((dimension) => !groupingDimensions.has(dimension));
+        if (unsupported.length) throw new Error(`unsupported grouping for ${metricName}: ${unsupported.join(",")}`);
+      }
       const revenueValue = revenue.reduce((sum, item) => {
         const installation = installs.find((candidate) =>
           candidate.server.tenant_id === item.server.tenant_id && candidate.server.app_id === item.server.app_id &&
@@ -955,7 +987,11 @@ function scaleMoney(payload: Any, targetScale: number): bigint {
   return roundHalfEven(BigInt(payload.amount_unscaled), 10n ** BigInt(-difference));
 }
 
-function matchesGrouping(attempt: Attempt, grouping: Any): boolean {
+function matchesGrouping(
+  attempt: Attempt,
+  grouping: Any,
+  attributionStatuses: Map<string, Attribution["status"]>,
+): boolean {
   if (!grouping) return true;
   const payload = attempt.record.payload;
   const campaign = payload.campaign_id ?? payload.import_context?.provider_campaign_ref;
@@ -966,6 +1002,14 @@ function matchesGrouping(attempt: Attempt, grouping: Any): boolean {
   if (grouping.country !== undefined && country !== grouping.country) return false;
   if (grouping.cohort_date !== undefined && attempt.record.event_name === "install" &&
       dateAt(attempt.record.occurred_at, "UTC", "occurred_at") !== grouping.cohort_date) return false;
+  if (grouping.attribution_status !== undefined && attempt.record.event_name === "install") {
+    const status = attributionStatuses.get(compositeKey([
+      attempt.server.tenant_id,
+      attempt.server.app_id,
+      attempt.record.payload.installation_id,
+    ]));
+    if (status !== grouping.attribution_status) return false;
+  }
   return true;
 }
 
@@ -999,6 +1043,8 @@ function reconciliationResults(input: Any, accepted: Attempt[]): Reconciliation[
     if (item.privacy_effect === "redaction") difference_reason_code = "redaction_caused_recalculation";
     else if (item.provider_modeled_without_candidate && !matched.length) difference_reason_code = "provider_modeled_conversion";
     else if (!externalKeys.size) difference_reason_code = "join_key_missing";
+    else if (!matched.length && (item.matching_keys ?? []).some((entry: Any) =>
+      ["provider_click_id", "provider_install_id"].includes(entry.type))) difference_reason_code = "candidate_missing";
     else if (!matched.length) difference_reason_code = "external_row_unmatched";
     else if (matched.length > 1 && item.matching_keys.some((entry: Any) => entry.cardinality === "one_to_one")) difference_reason_code = "join_key_ambiguous";
     else if (matched[0].excluded) difference_reason_code = "candidate_excluded";
@@ -1231,7 +1277,7 @@ export function evaluate(
     attributions,
     cost_records: costRecords(input),
     metric_definitions: metricDefinitions(input),
-    metric_runs: metricRuns(input, all, decisions, lifecycle),
+    metric_runs: metricRuns(input, all, decisions, lifecycle, attributions),
     fraud_decisions,
     rejections,
     reconciliation: reconciliationResults(input, acceptedUnique),

@@ -553,8 +553,8 @@ if (!summaryOnly) {
         }
       });
     }
-    it("contains 38 fixture directories", () => {
-      check(fixtureDirs.length === 38, `expected 38 fixture directories, found ${fixtureDirs.length}`);
+    it("contains 39 fixture directories", () => {
+      check(fixtureDirs.length === 39, `expected 39 fixture directories, found ${fixtureDirs.length}`);
     });
   });
 
@@ -615,12 +615,13 @@ const scenarios: Array<[string, () => void]> = [
   }],
   ["02 organic no referrer", () => {
     const attr = fixture("02-organic-no-referrer").output.attributions[0];
-    check(attr.status === "organic" && attr.reason_code === "no_referrer", "scenario 02");
+    check(attr.status === "organic" && attr.reason_code === "no_first_party_referrer", "scenario 02");
   }],
   ["03 unknown click", () => {
     const value = fixture("03-unknown-click").output;
     check(value.attributions[0].status === "unattributed" && value.attributions[0].reason_code === "unknown_click_id", "scenario 03 attribution");
-    check(value.reconciliation[0].difference_reason_code === "external_row_unmatched", "scenario 03 reconciliation");
+    const reasons = new Set(value.reconciliation.map((item: Any) => item.difference_reason_code));
+    check(reasons.has("candidate_missing") && reasons.has("external_row_unmatched"), "scenario 03 reconciliation");
   }],
   ["04 seven-day half-open boundary", () => {
     const attrs = Object.fromEntries(fixture("04-seven-day-boundaries").output.attributions.map((item: Any) => [item.attribution_id, item]));
@@ -781,7 +782,9 @@ const scenarios: Array<[string, () => void]> = [
   }],
   ["33 Stage B cohort dimensions cost and metrics", () => {
     const value = fixture("33-stage-b-cohort-metrics");
-    const metrics = Object.fromEntries(value.output.metric_runs.map((item: Any) => [item.metric_name, item]));
+    const metrics = Object.fromEntries(value.output.metric_runs
+      .filter((item: Any) => item.metric_run_id.startsWith("run-33:"))
+      .map((item: Any) => [item.metric_name, item]));
     check(metrics.d1_roas.value_unscaled === "500000" && metrics.d3_roas.value_unscaled === "1000000" && metrics.d7_roas.value_unscaled === "1500000", "scenario 33 ROAS");
     check(metrics.retention_d1.value_unscaled === "1000000" && metrics.retention_d7.value_unscaled === "1000000", "scenario 33 retention");
     check(metrics.cohort_ltv_d7_usd.value_unscaled === "150000000" && metrics.cohort_install_count.value_unscaled === "1", "scenario 33 LTV and count");
@@ -821,12 +824,17 @@ const scenarios: Array<[string, () => void]> = [
     check(value.reconciliation[0].difference_reason_code === "provider_modeled_conversion", "scenario 38 reason");
     check(value.reconciliation[0].difference_reason_version === "0.3.0" && value.reconciliation[0].candidates.length === 0, "scenario 38 classification");
   }],
+  ["39 foreign referrer remains unattributed", () => {
+    const value = fixture("39-foreign-referrer-unresolved").output;
+    check(value.attributions.length === 1, "scenario 39 attribution count");
+    check(value.attributions[0].status === "unattributed" && value.attributions[0].reason_code === "foreign_referrer_unresolved", "scenario 39 classification");
+  }],
 ];
 if (!summaryOnly) {
   describe("reviewed scenarios", () => {
     for (const [name, assertion] of scenarios) it(name, assertion);
-    it("contains 38 scenario assertions", () => {
-      check(scenarios.length === 38, "scenario assertion inventory must contain 38 entries");
+    it("contains 39 scenario assertions", () => {
+      check(scenarios.length === 39, "scenario assertion inventory must contain 39 entries");
     });
   });
 
@@ -868,7 +876,7 @@ if (!summaryOnly) {
           }
         }
       }
-      check(equal([...exercised].sort(), ["ad_revenue", "click", "install", "session_start"]), "import context event coverage");
+      check(equal([...exercised].sort(), ["ad_revenue", "install", "session_start"]), "import context event coverage");
     });
     it("derives reconciliation without fixture-authored reconciliation inputs", () => {
       const value = fixture("31-imported-reconciliation-derived");
@@ -913,7 +921,6 @@ if (!summaryOnly) {
       );
 
       for (const [fixtureName, recordId] of [
-        ["28-imported-provider-attributed", "import-click-28"],
         ["28-imported-provider-attributed", "import-install-28"],
         ["29-imported-provider-organic", "import-session-29"],
         ["30-imported-time-authority-unavailable", "import-revenue-30"],
@@ -1048,7 +1055,7 @@ if (!summaryOnly) {
       const typescript = evaluate(mutated);
       const [python] = pythonOutputs([mutated]);
       check(equal(typescript, python), "Stage B direct/imported country precedence mismatch");
-      check(typescript.metric_runs.find((run: Any) => run.metric_name === "d1_roas")?.value_unscaled === "0", "Stage B direct country did not exclude conflicting imported evidence");
+      check(typescript.metric_runs.find((run: Any) => run.metric_run_id === "run-33:d1_roas")?.value_unscaled === "0", "Stage B direct country did not exclude conflicting imported evidence");
     });
     it("rounds each revenue event half-even before exact summation", () => {
       const value = fixture("33-stage-b-cohort-metrics");
@@ -1142,6 +1149,51 @@ if (!summaryOnly) {
       unknownConversion.adservices_context.conversion_type = "Unknown";
       check(!installValidator({ event_name: "install", ...unknownConversion }), "Stage C accepted an unknown AdServices conversion type");
       check(value.output.attributions.filter((item: Any) => item.subject_scope === "aggregate").every((item: Any) => item.subject_ref.startsWith(`aggregate:${item.method}:`)), "Stage C aggregate subject namespace");
+    });
+  });
+
+  describe("WO-5.5 Stage 1 attribution vocabulary", () => {
+    it("distinguishes Play-organic third-party evidence, foreign referrers, and unknown first-party clicks", () => {
+      const organic = fixture("02-organic-no-referrer").output.attributions[0];
+      const foreign = fixture("39-foreign-referrer-unresolved").output.attributions[0];
+      const unknown = fixture("03-unknown-click").output.attributions[0];
+      check(organic.status === "organic" && organic.reason_code === "no_first_party_referrer", "Play-organic third-party classification");
+      check(foreign.status === "unattributed" && foreign.reason_code === "foreign_referrer_unresolved", "foreign referrer classification");
+      check(unknown.status === "unattributed" && unknown.reason_code === "unknown_click_id", "unknown first-party click classification");
+    });
+    it("exercises every Meta coverage state and Install Referrer client response", () => {
+      const records = fixture("34-stage-c-apple-meta-attribution").input.records.filter((record: Any) => record.event_name === "install");
+      const metaStates = [...new Set(records.map((record: Any) => record.payload.meta_referrer_status).filter(Boolean))].sort();
+      const clientResponses = [...new Set(records.map((record: Any) => record.payload.referrer_client_response).filter(Boolean))].sort();
+      check(equal(metaStates, ["app_version_unsupported", "auth_failed", "decrypt_failed", "decrypted", "no_campaign_data", "provider_unavailable"]), "Meta status coverage");
+      check(equal(clientResponses, ["developer_error", "feature_not_supported", "ok", "permission_error", "service_disconnected", "service_unavailable"]), "Install Referrer response coverage");
+    });
+    it("gives decrypted Meta evidence precedence over a resolvable first-party click", () => {
+      const value = fixture("34-stage-c-apple-meta-attribution");
+      check(value.input.records.some((record: Any) => record.record_id === "meta-first-party-click-34"), "first-party comparison click missing");
+      const attribution = value.output.attributions.find((item: Any) => item.attribution_id === "attr:meta-click-install-34");
+      check(attribution?.method === "meta_install_referrer" && attribution.reason_code === "meta_referrer_decrypted", "Meta precedence");
+    });
+    it("records install origin and SAN strategy without overloading producer identity", () => {
+      const origin = fixture("34-stage-c-apple-meta-attribution").input.records.find((record: Any) => record.record_id === "meta-provider-unavailable-install-34").payload;
+      const imported = fixture("28-imported-provider-attributed").input.records.find((record: Any) => record.record_id === "import-install-28");
+      check(origin.install_origin === "identifier_reset", "identifier reset origin coverage");
+      check(imported.producer === "import:synthetic-provider" && imported.payload.import_context.provider_attribution_strategy === "self_attributed_network", "SAN strategy coverage");
+    });
+    it("resolves imported click evidence from a first-party redirector record", () => {
+      const attribution = fixture("28-imported-provider-attributed").output.attributions[0];
+      check(attribution.evidence_refs.map((entry: Any) => entry.ref).join(",") === "import-click-28,import-install-28", "imported click evidence");
+    });
+    it("derives candidate-missing and external-row-unmatched as distinct reasons", () => {
+      const reasons = new Set(fixture("03-unknown-click").output.reconciliation.map((item: Any) => item.difference_reason_code));
+      check(reasons.has("candidate_missing") && reasons.has("external_row_unmatched"), "H-11 reason distinction");
+    });
+    it("keeps organic and non-organic ROAS in separate attribution-status rows", () => {
+      const runs = fixture("33-stage-b-cohort-metrics").output.metric_runs.filter((run: Any) => run.metric_name === "d1_roas");
+      const organic = runs.find((run: Any) => run.grouping.dimensions.attribution_status === "organic");
+      const paid = runs.find((run: Any) => run.grouping.dimensions.attribution_status === "non_organic");
+      check(organic?.value_state === "undefined" && organic.undefined_reason === "no_attributed_cost", "organic ROAS row");
+      check(paid?.value_unscaled === "500000" && (paid.value_state ?? "present") === "present", "non-organic ROAS row");
     });
   });
 
@@ -1280,7 +1332,7 @@ const acceptance: Array<[string, () => void]> = [
     check(corrections.some((item: Any) => item.correction_type === "retraction"), "AC15 retraction");
     check(fixture("17-redaction-recalculation").output.metric_runs.some((item: Any) => item.supersedes_metric_run_id), "AC15 redaction");
   }],
-  ["AC16 clock referrer prefetch and withdrawal fixtures pass", () => check(scenarios.length === 38 && fixture("11-clock-skew").output.deliveries.some((item: Any) => item.clock_skew_suspected) && fixture("13-referrer-unsupported").output.attributions.length === 2 && fixture("19-bot-prefetch").output.fraud_decisions.length === 1 && fixture("20-timestamp-invalid").output.rejections.some((item: Any) => item.reason_code === "timestamp_invalid"), "AC16")],
+  ["AC16 clock referrer prefetch and withdrawal fixtures pass", () => check(scenarios.length === 39 && fixture("11-clock-skew").output.deliveries.some((item: Any) => item.clock_skew_suspected) && fixture("13-referrer-unsupported").output.attributions.length === 2 && fixture("19-bot-prefetch").output.fraud_decisions.length === 1 && fixture("20-timestamp-invalid").output.rejections.some((item: Any) => item.reason_code === "timestamp_invalid"), "AC16")],
   ["AC17 server-recognized withdrawal rejects and redacts payload", () => {
     for (const name of ["14-withdrawal-after-occurrence", "15-event-after-withdrawal"]) {
       const value = fixture(name).output;
@@ -1296,7 +1348,7 @@ const acceptance: Array<[string, () => void]> = [
     check(base.output.reconciliation[0].difference_reason_code === "matched", "AC19 matched");
     const mutated = structuredClone(base.input);
     mutated.reconciliation_inputs[0].matching_keys[0].value = "not-present";
-    check(evaluate(mutated).reconciliation[0].difference_reason_code === "external_row_unmatched", "AC19 derived mutation");
+    check(evaluate(mutated).reconciliation[0].difference_reason_code === "candidate_missing", "AC19 derived mutation");
     const normalized = structuredClone(base.input);
     const composite = {
       type: "tenant_app_composite", value: "TENANT-A|APP-A", scope: "tenant_app",
@@ -1320,7 +1372,7 @@ const acceptance: Array<[string, () => void]> = [
     for (const forbidden of ["threshold", "model_weight", "watchlist", "ip_address", "user_agent", "response_timing"]) check(!schemaText.includes(forbidden), `AC20 ${forbidden}`);
     check(specText.includes("remain private"), "AC20 private boundary");
   }],
-  ["AC21 one command validates every schema registry fixture and golden", () => check(schemaPaths.length === 26 && Object.keys(registries).length === 8 && fixtureDirs.length === 38 && outputArtifactCount === 38 * 13, "AC21")],
+  ["AC21 one command validates every schema registry fixture and golden", () => check(schemaPaths.length === 26 && Object.keys(registries).length === 8 && fixtureDirs.length === 39 && outputArtifactCount === 39 * 13, "AC21")],
   ["AC22 repeated and independent evaluators produce identical JCS", () => {
     for (const { output, python } of results.values()) check(equal(output, python), "AC22 evaluator mismatch");
     const vector = { numbers: [333333333.33333329, 1e30, 4.50, 2e-3, 1e-27, -0], string: "€$\u000f\nA'B\"\\\"/" };
@@ -1408,7 +1460,7 @@ if (!summaryOnly) {
   describe("semantic mutations", () => {
     it("enforces present and undefined metric value shapes", () => {
       const validator = validatorFor(outputSchemaIds.metric_runs);
-      const present = structuredClone(fixture("33-stage-b-cohort-metrics").output.metric_runs[0]);
+      const present = structuredClone(fixture("33-stage-b-cohort-metrics").output.metric_runs.find((run: Any) => run.metric_run_id === "run-33:d1_roas"));
       check(validator(present), "legacy present metric run is invalid");
       check(validator({ ...present, value_state: "present" }), "explicit present metric run is invalid");
       const presentWithoutValue = { ...present, value_state: "present" };

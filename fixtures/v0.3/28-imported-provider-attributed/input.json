@@ -26,13 +26,13 @@
       "delivery_id": "delivery:import-click-28",
       "tenant_id": "tenant-a",
       "app_id": "app-a",
-      "producer": "import:synthetic-provider",
+      "producer": "redirector",
       "producer_version": "fixture-v0.2",
       "event_id": "event:import-click-28",
       "event_name": "click",
       "schema_version": "0.3.0",
       "occurred_at": "2026-08-18T00:00:00.000Z",
-      "occurred_at_source": "import",
+      "occurred_at_source": "server",
       "received_at": "2026-08-18T01:00:00.000Z",
       "processing_purpose_id": "analytics",
       "processing_sequence": 1,
@@ -40,20 +40,9 @@
         "click_id": "synthetic_click_ref_0028",
         "tracking_link_id": "tracking-28",
         "campaign_id": "campaign-28",
-        "redirector_time_status": "missing",
-        "import_context": {
-          "provider": "synthetic-provider",
-          "provider_attributed": true,
-          "provider_attribution_strategy": "click_through",
-          "provider_click_ref": "provider-click-28",
-          "provider_campaign_ref": "provider-campaign-28",
-          "provider_adgroup_ref": "provider-adgroup-28",
-          "provider_creative_ref": "provider-creative-28",
-          "provider_network": "synthetic-network",
-          "provider_site_ref": "synthetic-site-28",
-          "provider_country": "US",
-          "provider_confirmed_at": "2026-08-18T00:10:00.000Z"
-        }
+        "network": "synthetic-network",
+        "remote_click_ref": "provider-click-28",
+        "redirector_time_status": "missing"
       }
     },
     {
@@ -79,7 +68,7 @@
         "import_context": {
           "provider": "synthetic-provider",
           "provider_attributed": true,
-          "provider_attribution_strategy": "click_through",
+          "provider_attribution_strategy": "self_attributed_network",
           "provider_install_ref": "provider-install-28",
           "provider_click_ref": "provider-click-28",
           "provider_campaign_ref": "provider-campaign-28",

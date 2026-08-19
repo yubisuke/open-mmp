@@ -38,6 +38,26 @@
       "candidates": [],
       "freshness": "current",
       "privacy_effect": "none"
+    },
+    {
+      "reconciliation_id": "reconciliation:03:external-row",
+      "tenant_id": "tenant-a",
+      "app_id": "app-a",
+      "input_snapshot_id": "internal-snapshot:03:external-row",
+      "external_snapshot_id": "external-snapshot:03:external-row",
+      "matching_keys": [
+        {
+          "type": "external_row_id",
+          "value": "synthetic-external-row-03",
+          "scope": "tenant_app",
+          "normalization": "identity",
+          "cardinality": "one_to_one",
+          "protected": true
+        }
+      ],
+      "candidates": [],
+      "freshness": "current",
+      "privacy_effect": "none"
     }
   ],
   "privacy_requests": [],

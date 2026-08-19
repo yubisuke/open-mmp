@@ -25,6 +25,18 @@
   },
   {
     "contract_version": "0.3.0",
+    "logical_event_id": "logical:tenant-a:app-a:import:synthetic-provider:event:organic-install-33",
+    "record_id": "organic-install-33",
+    "tenant_id": "tenant-a",
+    "app_id": "app-a",
+    "producer": "import:synthetic-provider",
+    "event_id": "event:organic-install-33",
+    "event_name": "install",
+    "record_lifecycle": "active",
+    "timeliness": "on_time"
+  },
+  {
+    "contract_version": "0.3.0",
     "logical_event_id": "logical:tenant-a:app-a:postback:synthetic-view:event:ad-view-33",
     "record_id": "ad-view-33",
     "tenant_id": "tenant-a",

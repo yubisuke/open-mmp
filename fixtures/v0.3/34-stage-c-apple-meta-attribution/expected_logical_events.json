@@ -61,12 +61,36 @@
   },
   {
     "contract_version": "0.3.0",
+    "logical_event_id": "logical:tenant-a:app-a:redirector:event:meta-first-party-click-34",
+    "record_id": "meta-first-party-click-34",
+    "tenant_id": "tenant-a",
+    "app_id": "app-a",
+    "producer": "redirector",
+    "event_id": "event:meta-first-party-click-34",
+    "event_name": "click",
+    "record_lifecycle": "active",
+    "timeliness": "on_time"
+  },
+  {
+    "contract_version": "0.3.0",
     "logical_event_id": "logical:tenant-a:app-a:sdk-android:event:meta-absent-install-34",
     "record_id": "meta-absent-install-34",
     "tenant_id": "tenant-a",
     "app_id": "app-a",
     "producer": "sdk-android",
     "event_id": "event:meta-absent-install-34",
+    "event_name": "install",
+    "record_lifecycle": "active",
+    "timeliness": "on_time"
+  },
+  {
+    "contract_version": "0.3.0",
+    "logical_event_id": "logical:tenant-a:app-a:sdk-android:event:meta-auth-failed-install-34",
+    "record_id": "meta-auth-failed-install-34",
+    "tenant_id": "tenant-a",
+    "app_id": "app-a",
+    "producer": "sdk-android",
+    "event_id": "event:meta-auth-failed-install-34",
     "event_name": "install",
     "record_lifecycle": "active",
     "timeliness": "on_time"
@@ -91,6 +115,30 @@
     "app_id": "app-a",
     "producer": "sdk-android",
     "event_id": "event:meta-failed-install-34",
+    "event_name": "install",
+    "record_lifecycle": "active",
+    "timeliness": "on_time"
+  },
+  {
+    "contract_version": "0.3.0",
+    "logical_event_id": "logical:tenant-a:app-a:sdk-android:event:meta-provider-unavailable-install-34",
+    "record_id": "meta-provider-unavailable-install-34",
+    "tenant_id": "tenant-a",
+    "app_id": "app-a",
+    "producer": "sdk-android",
+    "event_id": "event:meta-provider-unavailable-install-34",
+    "event_name": "install",
+    "record_lifecycle": "active",
+    "timeliness": "on_time"
+  },
+  {
+    "contract_version": "0.3.0",
+    "logical_event_id": "logical:tenant-a:app-a:sdk-android:event:meta-version-unsupported-install-34",
+    "record_id": "meta-version-unsupported-install-34",
+    "tenant_id": "tenant-a",
+    "app_id": "app-a",
+    "producer": "sdk-android",
+    "event_id": "event:meta-version-unsupported-install-34",
     "event_name": "install",
     "record_lifecycle": "active",
     "timeliness": "on_time"

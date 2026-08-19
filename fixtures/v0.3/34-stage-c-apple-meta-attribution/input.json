@@ -39,14 +39,26 @@
   },
   "records": [
     {
+      "contract_version": "0.3.0", "record_id": "meta-first-party-click-34", "delivery_id": "delivery:meta-first-party-click-34",
+      "tenant_id": "tenant-a", "app_id": "app-a", "producer": "redirector", "producer_version": "fixture-v0.2",
+      "event_id": "event:meta-first-party-click-34", "event_name": "click", "schema_version": "0.3.0",
+      "occurred_at": "2026-08-18T00:30:00.000Z", "occurred_at_source": "server", "received_at": "2026-08-18T00:30:01.000Z",
+      "processing_purpose_id": "attribution", "processing_sequence": 0,
+      "payload": {
+        "click_id": "synthetic_click_ref_0034", "tracking_link_id": "tracking-34", "campaign_id": "campaign-34",
+        "remote_click_ref": "synthetic-meta-dedup-34", "redirector_click_at": "2026-08-18T00:30:00.000Z", "redirector_time_status": "available"
+      }
+    },
+    {
       "contract_version": "0.3.0", "record_id": "meta-click-install-34", "delivery_id": "delivery:meta-click-install-34",
       "tenant_id": "tenant-a", "app_id": "app-a", "producer": "sdk-android", "producer_version": "fixture-v0.2",
       "event_id": "event:meta-click-install-34", "event_name": "install", "schema_version": "0.3.0",
       "occurred_at": "2026-08-18T01:00:00.000Z", "occurred_at_source": "device", "received_at": "2026-08-18T01:00:01.000Z",
       "processing_purpose_id": "attribution", "processing_sequence": 1,
       "payload": {
-        "installation_id": "installation:meta-click-34", "install_type": "first_install", "referrer_status": "unavailable",
-        "meta_referrer_status": "decrypted", "meta_referrer_context": { "attribution_model": "last_click" }
+        "installation_id": "installation:meta-click-34", "install_type": "first_install", "referrer_status": "available",
+        "click_id": "synthetic_click_ref_0034", "install_begin_at_server_status": "available", "install_begin_at_server": "2026-08-18T01:00:00.000Z",
+        "referrer_client_response": "ok", "meta_referrer_status": "decrypted", "meta_referrer_context": { "attribution_model": "last_click" }
       }
     },
     {
@@ -57,7 +69,7 @@
       "processing_purpose_id": "analytics", "processing_sequence": 2,
       "payload": {
         "installation_id": "installation:meta-view-34", "install_type": "first_install", "referrer_status": "unavailable",
-        "meta_referrer_status": "decrypted", "meta_referrer_context": { "attribution_model": "view_through" }
+        "referrer_client_response": "service_unavailable", "meta_referrer_status": "decrypted", "meta_referrer_context": { "attribution_model": "view_through" }
       }
     },
     {
@@ -68,7 +80,7 @@
       "processing_purpose_id": "analytics", "processing_sequence": 3,
       "payload": {
         "installation_id": "installation:meta-failed-34", "install_type": "first_install", "referrer_status": "unavailable",
-        "meta_referrer_status": "decrypt_failed", "meta_referrer_context": { "attribution_model": "last_click" }
+        "referrer_client_response": "feature_not_supported", "meta_referrer_status": "decrypt_failed"
       }
     },
     {
@@ -79,7 +91,40 @@
       "processing_purpose_id": "analytics", "processing_sequence": 4,
       "payload": {
         "installation_id": "installation:meta-absent-34", "install_type": "first_install", "referrer_status": "none",
-        "meta_referrer_status": "absent"
+        "referrer_client_response": "developer_error", "meta_referrer_status": "no_campaign_data"
+      }
+    },
+    {
+      "contract_version": "0.3.0", "record_id": "meta-provider-unavailable-install-34", "delivery_id": "delivery:meta-provider-unavailable-install-34",
+      "tenant_id": "tenant-a", "app_id": "app-a", "producer": "sdk-android", "producer_version": "fixture-v0.2",
+      "event_id": "event:meta-provider-unavailable-install-34", "event_name": "install", "schema_version": "0.3.0",
+      "occurred_at": "2026-08-18T04:10:00.000Z", "occurred_at_source": "device", "received_at": "2026-08-18T04:10:01.000Z",
+      "processing_purpose_id": "analytics", "processing_sequence": 12,
+      "payload": {
+        "installation_id": "installation:meta-provider-unavailable-34", "install_type": "first_install", "install_origin": "identifier_reset",
+        "referrer_status": "none", "referrer_client_response": "service_disconnected", "meta_referrer_status": "provider_unavailable"
+      }
+    },
+    {
+      "contract_version": "0.3.0", "record_id": "meta-version-unsupported-install-34", "delivery_id": "delivery:meta-version-unsupported-install-34",
+      "tenant_id": "tenant-a", "app_id": "app-a", "producer": "sdk-android", "producer_version": "fixture-v0.2",
+      "event_id": "event:meta-version-unsupported-install-34", "event_name": "install", "schema_version": "0.3.0",
+      "occurred_at": "2026-08-18T04:20:00.000Z", "occurred_at_source": "device", "received_at": "2026-08-18T04:20:01.000Z",
+      "processing_purpose_id": "analytics", "processing_sequence": 13,
+      "payload": {
+        "installation_id": "installation:meta-version-unsupported-34", "install_type": "first_install", "referrer_status": "unavailable",
+        "referrer_client_response": "permission_error", "meta_referrer_status": "app_version_unsupported"
+      }
+    },
+    {
+      "contract_version": "0.3.0", "record_id": "meta-auth-failed-install-34", "delivery_id": "delivery:meta-auth-failed-install-34",
+      "tenant_id": "tenant-a", "app_id": "app-a", "producer": "sdk-android", "producer_version": "fixture-v0.2",
+      "event_id": "event:meta-auth-failed-install-34", "event_name": "install", "schema_version": "0.3.0",
+      "occurred_at": "2026-08-18T04:30:00.000Z", "occurred_at_source": "device", "received_at": "2026-08-18T04:30:01.000Z",
+      "processing_purpose_id": "analytics", "processing_sequence": 14,
+      "payload": {
+        "installation_id": "installation:meta-auth-failed-34", "install_type": "first_install", "referrer_status": "unavailable",
+        "meta_referrer_status": "auth_failed"
       }
     },
     {

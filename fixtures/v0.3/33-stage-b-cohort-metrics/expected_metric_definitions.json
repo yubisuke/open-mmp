@@ -115,6 +115,13 @@
       "denominator": "cost",
       "cost_basis": "cohort_acquisition_day_current_snapshot"
     },
+    "grouping_dimensions": [
+      "campaign_id",
+      "network",
+      "country",
+      "cohort_date",
+      "attribution_status"
+    ],
     "rule_bundle_id": "metric-stage-b",
     "rule_bundle_version": "0.3.0",
     "rule_bundle_hash": "2222222222222222222222222222222222222222222222222222222222222222"

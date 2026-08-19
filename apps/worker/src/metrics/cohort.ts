@@ -126,6 +126,7 @@ async function currentCosts(
   watermark: string,
   grouping: Any,
 ): Promise<CurrentCost[]> {
+  if (grouping?.attribution_status !== undefined && grouping.attribution_status !== "non_organic") return [];
   const result = await client.query<CurrentCost>(
     `SELECT tenant_id, app_id, cost_record_id, as_of,
             report_snapshot_digest, cost_key_digest AS dimension_digest
@@ -193,6 +194,16 @@ async function metricValue(
            ON raw.record_id=logical.record_id
           AND raw.tenant_id=logical.tenant_id
           AND raw.app_id=logical.app_id
+         LEFT JOIN LATERAL (
+           SELECT candidate.status
+           FROM ledger.attribution_results AS candidate
+           WHERE candidate.tenant_id=install.tenant_id
+             AND candidate.app_id=install.app_id
+             AND candidate.subject_scope='installation_level'
+             AND candidate.subject_ref=install.installation_id
+           ORDER BY candidate.decided_at DESC, candidate.attribution_id DESC
+           LIMIT 1
+         ) AS attribution ON true
          WHERE install.tenant_id=$1 AND install.app_id=$2 AND install.occurred_at IS NOT NULL
            AND raw.received_at <= $3
            AND ($15='before' OR raw.payload_lifecycle_status='available')
@@ -200,6 +211,7 @@ async function metricValue(
            AND ($5::text IS NULL OR install.network=$5)
            AND ($6::text IS NULL OR install.country=$6)
            AND ($7::text IS NULL OR timezone($8, install.occurred_at_ts)::date::text=$7)
+           AND ($16::text IS NULL OR attribution.status=$16)
        ),
        revenue_candidates AS (
          SELECT revenue.*, cohort.installed_at, rate.rate_unscaled, rate.rate_scale
@@ -306,6 +318,7 @@ async function metricValue(
       fxPolicy.target_scale,
       definition.ratio_scale ?? 0,
       privacyState,
+      grouping?.attribution_status ?? null,
     ],
   );
   const row = result.rows[0];

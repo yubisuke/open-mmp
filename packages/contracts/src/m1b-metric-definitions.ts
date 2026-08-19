@@ -8,17 +8,19 @@ const TARGET_CURRENCY = "USD";
 const TARGET_SCALE = 6;
 const COHORT_DAYS = [0, 1, 3, 7] as const;
 
-export const M1B_COHORT_KEY = ["app_id", "campaign_id", "country", "cohort_date"] as const;
+export const M1B_COHORT_KEY = ["app_id", "campaign_id", "country", "cohort_date", "attribution_status"] as const;
+const METRIC_GROUPING_DIMENSIONS = ["campaign_id", "network", "country", "cohort_date", "attribution_status"] as const;
 export const M1B_DEFAULT_ACTIVITY_EVENTS = ["session_start"] as const;
 
 function ruleBundle(): Pick<
   OpenMMPMetricDefinitionV03,
-  "rule_bundle_id" | "rule_bundle_version" | "rule_bundle_hash"
+  "rule_bundle_id" | "rule_bundle_version" | "rule_bundle_hash" | "grouping_dimensions"
 > {
   return {
     rule_bundle_id: RULE_BUNDLE_ID,
     rule_bundle_version: CONTRACT_VERSION,
     rule_bundle_hash: RULE_BUNDLE_HASH,
+    grouping_dimensions: [...METRIC_GROUPING_DIMENSIONS],
   };
 }
 

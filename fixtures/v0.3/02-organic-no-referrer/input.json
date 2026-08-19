@@ -53,8 +53,8 @@
       "payload": {
         "installation_id": "installation:install-2",
         "install_type": "first_install",
-        "referrer_status": "none",
-        "click_id": "click-a_0000000000000000",
+        "referrer_status": "third_party",
+        "third_party_referrer_classification": "play_organic_marker",
         "install_begin_at_server_status": "missing"
       }
     }
