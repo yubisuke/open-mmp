@@ -326,4 +326,30 @@ describe("M1b SQL metric parity", { concurrency: false }, () => {
       assert.equal(sha256(stored), sha256(prior), "redaction recalculation must not rewrite the prior run");
     }
   });
+
+  it("B8 persists undefined ROAS with an explicit reason", async () => {
+    const undefinedFixture = "37-undefined-organic-roas";
+    const undefinedInput: Any = JSON.parse(readFileSync(
+      join(process.cwd(), "fixtures", "v0.2", undefinedFixture, "input.json"),
+      "utf8",
+    ));
+    await ingestFixture(fixtureName, undefinedInput, appPool, seedPool);
+    const expected = evaluate(undefinedInput).metric_runs;
+    const actual = await computeSqlMetricRuns(appPool, undefinedInput, true);
+    assert.equal(jcs(actual), jcs(expected));
+    assert.equal(actual[0].value_state, "undefined");
+    assert.equal(actual[0].undefined_reason, "no_attributed_cost");
+    assert.equal("value_unscaled" in actual[0], false);
+    const stored = await withTenant(appPool, undefinedInput.server_context.tenant_id, async (client) =>
+      (await client.query<{ value_state: string; undefined_reason: string; value_unscaled: string | null }>(
+        `SELECT value_state, undefined_reason, value_unscaled
+         FROM ledger.metric_runs WHERE metric_run_id=$1`,
+        [actual[0].metric_run_id],
+      )).rows[0]);
+    assert.deepEqual(stored, {
+      value_state: "undefined",
+      undefined_reason: "no_attributed_cost",
+      value_unscaled: null,
+    });
+  });
 });

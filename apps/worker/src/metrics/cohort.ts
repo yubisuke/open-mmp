@@ -163,7 +163,10 @@ async function metricValue(
   definition: Any,
   fxPolicy: Any,
   privacyState: "before" | "after",
-): Promise<string> {
+): Promise<{ value_state: "present"; value_unscaled: string } | {
+  value_state: "undefined";
+  undefined_reason: "no_attributed_cost" | "empty_cohort";
+}> {
   const calculation = definition.definition.calculation;
   const activityEvents = definition.activity_events ?? ["session_start"];
   if (calculation === "active_installations_over_cohort" &&
@@ -310,8 +313,11 @@ async function metricValue(
   if (row.mismatched_cost_currency_count !== "0") {
     throw new Error(`cost currency mismatch for ${definition.metric_name}`);
   }
-  if (row.value_unscaled === null) throw new Error(`undefined metric value: ${definition.metric_name}`);
-  return row.value_unscaled;
+  if (row.value_unscaled !== null) return { value_state: "present", value_unscaled: row.value_unscaled };
+  return {
+    value_state: "undefined",
+    undefined_reason: calculation === "revenue_over_cost" ? "no_attributed_cost" : "empty_cohort",
+  };
 }
 
 async function persistMetricRun(client: Queryable, scope: Scope, artifact: Any): Promise<void> {
@@ -324,10 +330,11 @@ async function persistMetricRun(client: Queryable, scope: Scope, artifact: Any):
       rule_bundle_id, rule_bundle_version, rule_bundle_hash, fx_rate_unscaled,
       fx_rate_scale, fx_rate_source, fx_rate_as_of, fx_rate_snapshot_id,
       fx_policy_version, rounding_mode, reproducibility_status, value_type,
-      value_unscaled, amount_scale, currency, supersedes_metric_run_id, artifact
+      value_state, undefined_reason, value_unscaled, amount_scale, currency,
+      supersedes_metric_run_id, artifact
     ) VALUES (
       $1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,
-      $19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30::jsonb
+      $19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32::jsonb
     ) ON CONFLICT (metric_run_id) DO NOTHING
     RETURNING metric_run_id`,
     [
@@ -341,7 +348,8 @@ async function persistMetricRun(client: Queryable, scope: Scope, artifact: Any):
       artifact.fx_rate_source ?? null, artifact.fx_rate_as_of ?? null,
       artifact.fx_rate_snapshot_id ?? null, artifact.fx_policy_version ?? null,
       artifact.rounding_mode, artifact.reproducibility_status, artifact.value_type,
-      artifact.value_unscaled, artifact.amount_scale ?? null, artifact.currency ?? null,
+      artifact.value_state ?? "present", artifact.undefined_reason ?? null,
+      artifact.value_unscaled ?? null, artifact.amount_scale ?? null, artifact.currency ?? null,
       artifact.supersedes_metric_run_id ?? null, JSON.stringify(artifact),
     ],
   );
@@ -424,7 +432,7 @@ export async function computeSqlMetricRunsWithClient(
         fxPolicy,
         evaluation.privacy_state,
       );
-      const moneyFields = definition.value_type === "money" ? {
+      const moneyFields = definition.value_type === "money" && value.value_state === "present" ? {
         fx_rate_unscaled: fxRate.rate_unscaled,
         fx_rate_scale: fxRate.rate_scale,
         fx_rate_source: fxRate.source,
@@ -450,7 +458,9 @@ export async function computeSqlMetricRunsWithClient(
         rounding_mode: fxPolicy.rounding_mode,
         reproducibility_status: reproducibilityStatus,
         value_type: definition.value_type,
-        value_unscaled: value,
+        ...(value.value_state === "undefined"
+          ? { value_state: "undefined", undefined_reason: value.undefined_reason }
+          : { value_unscaled: value.value_unscaled }),
         ...moneyFields,
         ...(definition.value_type === "ratio" ? { ratio_scale: definition.ratio_scale } : {}),
         ...(grouping ? {

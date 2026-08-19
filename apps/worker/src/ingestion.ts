@@ -456,10 +456,11 @@ async function persistMetric(appPool: Pool, artifact: Any, scope: { tenant_id: s
       rule_bundle_id, rule_bundle_version, rule_bundle_hash, fx_rate_unscaled,
       fx_rate_scale, fx_rate_source, fx_rate_as_of, fx_rate_snapshot_id,
       fx_policy_version, rounding_mode, reproducibility_status, value_type,
-      value_unscaled, amount_scale, currency, supersedes_metric_run_id, artifact
+      value_state, undefined_reason, value_unscaled, amount_scale, currency,
+      supersedes_metric_run_id, artifact
     ) VALUES (
       $1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,
-      $19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30::jsonb
+      $19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32::jsonb
     ) ON CONFLICT (metric_run_id) DO NOTHING RETURNING artifact`,
     [
       artifact.metric_run_id, scope.tenant_id, scope.app_id, artifact.metric_name,
@@ -470,11 +471,33 @@ async function persistMetric(appPool: Pool, artifact: Any, scope: { tenant_id: s
       artifact.fx_rate_unscaled ?? null, artifact.fx_rate_scale ?? null, artifact.fx_rate_source ?? null,
       artifact.fx_rate_as_of ?? null, artifact.fx_rate_snapshot_id ?? null,
       artifact.fx_policy_version ?? null, artifact.rounding_mode, artifact.reproducibility_status,
-      artifact.value_type, artifact.value_unscaled, artifact.amount_scale ?? null,
+      artifact.value_type, artifact.value_state ?? "present", artifact.undefined_reason ?? null,
+      artifact.value_unscaled ?? null, artifact.amount_scale ?? null,
       artifact.currency ?? null, artifact.supersedes_metric_run_id ?? null, JSON.stringify(artifact),
     ],
     "SELECT artifact FROM ledger.metric_runs WHERE metric_run_id = $1",
     [artifact.metric_run_id],
+  ));
+}
+
+async function persistReconciliation(appPool: Pool, artifact: Any): Promise<Any> {
+  return withTenant(appPool, artifact.tenant_id, (client) => storedArtifact(
+    client,
+    `INSERT INTO ledger.reconciliation_results (
+      reconciliation_id, tenant_id, app_id, input_snapshot_id, external_snapshot_id,
+      difference_reason_code, difference_reason_version, freshness,
+      supersedes_reconciliation_id, artifact
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb)
+    ON CONFLICT (reconciliation_id) DO NOTHING RETURNING artifact`,
+    [
+      artifact.reconciliation_id, artifact.tenant_id, artifact.app_id,
+      artifact.input_snapshot_id, artifact.external_snapshot_id,
+      artifact.difference_reason_code, artifact.difference_reason_version,
+      artifact.freshness, artifact.supersedes_reconciliation_id ?? null,
+      JSON.stringify(artifact),
+    ],
+    "SELECT artifact FROM ledger.reconciliation_results WHERE reconciliation_id=$1",
+    [artifact.reconciliation_id],
   ));
 }
 
@@ -604,6 +627,9 @@ export async function ingestFixture(
   }
   await persistFixtureCosts(appPool, input);
   await persistLifecycle(appPool, input);
+  for (const reconciliation of output.reconciliation ?? []) {
+    await persistReconciliation(appPool, reconciliation);
+  }
 
   let count = 0;
   for (const kind of parityKinds) {
@@ -639,6 +665,7 @@ export type RuntimeIngestionResult = {
   logical_events: Any[];
   rejections: Any[];
   attributions: Any[];
+  reconciliation: Any[];
 };
 
 function runtimeInput(attempts: readonly CandidateAttempt[]): Any {
@@ -673,7 +700,7 @@ export async function ingestRuntimeBatch(
   historicalAttempts: readonly CandidateAttempt[] = [],
 ): Promise<RuntimeIngestionResult> {
   if (attempts.length === 0) {
-    return { raw_records: [], deliveries: [], logical_events: [], rejections: [], attributions: [] };
+    return { raw_records: [], deliveries: [], logical_events: [], rejections: [], attributions: [], reconciliation: [] };
   }
   const allAttempts = [...historicalAttempts, ...attempts].sort(compareCandidateAttempts);
   const input = runtimeInput(allAttempts);
@@ -692,6 +719,8 @@ export async function ingestRuntimeBatch(
     logical_events: output.logical_events.filter(belongsToCurrent),
     rejections: output.rejections.filter(belongsToCurrent),
     attributions: output.attributions.filter(belongsToCurrent),
+    reconciliation: (output.reconciliation ?? []).filter((artifact: Any) =>
+      artifact.tenant_id === attempts[0].server.tenant_id && artifact.app_id === attempts[0].server.app_id),
   };
   for (const raw of selected.raw_records) {
     await persistRaw(appPool, raw, policyDigestForRecord(input, raw.record_id));
@@ -712,5 +741,6 @@ export async function ingestRuntimeBatch(
   for (const attribution of selected.attributions) {
     await persistAttribution(appPool, attribution);
   }
+  for (const reconciliation of selected.reconciliation) await persistReconciliation(appPool, reconciliation);
   return selected;
 }
