@@ -13,7 +13,13 @@
     "npm": "11.6.2"
   },
   "scripts": {
+    "bootstrap": "node --import tsx apps/runtime/src/bootstrap.ts",
+    "db:migrate": "npm run db:migrate --workspace @open-mmp/runtime",
+    "db:schema:dump": "npm run db:schema:dump --workspace @open-mmp/runtime",
+    "db:schema:check": "npm run db:schema:check --workspace @open-mmp/runtime",
     "generate:types": "npm run generate:types --workspace @open-mmp/contracts",
+    "test:db-invariants": "npm run test:db-invariants --workspace @open-mmp/runtime",
+    "test:env-coverage": "node --import tsx apps/runtime/src/env-coverage.test.ts",
     "validate": "npm run typecheck && npm run validate:test --workspace @open-mmp/contracts && npm run validate:summary --workspace @open-mmp/contracts",
     "typecheck": "npm run typecheck --workspace @open-mmp/contracts"
   }

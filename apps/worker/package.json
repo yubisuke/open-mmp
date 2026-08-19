@@ -1,0 +1,10 @@
+{
+  "name": "@open-mmp/worker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Open MMP ingestion worker",
+  "type": "module",
+  "dependencies": {
+    "@open-mmp/runtime": "0.1.0"
+  }
+}
