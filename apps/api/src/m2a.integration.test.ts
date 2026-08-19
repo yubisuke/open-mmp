@@ -5,6 +5,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { once } from "node:events";
+import { spawn } from "node:child_process";
 import { after, before, describe, it } from "node:test";
 import type { AddressInfo } from "node:net";
 import {
@@ -83,6 +84,43 @@ async function count(table: string): Promise<number> {
   });
 }
 
+function workerProcess(delayMs: number) {
+  const source = `
+    import { createAppPool, EncryptedFilePayloadStore } from "@open-mmp/runtime";
+    import { processSdkInbox } from "./apps/worker/src/sdk-worker.ts";
+    const pool = createAppPool();
+    const store = new EncryptedFilePayloadStore(process.env.OPENMMP_TEST_PAYLOAD_ROOT, process.env.OPENMMP_TEST_MASTER_KEY);
+    await pool.query("SELECT 1");
+    console.log("worker-ready");
+    await new Promise((resolve) => setTimeout(resolve, Number(process.env.OPENMMP_TEST_WORKER_DELAY_MS)));
+    await processSdkInbox(pool, store, process.env.OPENMMP_TEST_TENANT_ID);
+    await pool.end();
+  `;
+  return spawn(process.execPath, ["--import", "tsx", "--input-type=module", "--eval", source], {
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      OPENMMP_TEST_PAYLOAD_ROOT: root,
+      OPENMMP_TEST_MASTER_KEY: masterKey,
+      OPENMMP_TEST_TENANT_ID: tenantId,
+      OPENMMP_TEST_WORKER_DELAY_MS: String(delayMs),
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+}
+
+async function waitForWorkerReady(child: ReturnType<typeof workerProcess>): Promise<void> {
+  const [chunk] = await once(child.stdout, "data") as [Buffer];
+  assert.match(chunk.toString("utf8"), /worker-ready/);
+}
+
+async function waitForWorkerExit(child: ReturnType<typeof workerProcess>): Promise<void> {
+  let stderr = "";
+  child.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString("utf8"); });
+  const [code] = await once(child, "exit") as [number | null];
+  assert.equal(code, 0, stderr);
+}
+
 describe("M2a signed SDK ingestion", () => {
   before(async () => {
     await ensureSdkKeys(pool, payloadStore, { tenantId, appId }, [{ keyId: sdkKeyId, secret: sdkSecret }]);
@@ -122,6 +160,46 @@ describe("M2a signed SDK ingestion", () => {
     installationSecret = value.installation_secret;
     assert.match(installationKeyId, /^installation-key:/);
     assert.ok(installationSecret.length >= 43);
+  });
+
+  it("keeps a committed receipt across a worker process kill and restart", async () => {
+    const eventId = `event:durable-restart:${run}`;
+    const startedAt = performance.now();
+    const response = await signed("/v1/events/batch", {
+      records: [sourceEvent(eventId, "session_start", {
+        installation_id: installationId,
+        session_id: `session:durable-restart:${run}`,
+      })],
+    }, { secret: installationSecret, installationKeyId });
+    assert.equal(response.status, 202);
+    assert.ok(performance.now() - startedAt < 200, "durable 202 exceeded the local 200 ms acceptance budget");
+    assert.ok(await withTenant(pool, tenantId, async (client) => (await client.query<{ count: number }>(
+      `SELECT count(*)::int AS count FROM ledger.ingest_batches_current
+       WHERE tenant_id=$1 AND app_id=$2 AND status='pending'`, [tenantId, appId],
+    )).rows[0].count) >= 1);
+    assert.equal(await withTenant(pool, tenantId, async (client) => (await client.query(
+      `SELECT record_id FROM ledger.raw_records
+       WHERE tenant_id=$1 AND app_id=$2 AND event_id=$3`, [tenantId, appId, eventId],
+    )).rowCount), 0);
+
+    const stopped = workerProcess(60_000);
+    const stoppedExit = once(stopped, "exit");
+    await waitForWorkerReady(stopped);
+    assert.equal(stopped.kill(), true);
+    await stoppedExit;
+    assert.equal(await withTenant(pool, tenantId, async (client) => (await client.query(
+      `SELECT record_id FROM ledger.raw_records
+       WHERE tenant_id=$1 AND app_id=$2 AND event_id=$3`, [tenantId, appId, eventId],
+    )).rowCount), 0);
+
+    const restarted = workerProcess(0);
+    const restartedExit = waitForWorkerExit(restarted);
+    await waitForWorkerReady(restarted);
+    await restartedExit;
+    assert.equal(await withTenant(pool, tenantId, async (client) => (await client.query(
+      `SELECT record_id FROM ledger.raw_records
+       WHERE tenant_id=$1 AND app_id=$2 AND event_id=$3`, [tenantId, appId, eventId],
+    )).rowCount), 1);
   });
 
   it("rejects altered signatures, replay, stale timestamps, and limits before insertion", async () => {

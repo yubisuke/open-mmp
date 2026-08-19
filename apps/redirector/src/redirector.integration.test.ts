@@ -132,12 +132,20 @@ describe("M2a redirector HTTP shell", () => {
       body: { destination_kind: "custom_https", destination_url: "https://attacker.invalid/" },
     }), /destination_origin_not_allowed/);
     const databaseContainsIp = await withTenant(pool, tenantId, async (client) => {
-      for (const table of ["ingest_batches", "raw_records", "event_deliveries", "click_facts"] as const) {
+      const columns = await client.query<{ table_schema: string; table_name: string; column_name: string }>(
+        `SELECT table_schema, table_name, column_name
+         FROM information_schema.columns
+         WHERE table_schema IN ('control','ledger','ephemeral')
+           AND data_type IN ('text','character varying','json','jsonb')
+         ORDER BY table_schema, table_name, ordinal_position`,
+      );
+      const identifier = (value: string) => `"${value.replaceAll('"', '""')}"`;
+      for (const column of columns.rows) {
         const result = await client.query<{ found: boolean }>(
           `SELECT EXISTS (
-             SELECT 1 FROM ledger.${table}
-             WHERE tenant_id=$1 AND app_id=$2 AND artifact::text LIKE $3
-           ) AS found`, [tenantId, appId, "%127.0.0.1%"],
+             SELECT 1 FROM ${identifier(column.table_schema)}.${identifier(column.table_name)}
+             WHERE ${identifier(column.column_name)}::text LIKE $1
+           ) AS found`, ["%127.0.0.1%"],
         );
         if (result.rows[0].found) return true;
       }
