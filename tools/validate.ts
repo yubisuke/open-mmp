@@ -60,8 +60,8 @@ function fixRefs(value: Any): Any {
   for (const [key, child] of Object.entries(value)) {
     output[key] = key === "$ref" && typeof child === "string"
       ? child
-        .replace("../common.schema.json", "urn:open-mmp:schema:common:v0.2")
-        .replace("common.schema.json", "urn:open-mmp:schema:common:v0.2")
+        .replace("../common.schema.json", "urn:open-mmp:schema:common:v0.3")
+        .replace("common.schema.json", "urn:open-mmp:schema:common:v0.3")
       : fixRefs(child as Any);
   }
   return output;
@@ -141,14 +141,14 @@ function schemaValue(id: string): Any {
 }
 
 const registryPaths = {
-  events: join(root, "registries", "event-names-v0.2.json"),
-  reasons: join(root, "registries", "reason-codes-v0.2.json"),
-  producers: join(root, "registries", "producer-values-v0.2.json"),
-  differences: join(root, "registries", "difference-reasons-v0.2.json"),
-  states: join(root, "registries", "state-transitions-v0.2.json"),
-  compatibility: join(root, "registries", "compatibility-v0.2.json"),
-  matchingKeys: join(root, "registries", "matching-key-types-v0.2.json"),
-  processingPurposes: join(root, "registries", "processing-purposes-v0.2.json"),
+  events: join(root, "registries", "event-names-v0.3.json"),
+  reasons: join(root, "registries", "reason-codes-v0.3.json"),
+  producers: join(root, "registries", "producer-values-v0.3.json"),
+  differences: join(root, "registries", "difference-reasons-v0.3.json"),
+  states: join(root, "registries", "state-transitions-v0.3.json"),
+  compatibility: join(root, "registries", "compatibility-v0.3.json"),
+  matchingKeys: join(root, "registries", "matching-key-types-v0.3.json"),
+  processingPurposes: join(root, "registries", "processing-purposes-v0.3.json"),
 };
 type RegistryName = keyof typeof registryPaths;
 const registryStates = Object.fromEntries(
@@ -211,19 +211,19 @@ const processingPurposeIds: string[] = (registries.processingPurposes.purposes ?
 const processingPurposeSet = new Set<string>(processingPurposeIds);
 
 const outputSchemaIds: Record<string, string> = {
-  raw_records: "urn:open-mmp:schema:raw-record:v0.2",
-  deliveries: "urn:open-mmp:schema:event-delivery:v0.2",
-  logical_events: "urn:open-mmp:schema:logical-event:v0.2",
-  corrections: "urn:open-mmp:schema:correction:v0.2",
-  privacy_requests: "urn:open-mmp:schema:privacy-request:v0.2",
-  privacy_tombstones: "urn:open-mmp:schema:privacy-tombstone:v0.2",
-  attributions: "urn:open-mmp:schema:attribution-result:v0.2",
-  cost_records: "urn:open-mmp:schema:cost-record:v0.2",
-  metric_definitions: "urn:open-mmp:schema:metric-definition:v0.2",
-  metric_runs: "urn:open-mmp:schema:metric-run:v0.2",
-  fraud_decisions: "urn:open-mmp:schema:fraud-decision:v0.2",
-  rejections: "urn:open-mmp:schema:rejection:v0.2",
-  reconciliation: "urn:open-mmp:schema:reconciliation-result:v0.2",
+  raw_records: "urn:open-mmp:schema:raw-record:v0.3",
+  deliveries: "urn:open-mmp:schema:event-delivery:v0.3",
+  logical_events: "urn:open-mmp:schema:logical-event:v0.3",
+  corrections: "urn:open-mmp:schema:correction:v0.3",
+  privacy_requests: "urn:open-mmp:schema:privacy-request:v0.3",
+  privacy_tombstones: "urn:open-mmp:schema:privacy-tombstone:v0.3",
+  attributions: "urn:open-mmp:schema:attribution-result:v0.3",
+  cost_records: "urn:open-mmp:schema:cost-record:v0.3",
+  metric_definitions: "urn:open-mmp:schema:metric-definition:v0.3",
+  metric_runs: "urn:open-mmp:schema:metric-run:v0.3",
+  fraud_decisions: "urn:open-mmp:schema:fraud-decision:v0.3",
+  rejections: "urn:open-mmp:schema:rejection:v0.3",
+  reconciliation: "urn:open-mmp:schema:reconciliation-result:v0.3",
 };
 const expectedFiles: Record<string, string> = Object.fromEntries(
   Object.keys(outputSchemaIds).map((name) => [name, `expected_${name}.json`]),
@@ -317,7 +317,7 @@ function validateRegistryReferences(output: Any, label: string): void {
     check(cost.dimension_digest === sha256(dimensions), `cost dimension digest mismatch in ${label}`);
   }
   for (const definition of output.metric_definitions) {
-    check(definition.metric_definition_version === "0.2.0", `wrong metric definition version in ${label}`);
+    check(definition.metric_definition_version === "0.3.0", `wrong metric definition version in ${label}`);
     check(["UTC", "Asia/Tokyo"].includes(definition.aggregation_time_zone), `unknown metric definition time zone in ${label}`);
   }
   for (const rejection of output.rejections) {
@@ -331,7 +331,7 @@ function validateRegistryReferences(output: Any, label: string): void {
   }
 }
 
-const fixtureRoot = join(root, "fixtures", "v0.2");
+const fixtureRoot = join(root, "fixtures", "v0.3");
 const fixtureDirs = readdirSync(fixtureRoot, { withFileTypes: true })
   .filter((entry) => entry.isDirectory())
   .map((entry) => join(fixtureRoot, entry.name))
@@ -443,7 +443,7 @@ if (!summaryOnly) {
       it(relative(root, state.path), () => {
         const value = capturedValue(state.loaded, `schema load failure: ${relative(root, state.path)}`);
         check(value.$schema === DRAFT, `wrong schema dialect: ${relative(root, state.path)}`);
-        check(/^urn:open-mmp:schema:[a-z0-9-]+:v0\.2$/.test(value.$id), `unstable schema id: ${relative(root, state.path)}`);
+        check(/^urn:open-mmp:schema:[a-z0-9-]+:v0\.3$/.test(value.$id), `unstable schema id: ${relative(root, state.path)}`);
         assertClosedObjects(value, relative(root, state.path));
         check(!state.compileError, `schema did not compile: ${value.$id}`);
         check(state.validator, `schema validator missing: ${value.$id}`);
@@ -456,7 +456,7 @@ if (!summaryOnly) {
     for (const name of Object.keys(registryPaths) as RegistryName[]) {
       it(name, () => {
         const value = capturedValue(registryStates[name].loaded, `registry load failure: ${name}`);
-        const expectedVersion = name === "differences" ? "0.2.1" : "0.2.0";
+        const expectedVersion = name === "differences" ? "0.3.0" : "0.3.0";
         check(value.contract_version === expectedVersion, `registry version: ${name}`);
         if (name === "events") {
           unique(value.event_names, "event name");
@@ -520,13 +520,13 @@ if (!summaryOnly) {
     it("keeps lifecycle state sets equal to schema enums", () => {
       const logical = schemaValue(outputSchemaIds.logical_events).properties.record_lifecycle.enum;
       const raw = schemaValue(outputSchemaIds.raw_records).properties.payload_lifecycle_status.enum;
-      const evidence = schemaValue("urn:open-mmp:schema:common:v0.2").$defs.evidenceRef.properties.lifecycle_status.enum;
+      const evidence = schemaValue("urn:open-mmp:schema:common:v0.3").$defs.evidenceRef.properties.lifecycle_status.enum;
       check(equal(stateAxes.record_lifecycle.states, logical), "record lifecycle registry/schema mismatch");
       check(equal(stateAxes.payload_availability.states, raw), "raw payload availability registry/schema mismatch");
       check(equal(stateAxes.payload_availability.states, evidence), "evidence payload availability registry/schema mismatch");
     });
     it("keeps processing-purpose registry and schema enum equal", () => {
-      const purposeEnum = schemaValue("urn:open-mmp:schema:common:v0.2").$defs.processingPurposeId.enum;
+      const purposeEnum = schemaValue("urn:open-mmp:schema:common:v0.3").$defs.processingPurposeId.enum;
       check(equal(processingPurposeIds, purposeEnum), "processing-purpose registry/schema mismatch");
     });
   });
@@ -535,13 +535,13 @@ if (!summaryOnly) {
     for (const state of fixtureStates) {
       it(state.name, () => {
         const input = capturedValue(state.input, `fixture input load failure: ${state.name}`);
-        const fixtureValidator = validatorFor("urn:open-mmp:schema:fixture-input:v0.2");
+        const fixtureValidator = validatorFor("urn:open-mmp:schema:fixture-input:v0.3");
         check(fixtureValidator(input), `fixture schema failure: ${state.name}: ${ajv.errorsText(fixtureValidator.errors)}`);
         for (const attempt of fixtureAttempts(input)) {
           const record = attempt.record;
           check(eventNames.includes(record.event_name), `unknown fixture event_name: ${state.name}`);
           check(producerAllowed(record.producer), `unknown fixture producer: ${state.name}`);
-          const eventId = `urn:open-mmp:schema:event-${record.event_name.replaceAll("_", "-")}:v0.2`;
+          const eventId = `urn:open-mmp:schema:event-${record.event_name.replaceAll("_", "-")}:v0.3`;
           const validator = validatorFor(eventId);
           const event = { ...record.payload, event_name: record.event_name };
           check(validator(event), `event schema failure: ${state.name}/${record.record_id}: ${ajv.errorsText(validator.errors)}`);
@@ -819,7 +819,7 @@ const scenarios: Array<[string, () => void]> = [
     const value = fixture("38-provider-modeled-reconciliation").output;
     check(value.reconciliation.length === 1, "scenario 38 reconciliation count");
     check(value.reconciliation[0].difference_reason_code === "provider_modeled_conversion", "scenario 38 reason");
-    check(value.reconciliation[0].difference_reason_version === "0.2.1" && value.reconciliation[0].candidates.length === 0, "scenario 38 classification");
+    check(value.reconciliation[0].difference_reason_version === "0.3.0" && value.reconciliation[0].candidates.length === 0, "scenario 38 classification");
   }],
 ];
 if (!summaryOnly) {
@@ -859,7 +859,7 @@ if (!summaryOnly) {
         for (const attempt of fixtureAttempts(fixture(name).input)) {
           if (!attempt.record.payload.import_context) continue;
           exercised.add(attempt.record.event_name);
-          const validator = validatorFor(`urn:open-mmp:schema:event-${attempt.record.event_name.replaceAll("_", "-")}:v0.2`);
+          const validator = validatorFor(`urn:open-mmp:schema:event-${attempt.record.event_name.replaceAll("_", "-")}:v0.3`);
           const event = { ...attempt.record.payload, event_name: attempt.record.event_name };
           check(validator(event), `Stage A import context baseline failed: ${name}/${attempt.record.record_id}`);
           check(!validator({ ...event, import_context: { ...event.import_context, unexpected: "forbidden" } }), `open import_context accepted: ${name}/${attempt.record.record_id}`);
@@ -877,7 +877,7 @@ if (!summaryOnly) {
       check(fixture("28-imported-provider-attributed").output.reconciliation[0].matching_keys.some((key: Any) => key.type === "provider_click_id"), "provider_click_ref to provider_click_id derivation");
       const omitted = structuredClone(value.input);
       delete omitted.reconciliation_inputs;
-      const validator = validatorFor("urn:open-mmp:schema:fixture-input:v0.2");
+      const validator = validatorFor("urn:open-mmp:schema:fixture-input:v0.3");
       check(validator(omitted), `reconciliation_inputs must be optional: ${ajv.errorsText(validator.errors)}`);
       check(equal(evaluate(omitted), value.output), "omitting reconciliation_inputs changed automatic output");
       const missingContext = structuredClone(omitted);
@@ -959,7 +959,7 @@ if (!summaryOnly) {
       const disabledOutput = evaluate(disabled);
       check(disabledOutput.rejections.length === 0 && disabledOutput.raw_records.length === 1, "absent stale policy must be explicitly disabled");
 
-      const fixtureValidator = validatorFor("urn:open-mmp:schema:fixture-input:v0.2");
+      const fixtureValidator = validatorFor("urn:open-mmp:schema:fixture-input:v0.3");
       const legacy = structuredClone(disabled);
       legacy.server_context.timestamp_stale_before = "2026-08-01T00:00:00.000Z";
       check(!fixtureValidator(legacy), "legacy flat stale threshold was accepted");
@@ -986,7 +986,7 @@ if (!summaryOnly) {
     it("supports installation and aggregate ad revenue without inventing an installation anchor", () => {
       const value = fixture("33-stage-b-cohort-metrics");
       const aggregate = value.input.records.find((record: Any) => record.record_id === "aggregate-revenue-33");
-      const validator = validatorFor("urn:open-mmp:schema:event-ad-revenue:v0.2");
+      const validator = validatorFor("urn:open-mmp:schema:event-ad-revenue:v0.3");
       check(aggregate.payload.subject_scope === "aggregate" && aggregate.payload.installation_id === undefined, "Stage B aggregate revenue identity");
       check(aggregate.payload.currency === "USD" && aggregate.payload.currency_source === "default", "Stage B default currency provenance");
       check(validator({ ...aggregate.payload, event_name: "ad_revenue" }), `Stage B aggregate revenue schema: ${ajv.errorsText(validator.errors)}`);
@@ -1021,7 +1021,7 @@ if (!summaryOnly) {
       const runs = value.output.metric_runs;
       check(runs.every((run: Any) => run.grouping?.dimensions.cohort_date === "2026-08-01" && /^[a-f0-9]{64}$/.test(run.grouping.dimension_digest)), "Stage B grouping contract");
       check(runs.some((run: Any) => run.value_type === "money") && runs.some((run: Any) => run.value_type === "ratio") && runs.some((run: Any) => run.value_type === "count"), "Stage B value type coverage");
-      const validator = validatorFor("urn:open-mmp:schema:metric-definition:v0.2");
+      const validator = validatorFor("urn:open-mmp:schema:metric-definition:v0.3");
       const ratio = value.input.metric_definitions.find((definition: Any) => definition.metric_name === "d1_roas");
       check(validator(ratio), `Stage B ratio definition: ${ajv.errorsText(validator.errors)}`);
       check(!validator({ ...ratio, currency: "USD" }), "ratio metric accepted currency");
@@ -1034,7 +1034,7 @@ if (!summaryOnly) {
       const mutated = structuredClone(value.input);
       const retention = mutated.metric_definitions.find((definition: Any) => definition.metric_name === "retention_d1");
       delete retention.activity_events;
-      const validator = validatorFor("urn:open-mmp:schema:metric-definition:v0.2");
+      const validator = validatorFor("urn:open-mmp:schema:metric-definition:v0.3");
       check(validator(retention), `Stage B retention default schema: ${ajv.errorsText(validator.errors)}`);
       const typescript = evaluate(mutated);
       const [python] = pythonOutputs([mutated]);
@@ -1063,7 +1063,7 @@ if (!summaryOnly) {
       check(aggregate.occurred_at.endsWith(".123Z") && aggregate.payload.import_context.provider_confirmed_at.endsWith(".123Z"), "Stage B normalized timestamp evidence");
       const invalid = structuredClone(value.input);
       invalid.records.find((record: Any) => record.record_id === "aggregate-revenue-33").occurred_at = "2026-08-02T12:00:00.123987Z";
-      const validator = validatorFor("urn:open-mmp:schema:fixture-input:v0.2");
+      const validator = validatorFor("urn:open-mmp:schema:fixture-input:v0.3");
       check(!validator(invalid), "Stage B accepted timestamp precision above milliseconds");
     });
   });
@@ -1095,7 +1095,7 @@ if (!summaryOnly) {
       check(output.raw_records.some((item: Any) => item.event_name === "adattributionkit_postback"), "Stage C AAK event not exercised");
     });
     it("keeps unverified Meta provider fields outside the closed contract", () => {
-      const installValidator = validatorFor("urn:open-mmp:schema:event-install:v0.2");
+      const installValidator = validatorFor("urn:open-mmp:schema:event-install:v0.3");
       const input = fixture("34-stage-c-apple-meta-attribution").input;
       const decrypted = structuredClone(input.records.find((item: Any) => item.record_id === "meta-click-install-34").payload);
       decrypted.meta_referrer_context.campaign_id = "unverified-field";
@@ -1106,9 +1106,9 @@ if (!summaryOnly) {
     });
     it("validates normalized Apple envelopes and aggregate subject namespaces", () => {
       const value = fixture("34-stage-c-apple-meta-attribution");
-      const skanValidator = validatorFor("urn:open-mmp:schema:event-skan-postback:v0.2");
-      const aakValidator = validatorFor("urn:open-mmp:schema:event-adattributionkit-postback:v0.2");
-      const installValidator = validatorFor("urn:open-mmp:schema:event-install:v0.2");
+      const skanValidator = validatorFor("urn:open-mmp:schema:event-skan-postback:v0.3");
+      const aakValidator = validatorFor("urn:open-mmp:schema:event-adattributionkit-postback:v0.3");
+      const installValidator = validatorFor("urn:open-mmp:schema:event-install:v0.3");
       const skan = value.input.records.find((item: Any) => item.record_id === "skan-verified-34").payload;
       const aak = value.input.records.find((item: Any) => item.record_id === "aak-not-winner-34").payload;
       const adservices = value.input.records.find((item: Any) => item.record_id === "adservices-install-34").payload;
@@ -1172,7 +1172,7 @@ if (!summaryOnly) {
     it("rejects unknown purpose IDs at fixture and output boundaries", () => {
       const invalidInput = structuredClone(fixture("34-stage-c-apple-meta-attribution").input);
       invalidInput.records[0].processing_purpose_id = "unregistered_purpose";
-      const inputValidator = validatorFor("urn:open-mmp:schema:fixture-input:v0.2");
+      const inputValidator = validatorFor("urn:open-mmp:schema:fixture-input:v0.3");
       check(!inputValidator(invalidInput), "fixture schema accepted unknown record purpose");
 
       const invalidDelivery = structuredClone(fixture("34-stage-c-apple-meta-attribution").output.deliveries[0]);
@@ -1180,8 +1180,8 @@ if (!summaryOnly) {
       check(!validatorFor(outputSchemaIds.deliveries)(invalidDelivery), "delivery schema accepted unknown purpose");
     });
     it("requires privacy authentication provenance and defines app audience", () => {
-      const privacy = schemaValue("urn:open-mmp:schema:privacy-request:v0.2");
-      const fixtureSchema = schemaValue("urn:open-mmp:schema:fixture-input:v0.2");
+      const privacy = schemaValue("urn:open-mmp:schema:privacy-request:v0.3");
+      const fixtureSchema = schemaValue("urn:open-mmp:schema:fixture-input:v0.3");
       check(equal(privacy.properties.requested_via.enum, ["on_device_sdk", "tenant_admin_api"]), "privacy request route enum mismatch");
       check(privacy.required.includes("requested_via") && privacy.required.includes("requester_auth_ref"), "privacy authentication provenance is optional");
       const audience = fixtureSchema.$defs.serverContext.properties.audience;
@@ -1191,7 +1191,7 @@ if (!summaryOnly) {
   });
 }
 
-const contractText = capture(() => readFileSync(join(root, "spec", "event-metric-contract-v0.2.md"), "utf8"));
+const contractText = capture(() => readFileSync(join(root, "spec", "event-metric-contract-v0.3.md"), "utf8"));
 const fraudSchemaText = capture(() => readFileSync(join(root, "schemas", "fraud-decision.schema.json"), "utf8"));
 const acceptance: Array<[string, () => void]> = [
   ["AC01 Draft 2020-12 schemas have stable IDs and versions", () => check(schemaPaths.length === 26 && schemaIds.every(Boolean), "AC01")],
@@ -1200,7 +1200,7 @@ const acceptance: Array<[string, () => void]> = [
     check(rawSchema, "AC02 raw schema missing");
     const eventEnum = rawSchema.properties.event_name.enum;
     check(equal(eventEnum, eventNames), "AC02 raw registry mismatch");
-    for (const name of eventNames) validatorFor(`urn:open-mmp:schema:event-${name.replaceAll("_", "-")}:v0.2`);
+    for (const name of eventNames) validatorFor(`urn:open-mmp:schema:event-${name.replaceAll("_", "-")}:v0.3`);
   }],
   ["AC03 raw delivery logical correction and derived artifacts are separate", () => {
     check(Object.keys(outputSchemaIds).length === 13 && Object.values(expectedFiles).every((name) => name.startsWith("expected_")), "AC03");
@@ -1443,18 +1443,18 @@ if (!summaryOnly) {
       }
     });
     it("accepts the baseline revenue event", () => {
-      const adValidator = validatorFor("urn:open-mmp:schema:event-ad-revenue:v0.2");
+      const adValidator = validatorFor("urn:open-mmp:schema:event-ad-revenue:v0.3");
       check(adValidator(validRevenue), "mutation baseline event invalid");
     });
     it("rejects negative ad revenue", () => {
-      const adValidator = validatorFor("urn:open-mmp:schema:event-ad-revenue:v0.2");
+      const adValidator = validatorFor("urn:open-mmp:schema:event-ad-revenue:v0.3");
       check(!adValidator({ ...validRevenue, amount_unscaled: "-1" }), "mutation negative ad revenue was accepted");
     });
     it("rejects negative purchase and refund amounts through the common money type", () => {
       const source = fixture("16-correction-refund").input.records;
       for (const eventName of ["purchase", "refund"]) {
         const payload = source.find((record: Any) => record.event_name === eventName).payload;
-        const validator = validatorFor(`urn:open-mmp:schema:event-${eventName}:v0.2`);
+        const validator = validatorFor(`urn:open-mmp:schema:event-${eventName}:v0.3`);
         check(!validator({ ...payload, amount_unscaled: "-1" }), `mutation negative ${eventName} was accepted`);
       }
     });
@@ -1465,7 +1465,7 @@ if (!summaryOnly) {
       check(!validator(attribution), "mutation missing evidence access_class was accepted");
     });
     it("rejects short click identifiers", () => {
-      const validator = validatorFor("urn:open-mmp:schema:event-click:v0.2");
+      const validator = validatorFor("urn:open-mmp:schema:event-click:v0.3");
       const click = structuredClone(fixture("01-valid-install-referrer").input.records.find((record: Any) => record.event_name === "click").payload);
       click.click_id = "too-short";
       check(!validator(click), "mutation short click_id was accepted");
@@ -1484,7 +1484,7 @@ if (!summaryOnly) {
     it("rejects cross-tenant privacy references", () => {
       const crossTenantPrivacy = structuredClone(fixture("07-same-id-across-tenants").input);
       crossTenantPrivacy.privacy_requests.push({
-        contract_version: "0.2.0",
+        contract_version: "0.3.0",
         tenant_id: "tenant-a",
         app_id: "app-a",
         privacy_request_id: "cross-tenant-privacy",
@@ -1521,7 +1521,7 @@ if (!summaryOnly) {
       check(!typescript.ok && !python.ok, "mutation cross-installation privacy request was accepted");
     });
     it("enforces child-directed advertising-identifier boundaries", () => {
-      const validator = validatorFor("urn:open-mmp:schema:fixture-input:v0.2");
+      const validator = validatorFor("urn:open-mmp:schema:fixture-input:v0.3");
       const baseline = structuredClone(fixture("36-child-directed-audience").input);
       check(validator(baseline), "child-directed baseline fixture is invalid");
 
@@ -1560,7 +1560,7 @@ if (!summaryOnly) {
       check(!validator(unknown), "unknown audience was accepted");
     });
     it("enforces child-directed boundaries independently in each batch", () => {
-      const validator = validatorFor("urn:open-mmp:schema:fixture-input:v0.2");
+      const validator = validatorFor("urn:open-mmp:schema:fixture-input:v0.3");
       const invalid = structuredClone(fixture("07-same-id-across-tenants").input);
       invalid.batches[0].server_context.audience = "child_directed";
       invalid.batches[0].records[0].payload.extensions = {
@@ -1617,11 +1617,11 @@ if (!summaryOnly) {
       it(entry.name, () => {
         const input = capturedValue(entry.input, `timestamp fixture preparation failed: ${entry.name}`);
       const schemaRejected = entry.field === "occurred_at"
-        ? !validatorFor("urn:open-mmp:schema:fixture-input:v0.2")(input)
+        ? !validatorFor("urn:open-mmp:schema:fixture-input:v0.3")(input)
         : (() => {
             const eventName = entry.field === "redirector_click_at" ? "click" : "install";
             const record = input.records.find((candidate: Any) => candidate.event_name === eventName);
-            const validator = validatorFor(`urn:open-mmp:schema:event-${eventName}:v0.2`);
+            const validator = validatorFor(`urn:open-mmp:schema:event-${eventName}:v0.3`);
             return !validator({ ...record.payload, event_name: eventName });
           })();
       if (entry.field === "occurred_at") {

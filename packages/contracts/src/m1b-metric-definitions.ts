@@ -1,6 +1,6 @@
-import type { OpenMMPMetricDefinitionV02 } from "./generated/contract-types.js";
+import type { OpenMMPMetricDefinitionV03 } from "./generated/contract-types.js";
 
-const CONTRACT_VERSION = "0.2.0";
+const CONTRACT_VERSION = "0.3.0";
 const RULE_BUNDLE_ID = "metric-stage-b";
 const RULE_BUNDLE_HASH = "2".repeat(64);
 const AGGREGATION_TIME_ZONE = "UTC";
@@ -12,7 +12,7 @@ export const M1B_COHORT_KEY = ["app_id", "campaign_id", "country", "cohort_date"
 export const M1B_DEFAULT_ACTIVITY_EVENTS = ["session_start"] as const;
 
 function ruleBundle(): Pick<
-  OpenMMPMetricDefinitionV02,
+  OpenMMPMetricDefinitionV03,
   "rule_bundle_id" | "rule_bundle_version" | "rule_bundle_hash"
 > {
   return {
@@ -22,7 +22,7 @@ function ruleBundle(): Pick<
   };
 }
 
-function roas(day: (typeof COHORT_DAYS)[number]): OpenMMPMetricDefinitionV02 {
+function roas(day: (typeof COHORT_DAYS)[number]): OpenMMPMetricDefinitionV03 {
   return {
     metric_name: `d${day}_roas`,
     metric_definition_version: CONTRACT_VERSION,
@@ -41,7 +41,7 @@ function roas(day: (typeof COHORT_DAYS)[number]): OpenMMPMetricDefinitionV02 {
   };
 }
 
-function retention(day: 1 | 7): OpenMMPMetricDefinitionV02 {
+function retention(day: 1 | 7): OpenMMPMetricDefinitionV03 {
   return {
     metric_name: `retention_d${day}`,
     metric_definition_version: CONTRACT_VERSION,
@@ -60,7 +60,7 @@ function retention(day: 1 | 7): OpenMMPMetricDefinitionV02 {
   };
 }
 
-function ltv(day: (typeof COHORT_DAYS)[number]): OpenMMPMetricDefinitionV02 {
+function ltv(day: (typeof COHORT_DAYS)[number]): OpenMMPMetricDefinitionV03 {
   return {
     metric_name: `cohort_ltv_d${day}_usd`,
     metric_definition_version: CONTRACT_VERSION,
@@ -79,7 +79,7 @@ function ltv(day: (typeof COHORT_DAYS)[number]): OpenMMPMetricDefinitionV02 {
   };
 }
 
-export const M1B_METRIC_DEFINITIONS: ReadonlyArray<OpenMMPMetricDefinitionV02> = [
+export const M1B_METRIC_DEFINITIONS: ReadonlyArray<OpenMMPMetricDefinitionV03> = [
   ...COHORT_DAYS.map(roas),
   retention(1),
   retention(7),

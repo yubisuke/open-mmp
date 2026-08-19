@@ -10,7 +10,7 @@ import { computeSqlMetricRuns, computeSqlMetricRunsWithClient } from "./metrics/
 
 type Any = Record<string, any>;
 const fixtureName = "33-stage-b-cohort-metrics";
-const fixtureDirectory = join(process.cwd(), "fixtures", "v0.2", fixtureName);
+const fixtureDirectory = join(process.cwd(), "fixtures", "v0.3", fixtureName);
 const input: Any = JSON.parse(readFileSync(join(fixtureDirectory, "input.json"), "utf8"));
 const goldenPath = join(fixtureDirectory, "expected_metric_runs.json");
 const goldenBefore = readFileSync(goldenPath);
@@ -295,7 +295,7 @@ describe("M1b SQL metric parity", { concurrency: false }, () => {
       },
     ];
     mutation.privacy_requests = [{
-      contract_version: "0.2.1",
+      contract_version: "0.3.0",
       tenant_id: input.server_context.tenant_id,
       app_id: input.server_context.app_id,
       privacy_request_id: "privacy:redaction-33",
@@ -337,7 +337,7 @@ describe("M1b SQL metric parity", { concurrency: false }, () => {
   it("B8 persists undefined ROAS with an explicit reason", async () => {
     const undefinedFixture = "37-undefined-organic-roas";
     const undefinedInput: Any = JSON.parse(readFileSync(
-      join(process.cwd(), "fixtures", "v0.2", undefinedFixture, "input.json"),
+      join(process.cwd(), "fixtures", "v0.3", undefinedFixture, "input.json"),
       "utf8",
     ));
     await ingestFixture(fixtureName, undefinedInput, appPool, seedPool);

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Independent Python evaluator for Open MMP Contract v0.2 fixtures."""
+"""Independent Python evaluator for Open MMP Contract v0.3 fixtures."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from typing import Any
 
 import rfc8785
 
-CONTRACT_VERSION = "0.2.0"
+CONTRACT_VERSION = "0.3.0"
 ZERO_HASH = "0" * 64
 DAY_MS = 86_400_000
 
@@ -1033,7 +1033,7 @@ def reconciliation_results(value: dict[str, Any], accepted: list[dict[str, Any]]
             "input_snapshot_id": item["input_snapshot_id"],
             "external_snapshot_id": item["external_snapshot_id"],
             "difference_reason_code": reason,
-            "difference_reason_version": "0.2.1" if reason == "provider_modeled_conversion" else CONTRACT_VERSION,
+            "difference_reason_version": "0.3.0" if reason == "provider_modeled_conversion" else CONTRACT_VERSION,
             "matching_keys": matching_keys,
             "candidates": sorted((candidate["candidate_id"] for candidate in matched), key=utf16_key),
             "exclusions": sorted((candidate["exclusion_reason"] for candidate in matched if candidate["excluded"]), key=utf16_key),

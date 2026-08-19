@@ -1,14 +1,14 @@
 # Contract and Schema Versioning
 
-Open MMP publishes one active contract tree while the project has no runtime users. The Git tag `contract-v0.1` preserves the complete v0.1 contract; the working tree contains v0.2 in place.
+Open MMP publishes one active contract tree while the project has no production contract consumers. The Git tags `contract-v0.1` and `contract-v0.2.1` preserve the complete earlier contract lines; the working tree contains v0.3 in place.
 
-The v0.2 tree remains a pre-release composition while its ordered contract work orders are being reviewed on the designated review branch. Those work orders may complete the same `0.2.0` schema set before it is accepted into the public release baseline. After v0.2 is accepted as a release baseline, any change classified as breaking below requires a new minor line; this composition exception no longer applies. R-23 publishes the first non-breaking patch of that minor line as release `0.2.1`.
+Contract v0.3 is a breaking minor line relative to v0.2.1. Consumers must migrate schemas, registries, fixtures, and evaluator behavior as one unit. The in-place policy does not make artifacts from different minor lines interoperable.
 
 ## Version identifiers
 
-- A schema `$id` ends in the contract minor line, for example `urn:open-mmp:schema:raw-record:v0.2`.
-- `contract_version` is the exact SemVer contract release implemented by an artifact. Unchanged v0.2 artifact shapes retain `0.2.0`; a changed registry or versioned result surface declares `0.2.1` where its schema permits that patch.
-- `schema_version` is the exact SemVer version of an input record's event schema. The v0.2 fixtures use `0.2.0`.
+- A schema `$id` ends in the contract minor line, for example `urn:open-mmp:schema:raw-record:v0.3`.
+- `contract_version` is the exact SemVer contract release implemented by an artifact. Contract v0.3 artifacts declare `0.3.0`.
+- `schema_version` is the exact SemVer version of an input record's event schema. The v0.3 fixtures use `0.3.0`.
 - Registry filenames carry the contract minor line. Their `contract_version` field identifies the exact release.
 - Policy, producer, and rule-bundle versions are independent deployment or fixture identifiers unless a schema explicitly binds them.
 
@@ -37,10 +37,10 @@ R-23 is an explicit patch exception authorized to close two already documented M
 
 ## Compatibility registry
 
-`registries/compatibility-v0.2.json` closes the allowed attribution combinations of subject scope, method, model, and status. It does not replace schema versioning. Schemas define artifact shape, registries define closed cross-field vocabularies and metadata, and the validator proves that duplicated enum surfaces agree.
+`registries/compatibility-v0.3.json` closes the allowed attribution combinations of subject scope, method, model, and status. It does not replace schema versioning. Schemas define artifact shape, registries define closed cross-field vocabularies and metadata, and the validator proves that duplicated enum surfaces agree.
 
 ## Fixture and golden policy
 
-Fixtures are versioned with the active contract. The v0.2 migration moves `fixtures/v0.1/` to `fixtures/v0.2/` and updates reviewed golden artifacts to v0.2 semantics. The immutable v0.1 evidence remains available from the `contract-v0.1` tag.
+Fixtures are versioned with the active contract. The v0.3 migration moves `fixtures/v0.2/` to `fixtures/v0.3/` and updates reviewed golden artifacts to v0.3 semantics. The immutable v0.2.1 evidence remains available from the `contract-v0.2.1` tag.
 
-Golden output files are human-reviewed evidence, not generated validation authority. A semantic evaluator or schema change and its reviewed golden update SHOULD be separate commits. Every v0.2 golden change is recorded in [the migration ledger](contract-v0.2-migration.md) with its field-level reason and governing decision.
+Golden output files are human-reviewed evidence, not generated validation authority. A semantic evaluator or schema change and its reviewed golden update SHOULD be separate commits. Every v0.3 golden change is recorded in [the migration ledger](contract-v0.3-migration.md) with its field-level reason and governing decision.

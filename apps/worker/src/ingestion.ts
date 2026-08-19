@@ -670,7 +670,7 @@ export type RuntimeIngestionResult = {
 
 function runtimeInput(attempts: readonly CandidateAttempt[]): Any {
   return {
-    contract_version: "0.2.0",
+    contract_version: "0.3.0",
     batches: attempts.map((attempt, index) => ({
       batch_id: attempt.batch_id || `runtime-batch-${index}`,
       server_context: attempt.server,

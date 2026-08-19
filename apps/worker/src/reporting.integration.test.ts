@@ -17,7 +17,7 @@ type Any = Record<string, any>;
 const adminKey = "synthetic-report-admin-key-000000000000000000000001";
 
 function fixture(name: string): Any {
-  return JSON.parse(readFileSync(join(process.cwd(), "fixtures", "v0.2", name, "input.json"), "utf8"));
+  return JSON.parse(readFileSync(join(process.cwd(), "fixtures", "v0.3", name, "input.json"), "utf8"));
 }
 
 function csvRow(text: string): Record<string, string> {

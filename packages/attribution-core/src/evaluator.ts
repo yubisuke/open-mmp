@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { canonicalize } from "json-canonicalize";
-import type { OpenMMPEvaluationOutputV02 as EvaluationOutput } from "@open-mmp/contracts";
+import type { OpenMMPEvaluationOutputV03 as EvaluationOutput } from "@open-mmp/contracts";
 
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 type Any = Record<string, any>;
@@ -20,7 +20,7 @@ type Reconciliation = EvaluationOutput["reconciliation"][number];
 type EvidenceRef = Attribution["evidence_refs"][number];
 type LifecycleStatus = EvidenceRef["lifecycle_status"];
 
-const CONTRACT_VERSION = "0.2.0" as const;
+const CONTRACT_VERSION = "0.3.0" as const;
 const HASH = "0".repeat(64);
 const DAY_MS = 86_400_000;
 
@@ -1012,7 +1012,7 @@ function reconciliationResults(input: Any, accepted: Attempt[]): Reconciliation[
       input_snapshot_id: item.input_snapshot_id,
       external_snapshot_id: item.external_snapshot_id,
       difference_reason_code,
-      difference_reason_version: difference_reason_code === "provider_modeled_conversion" ? "0.2.1" : CONTRACT_VERSION,
+      difference_reason_version: difference_reason_code === "provider_modeled_conversion" ? "0.3.0" : CONTRACT_VERSION,
       matching_keys: sortedKeys,
       candidates: matched.map((candidate: Any) => candidate.candidate_id).sort(compareText),
       exclusions: matched.filter((candidate: Any) => candidate.excluded).map((candidate: Any) => candidate.exclusion_reason).sort(compareText),

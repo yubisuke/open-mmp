@@ -58,7 +58,7 @@ function toAttempt(mapping: ImportMapping, mapped: Any, fileDigest: string, rowO
     throw new MappingError("mapped occurred_at is invalid", ["occurred_at"]);
   }
   const record = {
-    contract_version: "0.2.0",
+    contract_version: "0.3.0",
     record_id: identifier("record", [mapping.source_id, fileDigest, rowOrdinal]),
     delivery_id: identifier("delivery", [fileDigest, rowOrdinal]),
     tenant_id: mapping.tenant_id,
@@ -67,7 +67,7 @@ function toAttempt(mapping: ImportMapping, mapped: Any, fileDigest: string, rowO
     producer_version: `mapping:${mapping.version}`,
     event_id: eventId,
     event_name: eventName,
-    schema_version: "0.2.0",
+    schema_version: "0.3.0",
     occurred_at: new Date(occurredAt).toISOString(),
     occurred_at_source: "import",
     received_at: receivedAt,
