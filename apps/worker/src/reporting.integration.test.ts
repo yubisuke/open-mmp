@@ -52,14 +52,10 @@ describe("M1b reporting and difference audit", { concurrency: false, timeout: 60
   before(async () => {
     appPool = createAppPool();
     seedPool = createSeedPool();
-    console.log("Reporting setup: pools created");
     const input = fixture("33-stage-b-cohort-metrics");
     await ingestFixture("33-stage-b-cohort-metrics", input, appPool, seedPool);
-    console.log(`Reporting setup: fixture ingested (app=${appPool.totalCount}/${appPool.idleCount}, seed=${seedPool.totalCount}/${seedPool.idleCount})`);
     await computeSqlMetricRuns(appPool, input, true);
-    console.log(`Reporting setup: metrics computed (app=${appPool.totalCount}/${appPool.idleCount})`);
     await ensureAdminKeys(appPool, { tenantId: "tenant-a", appId: "app-a" }, [adminKey]);
-    console.log("Reporting setup: admin key ready");
     const config: MaxReceiverConfig = {
       tenantId: "tenant-a", appId: "app-a", pathSecret: "synthetic-report-path",
       eventKey: "synthetic-report-event-key", tokenMode: "all", maxParameters: 40, maxQueryBytes: 8192,
@@ -72,7 +68,6 @@ describe("M1b reporting and difference audit", { concurrency: false, timeout: 60
     };
     server = createServer(createRequestHandler({ pool: appPool, payloadStore: unusedPayloadStore, maxConfig: config }));
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-    console.log("Reporting setup: HTTP server listening");
     const address = server.address();
     assert.ok(address && typeof address === "object");
     baseUrl = `http://127.0.0.1:${address.port}`;
