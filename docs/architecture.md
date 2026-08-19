@@ -11,15 +11,15 @@ Proposed stack:
 - Database: PostgreSQL
 - Android SDK: Kotlin
 - Unity integration: C# API with an Android Kotlin bridge
-- iOS SDK: Swift, Phase 2
+- iOS SDK: Swift, Phase 4a
 - Dashboard: TypeScript web application, later in the MVP
 - Local runtime: Docker Compose
 
-## Cloudflare-first reference deployment
+## Reference deployment boundary
 
-Cloudflare is the preferred future reference deployment, not a Cloudflare-only product requirement. Use Workers for redirector and API edge handling, Queues for asynchronous ingestion, R2 for protected raw evidence and versioned snapshots, Pages or Workers for the dashboard, and Secrets Store for deployment secrets. Use Cloudflare Containers only for future workloads that require a full Linux container rather than the Workers runtime. Keep the authoritative audit ledger on PostgreSQL initially, reached from Workers through Hyperdrive. D1 may hold configuration or small metadata, but must not become the authoritative audit ledger until contract and equivalence evidence prove it suitable. Preserve self-hostability through explicit storage, queue, and database ports; no public contract may depend on a Cloudflare-specific API.
+M1 through M3 use one portable deployment path: Docker Compose, Node.js services, and PostgreSQL. They do not adopt Cloudflare Queues, R2, or D1. M2 may offer a Cloudflare Workers redirector as an optional edge adapter, but the same redirector behavior must remain available through the portable Node.js interface. The ingestion API, worker, authoritative ledger, protected evidence, and dashboard do not require Cloudflare. No public contract depends on a Cloudflare-specific API.
 
-## Android Phase 1 flow
+## Android M2 flow
 
 ```mermaid
 sequenceDiagram
@@ -65,24 +65,24 @@ Minimal delivery example:
 ```json
 {
   "raw_record": {
-    "contract_version": "0.1.0",
+    "contract_version": "0.2.0",
     "record_id": "record:example-install",
     "tenant_id": "tenant:example",
     "app_id": "app:example",
     "producer": "sdk-android",
-    "producer_version": "0.1.0",
+    "producer_version": "0.2.0",
     "event_id": "event:example-install",
     "delivery_id": "delivery:example-install",
     "event_name": "install",
-    "schema_version": "0.1.0",
-    "payload_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "schema_version": "0.2.0",
+    "payload_sha256": "ef404508d45f9dff0b61f7ed43c0ad8e06c9723440f23645db82233391575249",
     "occurred_at": "2026-08-11T00:00:00.000Z",
     "occurred_at_source": "device",
     "received_at": "2026-08-11T00:00:01.000Z",
     "payload_lifecycle_status": "available",
     "raw_payload_ref": "protected:example-install",
-    "processing_purpose_id": "purpose:attribution",
-    "consent_evaluation_policy_version": "consent-policy-0.1",
+    "processing_purpose_id": "attribution",
+    "consent_evaluation_policy_version": "consent-policy-0.2",
     "consent_decision_reason_code": "consent_not_required"
   },
   "payload": {
@@ -94,7 +94,7 @@ Minimal delivery example:
 }
 ```
 
-The canonical schemas live in `schemas/`; this example is illustrative and validated against `schemas/raw-record.schema.json` and `schemas/events/install.schema.json`.
+The canonical schemas live in `schemas/`; this example is illustrative and validates against `schemas/raw-record.schema.json` and `schemas/events/install.schema.json`. The payload digest is SHA-256 over the RFC 8785 JCS UTF-8 serialization of the shown payload.
 
 ### Attribution Core
 
@@ -154,6 +154,8 @@ The layers have distinct responsibilities:
 - `attributions`: versioned and supersedable decisions
 - `metric_runs`: aggregates with a fixed input watermark and policy versions
 
+PostgreSQL is the authoritative ledger and the initial store for impression-revenue facts and aggregates. Runtime code accesses impression revenue through an `ImpressionRevenueStore` port so storage can change without changing the contract. A Parquet and DuckDB adapter is a documented future option, not an M1 dependency. Consider implementing it only after measured load persistently exceeds at least one baseline threshold: five million daily impression rows, 500 GB for `ad_revenue_facts` including indexes, a daily cohort aggregation longer than 30 minutes, or aggregation p95 longer than one quarter of its schedule interval. Before adding a second store, use monthly partitioning, daily pre-aggregation, and retention of only the evidence required by policy.
+
 Do not compress independent concerns into one `data_quality_status`. Store ingestion, duplicate resolution, timeliness, record lifecycle, and attribution finality as separate axes.
 
 ## Attribution result minimum
@@ -175,14 +177,13 @@ Do not compress independent concerns into one `data_quality_status`. Store inges
 
 Aggregate subjects must not contain an `installation_id`.
 
-## Later phases
+## Planned runtime sequence
 
-- Existing MMP raw-export adapters and shadow reconciliation
-- Apple AdAttributionKit and SKAdNetwork postback receipt and verification
+- M1a builds the ledger and three portable import paths; M1b adds cohort metrics and difference audit.
+- M2 adds the Android and Unity SDKs plus the portable redirector and optional Workers adapter.
+- M4a adds first-party iOS measurement; M4b adds AdAttributionKit and SKAdNetwork postback receipt and verification.
+- M5 adds production controls and only the adapter scope approved in the roadmap.
 - Google announced the retirement of Attribution Reporting (Android) on 2025-10-17 and no longer accepts enrollment; this project does not adopt it.
-- Server-to-server events
-- Role-based access control
-- Analytical storage when PostgreSQL is no longer sufficient
-- Media cost adapters
+- A second analytical store is considered only when the measured thresholds above are crossed.
 
 Privacy-preserving aggregate reports remain a dedicated aggregate series and are never forcibly joined to an installation.

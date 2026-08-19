@@ -13,6 +13,8 @@ const artifacts = {
   privacy_requests: "privacy-request.schema.json",
   privacy_tombstones: "privacy-tombstone.schema.json",
   attributions: "attribution-result.schema.json",
+  cost_records: "cost-record.schema.json",
+  metric_definitions: "metric-definition.schema.json",
   metric_runs: "metric-run.schema.json",
   fraud_decisions: "fraud-decision.schema.json",
   rejections: "rejection.schema.json",
@@ -21,7 +23,7 @@ const artifacts = {
 
 const schema: JSONSchema = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
-  title: "Open MMP Evaluation Output v0.1",
+  title: "Open MMP Evaluation Output v0.2",
   type: "object",
   additionalProperties: false,
   required: Object.keys(artifacts),
