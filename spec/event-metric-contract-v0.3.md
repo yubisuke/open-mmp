@@ -137,7 +137,7 @@ Every attribution result records:
 
 An accepted install produced by `import:<provider>` may carry the closed `import_context` object. Imported attribution records the provider-reported judgment with `method=imported` and `model=provider_reported`; it never reinterprets that judgment as first-party Install Referrer evidence.
 
-- `provider_attributed=true` with `provider_attribution_strategy=deterministic`, `modeled`, or `self_attributed_network` produces `non_organic/provider_attributed` when `provider_confirmed_at` is present, except that `modeled` uses the more specific reason below.
+- `provider_attributed=true` with `provider_attribution_strategy=click_through`, `view_through`, `modeled`, or `self_attributed_network` produces `non_organic/provider_attributed` when `provider_confirmed_at` is present, except that `modeled` uses the more specific reason below.
 - A provider-attributed modeled conversion produces `non_organic/provider_modeled_conversion`.
 - A provider-attributed row without `provider_confirmed_at` produces `non_organic/provider_time_authority_unavailable`; it does not fall through to first-party `authoritative_time_missing`.
 - `provider_attributed=false` with strategy `organic` produces `organic/provider_organic`.
@@ -293,7 +293,7 @@ Manually supplied reconciliation input remains supported for other synthetic con
 
 The public contract exposes only the decision, action, high-level reason category, evidence type/digest/access class, rule-bundle digest, and evaluation time. Synthetic `bot_prefetch`, `replay_suspected`, and `click_injection_suspected` fixtures demonstrate this envelope. Replay suspicion is a fraud-decision category, not a substitute for `duplicate_delivery` or idempotency classification.
 
-Click-to-install time (CTIT) is `install_begin_at_server - redirector_click_at`, using only server-authoritative timestamps. The fixture server context carries a closed `click_injection_policy`; its default threshold classifies a nonnegative CTIT strictly below 10 seconds as `click_injection_suspected`. Exactly 10 seconds is outside that category. This public rule demonstrates deterministic contract behavior only. Production thresholds, features, and response policy remain deployment-private, versioned controls.
+Click-to-install time (CTIT) is `install_begin_at_server - redirector_click_at`, using only server-authoritative timestamps. `redirector_click_at` is the canonical v0.3 field corresponding to the work-order term `referrer_click_at_server`. The fixture server context carries a closed `click_injection_policy`; its default threshold classifies a nonnegative CTIT strictly below 10 seconds as `click_injection_suspected`. Exactly 10 seconds is outside that category. This public rule demonstrates deterministic contract behavior only. Production thresholds, features, and response policy remain deployment-private, versioned controls.
 
 Production signals, IP or User-Agent values, live thresholds, model weights, watchlists, keys, and response timing remain private and access-controlled.
 
@@ -316,12 +316,12 @@ The validation command never writes fixture files. `npm run validate`:
 
 Environment setup is `npm ci` and `python -m pip install --require-hashes --requirement requirements-contract.txt`.
 
-## Changes from v0.1
+## Changes from v0.2.1
 
-### v0.2.1 patch
+### Preserved v0.2.1 patch behavior
 
 - R-23 adds the optional metric-run `value_state` and `undefined_reason` fields. Omitted `value_state` retains the v0.2.0 present-value meaning, so existing metric-run goldens are unchanged.
-- R-23 adds `provider_modeled_conversion` to the difference-reason registry and reconciliation schema. Only that new difference reason uses `difference_reason_version=0.2.1`; existing reasons remain `0.2.0`.
+- In the preserved v0.2.1 line, R-23 adds `provider_modeled_conversion` to the difference-reason registry and reconciliation schema. Only that new v0.2.1 reason uses `difference_reason_version=0.2.1`; the older reasons remain `0.2.0`. The v0.3 in-place migration advances every reconciliation reason to `0.3.0`.
 - Schema `$id` values and registry filenames retain the `v0.2` minor-line identity. Existing v0.2.0 event, fixture-envelope, and output artifact versions remain valid where their artifact schema did not change.
 
 ### v0.3.0 minor release

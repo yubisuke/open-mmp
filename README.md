@@ -16,7 +16,7 @@ This project is licensed under the [Apache License 2.0](LICENSE); attribution is
 
 ## Current status
 
-This project contains the v0.2.1 contract, the M1a Shadow ledger/import foundation, and the M1b cohort metric and difference-audit runtime. The local runtime has a PostgreSQL append-only ledger, schema-validated existing-MMP imports, synthetic Meta and Google Ads cost adapters, manual cost normalization, MAX S2S receipt and Reporting API normalization, recalculable SQL cohort metrics, authenticated JSON/CSV reporting, append-only reconciliation results, admin deletion, encrypted payload objects, rate limits, runtime CI, and workspace SBOM generation. Local synthetic gates pass. Real provider connectivity, operator data validation, device validation, a production deployment, and exact 4-vCPU/8-GB capacity validation have not been demonstrated. The immutable v0.1 baseline is available at the `contract-v0.1` Git tag.
+This project contains the v0.3.0 contract, the M1a Shadow ledger/import foundation, and the M1b cohort metric and difference-audit runtime. The local runtime has a PostgreSQL append-only ledger, schema-validated existing-MMP imports, synthetic Meta and Google Ads cost adapters, manual cost normalization, MAX S2S receipt and Reporting API normalization, recalculable SQL cohort metrics, authenticated JSON/CSV reporting, append-only reconciliation results, admin deletion, encrypted payload objects, rate limits, runtime CI, and workspace SBOM generation. Local synthetic gates pass. Real provider connectivity, operator data validation, device validation, a production deployment, and exact 4-vCPU/8-GB capacity validation have not been demonstrated. Immutable baselines are available at the `contract-v0.1` and `contract-v0.2.1` Git tags.
 
 The first product entry point is a Shadow MMP that runs alongside an existing provider. It normalizes first-party events, existing MMP exports, media cost, and revenue into a common contract, then explains neutral differences through candidate evidence, exclusion reasons, attribution windows, ID joins, and recalculation history. Difference reasons describe measurement semantics, not provider quality. It must not be treated as the primary MMP until a real shadow pilot has produced sufficient evidence.
 
@@ -59,11 +59,11 @@ docs/
 
 Implemented M1a code lives in `apps/api`, `apps/worker`, `apps/runtime`, `packages/contracts`, and `packages/attribution-core`. Later SDK, redirector, and dashboard directories remain planned.
 
-## Current layout (v0.2 contract artifacts)
+## Current layout (v0.3 contract artifacts)
 
 - `schemas/` — Draft 2020-12 artifact schemas, including event payloads under `schemas/events/`
 - `registries/` — versioned closed vocabularies and compatibility definitions
-- `fixtures/v0.2/` — reviewed synthetic inputs and immutable golden outputs
+- `fixtures/v0.3/` — reviewed synthetic inputs and immutable golden outputs
 - `spec/` — normative contract behavior and serialization rules
 - `tools/` — TypeScript and Python reference evaluators and contract validation
 - `issue-drafts/` — historical design and acceptance records
@@ -78,8 +78,8 @@ Implemented M1a code lives in `apps/api`, `apps/worker`, `apps/runtime`, `packag
 - [Project plan](docs/project-plan.md)
 - [Issue #1 draft](issue-drafts/001-event-metric-contract-v0.1.md)
 - [Primary references](docs/references.md)
-- [Event & Metric Contract v0.2](spec/event-metric-contract-v0.2.md)
-- [Contract v0.2 migration guide](docs/contract-v0.2-migration.md)
+- [Event & Metric Contract v0.3](spec/event-metric-contract-v0.3.md)
+- [Contract v0.3 migration guide](docs/contract-v0.3-migration.md)
 - [Schema versioning policy](docs/schema-versioning.md)
 - [Operator real-data validation checklist](docs/validation/real-data-checklist.md)
 
@@ -122,4 +122,4 @@ python -m pip install --require-hashes --requirement requirements-contract.txt
 npm run validate
 ```
 
-Validation is read-only. It checks 26 schemas, 8 registries, 38 reviewed synthetic fixtures, 494 golden output artifacts across 13 classes, 38 scenario assertions, 26 acceptance criteria, semantic and metamorphic mutations, deterministic TypeScript output, independent Python output, and RFC 8785 conformance. See the [fixture provenance note](fixtures/v0.2/README.md).
+Validation is read-only. It checks 27 schemas, 8 registries, 41 reviewed synthetic fixtures, 533 golden output artifacts across 13 classes, 41 scenario assertions, 26 acceptance criteria, semantic and metamorphic mutations, deterministic TypeScript output, independent Python output, and RFC 8785 conformance. See the [fixture provenance note](fixtures/v0.3/README.md).

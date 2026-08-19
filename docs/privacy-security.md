@@ -50,6 +50,12 @@ The initial MVP does not collect them. A future adapter may handle one only when
 - Never reconnect a deleted advertising ID to an earlier ID or derived profile.
 - Google announced the retirement of Attribution Reporting (Android) on 2025-10-17 and no longer accepts enrollment; this project does not adopt it.
 
+### Meta Install Referrer evidence
+
+- Decrypted identifiers and classification fields remain protected, tenant/app-scoped evidence. They are not public campaign metadata.
+- The typed contract keeps only measurement-relevant IDs, objective classification, Instagram flag, publisher platform, and platform position. Free-form campaign, ad-group, and campaign-group names are excluded because they can contain operator-confidential text and add no measurement role that the corresponding IDs do not serve.
+- Encrypted source material, decryption keys, authentication failures, and key-rotation state remain deployment-private. Fixtures use synthetic values only.
+
 ## Initial retention proposal
 
 - Raw click evidence: 90 days
@@ -121,7 +127,7 @@ Each decision records its reason, evidence references, policy digest, evaluation
 
 ## Release gates
 
-The initial public [threat model](threat-model.md) maps the M0.2 Contract v0.2 controls and the residual risks that only a runtime release can address.
+The initial public [threat model](threat-model.md) maps the M0.3 Contract v0.3 controls and the residual risks that only a runtime release can address.
 
 - Threat model
 - Complete SDK field inventory
@@ -135,7 +141,7 @@ Gate ownership follows the canonical [roadmap](roadmap.md):
 
 | Gate | Required milestone |
 | --- | --- |
-| Initial threat model, retention/redaction contract, and replay/conflict/redaction fixtures | M0.2 Contract v0.2 |
+| Initial threat model, retention/redaction contract, and replay/conflict/redaction fixtures | M0.3 Contract v0.3 |
 | Private vulnerability-reporting path, TLS 1.2-or-later transport evidence, ledger isolation tests, deletion recalculation, envelope-encryption evidence, and an SBOM for every runtime artifact | M1a Shadow ledger and import foundation |
 | Complete Android SDK field inventory, Google Play Data safety mapping, consent-queue tests, and backup/restore exclusion for `installation_id` | M2 Android, Unity, and redirector |
 | Apple Privacy Manifest and App Privacy Details mapping | M4a iOS first-party measurement |

@@ -5,6 +5,7 @@ This is the canonical milestone sequence. `docs/project-plan.md` is a phase summ
 | Canonical roadmap milestone | Project-plan phase | Scope relationship |
 | --- | --- | --- |
 | M0.2 Contract v0.2 | Phase 0.2 | Contract, registries, fixtures, and evaluators |
+| M0.3 Contract v0.3 | Phase 0.3 | Narrow Android/Unity/Meta contract extensions required by M2 |
 | M1a Shadow ledger and import foundation | Phase 1a | Received-evidence ledger, three import paths, and runtime security foundation |
 | M1b Cohort metrics and difference audit | Phase 1b | Recalculable decision metrics and neutral reconciliation |
 | M1.5 Continuation decision gate | Phase 1.5 | Owner decision based on operator-run validation; no code deliverable |
@@ -30,6 +31,12 @@ Contract v0.2 is complete and the full local contract validation suite passes. I
 
 Evidence gate: Independently implemented evaluators reproduce the same reviewed canonical outputs from the same synthetic fixtures and policy versions.
 
+## M0.3 Contract v0.3
+
+Contract v0.3 is complete and locally validated. It preserves the M0.2 audit model while adding only the vocabulary and closed evidence shapes required by M2: third-party referrer classification, typed Meta Install Referrer evidence and precedence, imported click evidence, attribution-status metric grouping, a closed custom event, public click-injection classification, revenue precision, and wrapper provenance. The immutable v0.2.1 baseline is the `contract-v0.2.1` Git tag.
+
+Evidence gate: 27 schemas, 8 registries, 41 reviewed synthetic fixtures, both independent evaluators, registry/schema equality, and CTIT boundary mutations pass without real data or credentials.
+
 ## M1a Shadow ledger and import foundation
 
 M1a is implemented and locally validated with synthetic inputs. PostgreSQL runtime parity, import idempotency/restatement, MAX receipt, deletion, encryption/purge, rate limits, environment coverage, SBOM generation, and threat coverage are executable gates. External API account connectivity, operator real-data validation, production TLS, capacity, and deployment operations remain unverified by design.
@@ -46,7 +53,7 @@ Evidence gate: A clean Docker Compose startup ingests the synthetic fixtures thr
 
 ## M1b Cohort metrics and difference audit
 
-M1b is implemented and locally validated with synthetic inputs. The SQL engine is JCS-byte-identical to the evaluator for the reviewed cohort fixture, supports immutable snapshot supersession and redaction recalculation, and exposes authenticated JSON/CSV metric and difference-audit reads. The 10-million-row synthetic arithmetic floor completed well below ten minutes on the recorded development environment. Exact 4-vCPU/8-GB cgroup validation, the contract vocabulary for a withheld `candidate_missing` case, and a contract grouping dimension that separates organic from unattributed cohorts remain explicit follow-up work.
+M1b is implemented and locally validated with synthetic inputs. The SQL engine is JCS-byte-identical to the evaluator for the reviewed cohort fixture, supports immutable snapshot supersession and redaction recalculation, and exposes authenticated JSON/CSV metric and difference-audit reads. The 10-million-row synthetic arithmetic floor completed well below ten minutes on the recorded development environment. Contract v0.3 closes the earlier `candidate_missing` and attribution-status grouping follow-ups. Exact 4-vCPU/8-GB cgroup validation remains unperformed.
 
 - Recalculable D0, ROAS, retention, and cohort-LTV metric engine
 - Cost and revenue snapshots with versioned FX, grouping, and watermarks
@@ -116,4 +123,4 @@ Evidence gate: A production pilot completes backup restoration, deletion, replay
 
 ## Immediate next step
 
-Run the M1a CI and operator checklist, then implement M1b cohort metrics and neutral difference audit. Real provider connectivity, operator-run validation, device validation, platform approval, and production evidence remain separate states.
+Implement M2 Android, Unity, and redirector against the accepted v0.3 contract. Real provider connectivity, operator-run validation, device validation, platform approval, and production evidence remain separate states.
