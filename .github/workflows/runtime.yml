@@ -52,6 +52,7 @@ jobs:
         run: |
           npm test
           npm run test:integration
+          npm run test:db-invariants
           npm run test:env-coverage
       - name: Reproduce contract goldens through PostgreSQL
         run: npm run seed && npm run verify:parity
