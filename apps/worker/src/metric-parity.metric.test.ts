@@ -44,7 +44,7 @@ describe("M1b SQL metric parity", { concurrency: false }, () => {
       const result = await client.query<{ artifact: Any }>(
         `SELECT artifact FROM ledger.metric_runs
          WHERE tenant_id=$1 AND app_id=$2 AND metric_run_id = ANY($3::text[])
-         ORDER BY metric_run_id`,
+         ORDER BY metric_run_id COLLATE "C"`,
         [scope.tenant_id, scope.app_id, ids],
       );
       return result.rows.map((row) => row.artifact);
