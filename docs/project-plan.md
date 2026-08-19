@@ -47,6 +47,8 @@ Contract v0.2 is complete and its local validation gate passes. It includes the 
 
 ### Phase 1a: Shadow ledger and import foundation
 
+M1a is implemented and locally validated with synthetic evidence. The public repository does not contain or claim real provider/account validation.
+
 - PostgreSQL received-evidence ledger, normalized logical records, corrections, and redactions
 - Docker Compose with portable Node.js API and worker services
 - Three runtime import paths: public Shadow Import Profile, media cost, and advertising revenue

@@ -92,7 +92,8 @@ Before implementation, legal and operational requirements must validate these de
 
 - Production transport uses TLS 1.2 or later. Local Docker Compose networking is a development convenience, not evidence of production transport security.
 - Encryption at rest for PostgreSQL volumes, object storage, backups, and logs is a deployment responsibility and must use the controls of the selected host or storage layer. The project does not claim that community PostgreSQL provides transparent data encryption.
-- Protected raw payloads use project-level envelope encryption with an authenticated cipher such as AES-256-GCM. Each encrypted object records a key identifier; key material enters through a secret-management port and is never stored in fixtures, logs, or the public repository.
+- M1a protected raw payloads use project-level AES-256-GCM envelope encryption. Every object receives a random 256-bit data key; the payload and wrapped data key use separate nonces and authentication tags, and tenant/app/object identity is authenticated as AAD. Each key entry is stored separately so lawful purge removes both the encrypted object and its wrapped key; integration tests prove the object cannot be decrypted afterwards.
+- Deployment secrets enter through the M1a `SecretStore` environment-or-`*_FILE` port and are never stored in fixtures, logs, audit artifacts, or the public repository.
 - Backups and logs that contain protected metadata remain encrypted, access-controlled, and covered by retention policy.
 - Encryption keys and signing secrets remain deployment-private, are access-controlled, support rotation, and are separable from encrypted data. Docker Compose defaults are not production key-management evidence.
 
@@ -142,3 +143,7 @@ Gate ownership follows the canonical [roadmap](roadmap.md):
 | Final threat-model review, production SBOM, tenant-isolation/replay/deletion exercises, and backup/restore evidence | M5 Production and limited adapter boundary |
 
 The M1a runtime gates continue to apply to every later runtime milestone.
+
+## M1a deletion implementation status
+
+The implemented management path accepts `tenant_admin_api` deletion requests only after scrypt-verifier bearer authentication. It resolves affected records inside the authenticated tenant/app scope, appends payload lifecycle state, tombstone and correction artifacts, purges matching protected object/key entries, appends replacement D0 runs marked `redaction_affected`, and records the admin key ID in the runtime audit ledger. `on_device_sdk` remains fail-closed with HTTP 501 `on_device_path_not_implemented`. Backup erasure and large asynchronous deletion jobs remain deployment and later-milestone work.

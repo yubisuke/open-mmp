@@ -8,7 +8,7 @@ Independent measurement systems can produce totals that need transparent evidenc
 
 The project focuses on auditable, open event and metric contracts that independent implementations can reproduce from synthetic fixtures. Deployment-specific data, credentials, and live fraud defenses remain private. It is designed to make measurement more transparent without enabling device fingerprinting or cross-app tracking.
 
-This is an early contract-stage project, not a production-ready MMP.
+This is an early runtime-stage project, not a production-ready MMP.
 
 ## License
 
@@ -16,7 +16,7 @@ This project is licensed under the [Apache License 2.0](LICENSE); attribution is
 
 ## Current status
 
-This project contains the v0.2 contract schemas, registries, synthetic fixtures, and executable reference evaluators. The in-place v0.2 consistency migration and Stages A-D of the v0.2 extension are complete, the local validation gate passes, and M1a Shadow Ledger and import foundation is next. It is not production-ready runtime ingestion software or a runtime release. The immutable v0.1 baseline is available at the `contract-v0.1` Git tag.
+This project contains the v0.2 contract and the M1a Shadow ledger/import foundation. The local runtime has a PostgreSQL append-only ledger, schema-validated existing-MMP imports, synthetic Meta and Google Ads cost adapters, manual cost normalization, MAX S2S receipt and Reporting API normalization, admin deletion, encrypted payload objects, rate limits, runtime CI, and workspace SBOM generation. Local synthetic gates pass; real provider connectivity, operator data validation, device validation, a production deployment, and M1b cohort reporting have not been demonstrated. The immutable v0.1 baseline is available at the `contract-v0.1` Git tag.
 
 The first product entry point is a Shadow MMP that runs alongside an existing provider. It normalizes first-party events, existing MMP exports, media cost, and revenue into a common contract, then explains neutral differences through candidate evidence, exclusion reasons, attribution windows, ID joins, and recalculation history. Difference reasons describe measurement semantics, not provider quality. It must not be treated as the primary MMP until a real shadow pilot has produced sufficient evidence.
 
@@ -40,7 +40,7 @@ The first native attribution vertical slice targets Android:
 - SDK, ingestion, attribution, and reporting are loosely coupled
 - Start with PostgreSQL and add analytical infrastructure only when measured load requires it
 
-## Planned layout
+## Runtime layout
 
 ```text
 apps/
@@ -57,7 +57,7 @@ sdks/
 docs/
 ```
 
-This is a proposed implementation layout, not generated code.
+Implemented M1a code lives in `apps/api`, `apps/worker`, `apps/runtime`, `packages/contracts`, and `packages/attribution-core`. Later SDK, redirector, and dashboard directories remain planned.
 
 ## Current layout (v0.2 contract artifacts)
 
@@ -81,6 +81,25 @@ This is a proposed implementation layout, not generated code.
 - [Event & Metric Contract v0.2](spec/event-metric-contract-v0.2.md)
 - [Contract v0.2 migration guide](docs/contract-v0.2-migration.md)
 - [Schema versioning policy](docs/schema-versioning.md)
+- [Operator real-data validation checklist](docs/validation/real-data-checklist.md)
+
+## Five-minute synthetic quickstart
+
+Requirements: Docker with Compose, Node.js 22.18.0, and npm 11.6.2. From a clean clone, run:
+
+```bash
+docker compose up -d --wait
+npm run demo:metrics
+```
+
+The bootstrap service generates local secrets, migrations run automatically, and the API and worker start only after PostgreSQL is healthy. `demo:metrics` prints tenant-scoped synthetic ledger counts. To load all reviewed contract fixtures through the real PostgreSQL ingestion path and compare database artifacts with their immutable goldens, run:
+
+```bash
+docker compose --profile seed run --rm seed
+npm run verify:parity
+```
+
+This quickstart uses synthetic inputs only. Do not place provider exports, credentials, real user data, campaign values, or validation results in this public repository.
 
 ## Contract validation
 

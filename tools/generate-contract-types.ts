@@ -1,10 +1,11 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { compile, type JSONSchema } from "json-schema-to-typescript";
+import { compile, type JSONSchema } from "@open-mmp/contracts/type-generation";
 
 const root = process.cwd();
 const schemaRoot = join(root, "schemas");
-const outputPath = join(root, "tools", "generated", "contract-types.ts");
+const outputDirectory = join(root, "packages", "contracts", "src", "generated");
+const outputPath = join(outputDirectory, "contract-types.ts");
 const artifacts = {
   raw_records: "raw-record.schema.json",
   deliveries: "event-delivery.schema.json",
@@ -54,6 +55,6 @@ const generated = await compile(schema, "EvaluationOutput", {
   },
 });
 
-mkdirSync(join(root, "tools", "generated"), { recursive: true });
+mkdirSync(outputDirectory, { recursive: true });
 writeFileSync(outputPath, generated, "utf8");
 console.log(`Generated ${Object.keys(artifacts).length} contract artifact types at ${outputPath}`);

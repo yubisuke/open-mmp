@@ -19,6 +19,8 @@ Proposed stack:
 
 M1 through M3 use one portable deployment path: Docker Compose, Node.js services, and PostgreSQL. They do not adopt Cloudflare Queues, R2, or D1. M2 may offer a Cloudflare Workers redirector as an optional edge adapter, but the same redirector behavior must remain available through the portable Node.js interface. The ingestion API, worker, authoritative ledger, protected evidence, and dashboard do not require Cloudflare. No public contract depends on a Cloudflare-specific API.
 
+The decided M1 implementation baseline is documented in [M1 Design Baseline](design/m1-baseline.md). R-22 resolves every option set in that document to its recorded recommendation.
+
 ## Android M2 flow
 
 ```mermaid
@@ -43,6 +45,23 @@ sequenceDiagram
 ```
 
 ## Components
+
+### M1a runtime component inventory
+
+The following six component identifiers are mechanically matched to the M1a threat table.
+
+<!-- m1-component:import-worker -->
+- `import-worker`: file-driven existing-MMP imports, cost adapters, MAX inbox processing, and contract evaluation.
+<!-- m1-component:max-receiver -->
+- `max-receiver`: authenticated, allowlisted, rate-limited public GET receiver that appends one durable inbox row before returning 204.
+<!-- m1-component:payload-store -->
+- `payload-store`: AES-256-GCM envelope-encrypted protected objects with one random data key and independently purgeable key entry per object.
+<!-- m1-component:admin-api -->
+- `admin-api`: scrypt-verified bearer authentication, two-key overlap, deletion requests, and append-only privileged-operation audit.
+<!-- m1-component:postgres-ledger -->
+- `postgres-ledger`: authoritative RLS, append-only raw evidence, deliveries, corrections, tombstones, decisions, costs, and metric runs.
+<!-- m1-component:runtime-ci -->
+- `runtime-ci`: Linux/PostgreSQL migration, unit/integration, golden parity, Compose smoke, threat coverage, and per-workspace SBOM gate.
 
 ### Redirector
 
@@ -177,9 +196,9 @@ Do not compress independent concerns into one `data_quality_status`. Store inges
 
 Aggregate subjects must not contain an `installation_id`.
 
-## Planned runtime sequence
+## Runtime sequence
 
-- M1a builds the ledger and three portable import paths; M1b adds cohort metrics and difference audit.
+- M1a implements the ledger and three portable import paths; M1b adds cohort metrics and difference audit.
 - M2 adds the Android and Unity SDKs plus the portable redirector and optional Workers adapter.
 - M4a adds first-party iOS measurement; M4b adds AdAttributionKit and SKAdNetwork postback receipt and verification.
 - M5 adds production controls and only the adapter scope approved in the roadmap.

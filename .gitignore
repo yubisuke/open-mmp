@@ -1,6 +1,9 @@
 node_modules/
 tools/__pycache__/
 fixtures/.candidates/
+.env
+.openmmp/
+sbom/
 
 # Real-data guardrails (this repository is public; fixtures are synthetic only).
 # Tabular exports and any lab/input directories must never be committed.

@@ -38,8 +38,25 @@ Untrusted inputs cross the SDK, redirector, import, and fixture boundaries. The 
 
 Contract v0.2 does not select among multiple accepted clicks with one `click_id`: it returns `ambiguous_click_id`. If a later, explicitly versioned contract permits multiple candidates, it must first sort candidates by `redirector_click_at` descending, then `received_at` descending, then `record_id` ascending, and record the selected candidate and all exclusions. That future rule is not active in v0.2.
 
+## M1a runtime threat table
+
+| Component | Boundary and primary threats | Implemented controls | Residual risk |
+| --- | --- | --- | --- |
+<!-- threat-component:import-worker -->
+| `import-worker` | Untrusted export rows, malformed mappings, oversized files, duplicate snapshots, and accidental value logging | Closed mapping schema; declarative conversion; pre-insert limits; row rejection outside the evaluator; content digest and ledger idempotency; count/field-only logs | Live provider export variations remain operator-validated outside the repository. |
+<!-- threat-component:max-receiver -->
+| `max-receiver` | Forged/tampered postbacks, identifier leakage, replay, burst abuse, and timeout loss | EVENT_TOKEN_ALL with documented fallback; constant-time comparison; strict macro allowlist; IDFA/IDFV/IP boot and request rejection; token bucket; durable inbox before 204; daily aggregate backfill port | Account enablement, provider delivery latency, and live token behavior are unverified without an operator account. |
+<!-- threat-component:payload-store -->
+| `payload-store` | Plaintext exposure, object swapping, ciphertext tampering, and undecryptable-but-retained deletion residue | AES-256-GCM; random DEK per object; separately wrapped DEK; tenant/app/object AAD; separate object and key files; purge removes both; integration test proves ciphertext-only storage and post-purge decryption failure | Host volume, backup, KEK rotation, and external secret-manager controls remain deployment responsibilities. |
+<!-- threat-component:admin-api -->
+| `admin-api` | Bearer theft, cross-tenant deletion, excessive requests, identifier retention, and unaudited privileged actions | scrypt verifier only; constant-time check; at most two active keys; configured tenant/app scope; token bucket; completed artifact retains a digest rather than subject; append-only actor audit; device path fails closed with 501 | Dynamic key-rotation UI and on-device authentication are not implemented in M1a. |
+<!-- threat-component:postgres-ledger -->
+| `postgres-ledger` | Cross-tenant reads/writes, evidence overwrite, ambiguous delivery identity, and destructive deletion | FORCE RLS with transaction-local tenant; app role lacks DDL/update/delete; high-value append-only triggers; separate deliveries and logical IDs; redaction as state/tombstone/correction rows | Backup restore, high availability, and production database hardening require operator evidence. |
+<!-- threat-component:runtime-ci -->
+| `runtime-ci` | Migration drift, self-consistent evaluator errors, missing runtime security tests, or incomplete dependency inventory | Pinned Linux job; PostgreSQL 17; double migration and schema snapshot; unit/integration; seed-to-golden parity; Compose smoke; component coverage; five CycloneDX SBOMs with missing-file failure | CI is synthetic evidence and cannot prove real account, device, campaign, capacity, or production TLS behavior. |
+
 ## Residual risk and release gates
 
-Contract v0.2 has no network service, credentials, tenant database, envelope-encryption implementation, or production fraud controls. It cannot prove runtime authentication, authorization, transport security, encryption at rest, retention execution, availability, backup recovery, or protection against live abuse. Those remain release gates.
+M1a now has a local network service, tenant database, authenticated admin path, envelope-encrypted protected-object store, and synthetic runtime security gates. It still cannot prove production TLS termination, external secret-manager operation, real provider delivery, capacity, availability, backup recovery, live fraud controls, or incident response. Those remain operator and later production gates.
 
-The M0.2 Contract v0.2 gate requires the complete fixture and mutation suite, the [privacy and security release-gate crosswalk](privacy-security.md#release-gates), and the [roadmap contract status](roadmap.md). Before M1a Shadow ledger and import foundation accepts runtime code, a private vulnerability-reporting path, TLS 1.2-or-later transport evidence, ledger-isolation tests, deletion recalculation, envelope-encryption evidence, and an SBOM for every runtime artifact are required.
+The M0.2 Contract v0.2 gate requires the complete fixture and mutation suite. The M1a local gate adds the [privacy and security release-gate crosswalk](privacy-security.md#release-gates), ledger-isolation and deletion tests, envelope-encryption evidence, runtime CI, and one SBOM per workspace. Production transport and operational evidence remain unverified until an operator records them outside this repository.
