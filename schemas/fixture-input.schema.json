@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:open-mmp:schema:fixture-input:v0.2",
-  "title": "Open MMP Contract Fixture Input v0.2",
+  "$id": "urn:open-mmp:schema:fixture-input:v0.3",
+  "title": "Open MMP Contract Fixture Input v0.3",
   "type": "object",
   "additionalProperties": false,
   "required": ["contract_version", "fx_policy", "metric_evaluations", "privacy_requests"],
   "properties": {
-    "contract_version": { "const": "0.2.0" },
+    "contract_version": { "const": "0.3.0" },
     "server_context": { "$ref": "#/$defs/serverContext" },
     "records": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/record" } },
     "batches": {
@@ -57,11 +57,11 @@
     "fx_policy": { "$ref": "#/$defs/fxPolicy" },
     "cost_records": {
       "type": "array",
-      "items": { "$ref": "urn:open-mmp:schema:cost-record:v0.2" }
+      "items": { "$ref": "urn:open-mmp:schema:cost-record:v0.3" }
     },
     "metric_definitions": {
       "type": "array",
-      "items": { "$ref": "urn:open-mmp:schema:metric-definition:v0.2" }
+      "items": { "$ref": "urn:open-mmp:schema:metric-definition:v0.3" }
     },
     "metric_evaluations": {
       "type": "array",
@@ -90,7 +90,8 @@
               "campaign_id": { "$ref": "common.schema.json#/$defs/id" },
               "network": { "type": "string", "minLength": 1, "maxLength": 128 },
               "country": { "type": "string", "pattern": "^[A-Z]{2}$" },
-              "cohort_date": { "type": "string", "format": "date", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" }
+              "cohort_date": { "type": "string", "format": "date", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+              "attribution_status": { "enum": ["organic", "non_organic", "unattributed"] }
             }
           }
         }
@@ -102,11 +103,11 @@
     },
     "privacy_requests": {
       "type": "array",
-      "items": { "$ref": "urn:open-mmp:schema:privacy-request:v0.2" }
+      "items": { "$ref": "urn:open-mmp:schema:privacy-request:v0.3" }
     },
     "correction_inputs": {
       "type": "array",
-      "items": { "$ref": "urn:open-mmp:schema:correction:v0.2" }
+      "items": { "$ref": "urn:open-mmp:schema:correction:v0.3" }
     },
     "retention_expirations": {
       "type": "array",
@@ -230,6 +231,17 @@
             "policy_version": { "type": "string", "minLength": 1 },
             "policy_digest": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
           }
+        },
+        "click_injection_policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["threshold_seconds", "authority", "policy_version", "policy_digest"],
+          "properties": {
+            "threshold_seconds": { "type": "number", "exclusiveMinimum": 0, "default": 10 },
+            "authority": { "const": "server" },
+            "policy_version": { "type": "string", "minLength": 1 },
+            "policy_digest": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+          }
         }
       }
     },
@@ -242,16 +254,18 @@
         "occurred_at_source", "received_at", "payload", "processing_sequence"
       ],
       "properties": {
-        "contract_version": { "const": "0.2.0" },
+        "contract_version": { "const": "0.3.0" },
         "record_id": { "$ref": "common.schema.json#/$defs/id" },
         "delivery_id": { "$ref": "common.schema.json#/$defs/id" },
         "tenant_id": { "$ref": "common.schema.json#/$defs/id" },
         "app_id": { "$ref": "common.schema.json#/$defs/id" },
         "producer": { "type": "string", "pattern": "^(sdk-android|sdk-ios|redirector|import:[a-z0-9-]+|adapter:[a-z0-9-]+|postback:[a-z0-9-]+)$" },
         "producer_version": { "type": "string", "minLength": 1 },
+        "producer_variant": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "wrapper_version": { "type": "string", "minLength": 1, "maxLength": 128 },
         "event_id": { "$ref": "common.schema.json#/$defs/id" },
-        "event_name": { "enum": ["click", "install", "session_start", "ad_impression", "ad_view", "ad_revenue", "purchase", "refund", "consent_changed", "skan_postback", "adattributionkit_postback"] },
-        "schema_version": { "const": "0.2.0" },
+        "event_name": { "enum": ["click", "install", "session_start", "ad_impression", "ad_view", "ad_revenue", "purchase", "refund", "consent_changed", "custom_event", "skan_postback", "adattributionkit_postback"] },
+        "schema_version": { "const": "0.3.0" },
         "occurred_at": { "$ref": "#/$defs/ingressDateTimeSyntax" },
         "occurred_at_source": { "enum": ["device", "server", "import"] },
         "received_at": { "$ref": "common.schema.json#/$defs/dateTime" },

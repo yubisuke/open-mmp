@@ -6,7 +6,7 @@ import { ingestFixture } from "./ingestion.js";
 
 type Any = Record<string, any>;
 
-const fixtureRoot = join(process.cwd(), "fixtures", "v0.2");
+const fixtureRoot = join(process.cwd(), "fixtures", "v0.3");
 const fixtureNames = readdirSync(fixtureRoot, { withFileTypes: true })
   .filter((entry) => entry.isDirectory())
   .map((entry) => entry.name)

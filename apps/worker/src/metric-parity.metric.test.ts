@@ -10,7 +10,7 @@ import { computeSqlMetricRuns, computeSqlMetricRunsWithClient } from "./metrics/
 
 type Any = Record<string, any>;
 const fixtureName = "33-stage-b-cohort-metrics";
-const fixtureDirectory = join(process.cwd(), "fixtures", "v0.2", fixtureName);
+const fixtureDirectory = join(process.cwd(), "fixtures", "v0.3", fixtureName);
 const input: Any = JSON.parse(readFileSync(join(fixtureDirectory, "input.json"), "utf8"));
 const goldenPath = join(fixtureDirectory, "expected_metric_runs.json");
 const goldenBefore = readFileSync(goldenPath);
@@ -44,7 +44,7 @@ describe("M1b SQL metric parity", { concurrency: false }, () => {
       const result = await client.query<{ artifact: Any }>(
         `SELECT artifact FROM ledger.metric_runs
          WHERE tenant_id=$1 AND app_id=$2 AND metric_run_id = ANY($3::text[])
-         ORDER BY metric_run_id`,
+         ORDER BY metric_run_id COLLATE "C"`,
         [scope.tenant_id, scope.app_id, ids],
       );
       return result.rows.map((row) => row.artifact);
@@ -57,10 +57,17 @@ describe("M1b SQL metric parity", { concurrency: false }, () => {
   });
 
   it("B2 SQL cohort metric_runs are JCS-byte-identical to evaluator", () => {
-    assert.equal(sqlRuns.length, 7);
+    assert.equal(oracle.length, 8);
+    assert.equal(sqlRuns.length, oracle.length);
+    assert.equal(sqlRuns.length, golden.length);
     assert.equal(Buffer.compare(Buffer.from(jcs(oracle)), Buffer.from(jcs(golden))), 0);
     assert.equal(Buffer.compare(Buffer.from(jcs(sqlRuns)), Buffer.from(jcs(oracle))), 0);
     assert.equal(Buffer.compare(Buffer.from(jcs(persistedRuns)), Buffer.from(jcs(oracle))), 0);
+
+    const organicRoas = sqlRuns.find((run) => run.metric_run_id === "run-33-organic:d1_roas");
+    assert.equal(organicRoas?.value_state, "undefined");
+    assert.equal(organicRoas?.undefined_reason, "no_attributed_cost");
+    assert.equal("value_unscaled" in (organicRoas ?? {}), false);
   });
 
   it("B3 half_even_div matches TypeScript tie vectors", async () => {
@@ -164,7 +171,9 @@ describe("M1b SQL metric parity", { concurrency: false }, () => {
     const expected = evaluate(mutation).metric_runs;
     const actual = await computeSqlMetricRuns(appPool, mutation, false);
     assert.equal(jcs(actual), jcs(expected));
-    assert.equal(actual[0]?.value_unscaled, "0");
+    const cohortSize = actual.find((run) =>
+      run.metric_run_id === "run-33-late-install:cohort_install_count");
+    assert.equal(cohortSize?.value_unscaled, "0");
   });
 
   it("B2 excludes event conflicts from snapshot and cohort values", async () => {
@@ -295,7 +304,7 @@ describe("M1b SQL metric parity", { concurrency: false }, () => {
       },
     ];
     mutation.privacy_requests = [{
-      contract_version: "0.2.1",
+      contract_version: "0.3.0",
       tenant_id: input.server_context.tenant_id,
       app_id: input.server_context.app_id,
       privacy_request_id: "privacy:redaction-33",
@@ -337,7 +346,7 @@ describe("M1b SQL metric parity", { concurrency: false }, () => {
   it("B8 persists undefined ROAS with an explicit reason", async () => {
     const undefinedFixture = "37-undefined-organic-roas";
     const undefinedInput: Any = JSON.parse(readFileSync(
-      join(process.cwd(), "fixtures", "v0.2", undefinedFixture, "input.json"),
+      join(process.cwd(), "fixtures", "v0.3", undefinedFixture, "input.json"),
       "utf8",
     ));
     await ingestFixture(fixtureName, undefinedInput, appPool, seedPool);

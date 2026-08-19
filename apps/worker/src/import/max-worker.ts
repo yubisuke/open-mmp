@@ -45,7 +45,7 @@ function attemptFromInbox(inbox: Any, query: URLSearchParams): CandidateAttempt 
       alternative_legal_bases: [],
     },
     record: {
-      contract_version: "0.2.0",
+      contract_version: "0.3.0",
       record_id: `record:max:${inbox.inbox_id}`,
       delivery_id: `delivery:max:${inbox.inbox_id}`,
       tenant_id: inbox.tenant_id,
@@ -54,7 +54,7 @@ function attemptFromInbox(inbox: Any, query: URLSearchParams): CandidateAttempt 
       producer_version: "max-s2s-v1",
       event_id: inbox.event_id,
       event_name: "ad_revenue",
-      schema_version: "0.2.0",
+      schema_version: "0.3.0",
       occurred_at: occurredAt,
       occurred_at_source: "import",
       received_at: inbox.received_at,

@@ -1,6 +1,6 @@
 # Initial Threat Model
 
-This is the public M0.2 Contract v0.2 threat model for the contract and its reference evaluators. It describes security properties and release gates, not live defenses, incident response timing, credentials, or personal data.
+This is the public M0.3 Contract v0.3 threat model for the contract and its reference evaluators. It describes security properties and release gates, not live defenses, incident response timing, credentials, or personal data.
 
 ## Assets and trust boundaries
 
@@ -12,7 +12,7 @@ This is the public M0.2 Contract v0.2 threat model for the contract and its refe
 
 Untrusted inputs cross the SDK, redirector, import, and fixture boundaries. The PostgreSQL ledger is the authoritative received-evidence store in the future runtime architecture. Edge delivery may be deployed close to users, but must preserve the same authenticated scope, immutable ledger semantics, and portable contract behavior.
 
-## M0.2 Contract v0.2 threats and contract controls
+## M0.3 Contract v0.3 threats and contract controls
 
 | Threat | Contract control | Evidence |
 | --- | --- | --- |
@@ -24,6 +24,7 @@ Untrusted inputs cross the SDK, redirector, import, and fixture boundaries. The 
 | Revenue attaches to an uncertain installation | Metric joins require one explicit tenant/app-qualified installation anchor. | Installation-anchor assertions and D0 mutations. |
 | A public reference reveals protected evidence or loses handling policy | Every evidence reference requires tenant, app, payload lifecycle, opaque reference, and `access_class`. | Schema/registry checks and the missing-access-class mutation. |
 | A predictable click ID permits guessing or click injection | Redirectors generate at least 128 bits from a cryptographically secure random source and encode at least 22 base64url-compatible characters. | Click schema and short-ID mutation. |
+| An injected click is silently treated as ordinary evidence | The public evaluator derives CTIT only from server-authoritative click and install times and can emit `click_injection_suspected` without exposing private signals or production thresholds. | Fixture 41 and the 9.999/10.000-second CTIT boundary mutation. |
 | Aggregate output is mislabeled as installation evidence | `subject_scope` structurally selects the `aggregate:` or `installation:` subject-reference namespace. | Attribution-schema mutation. |
 | A completed deletion request retains its subject identifier | Completion forbids `deletion_subject_ref` and requires an HMAC-SHA-256 `deletion_subject_digest`; the HMAC key remains deployment-private. | Privacy-request schema, fixture 17, and privacy mutations. |
 | A malformed calendar timestamp reaches attribution or metrics | Calendar-invalid ingress is rejected as `timestamp_invalid`, its payload is discarded, and only non-identifying metadata remains. | Fixture 20 and timestamp mutations. |
@@ -36,7 +37,7 @@ Untrusted inputs cross the SDK, redirector, import, and fixture boundaries. The 
 
 ## Deterministic selection policy
 
-Contract v0.2 does not select among multiple accepted clicks with one `click_id`: it returns `ambiguous_click_id`. If a later, explicitly versioned contract permits multiple candidates, it must first sort candidates by `redirector_click_at` descending, then `received_at` descending, then `record_id` ascending, and record the selected candidate and all exclusions. That future rule is not active in v0.2.
+Contract v0.3 does not select among multiple accepted clicks with one `click_id`: it returns `ambiguous_click_id`. If a later, explicitly versioned contract permits multiple candidates, it must first sort candidates by `redirector_click_at` descending, then `received_at` descending, then `record_id` ascending, and record the selected candidate and all exclusions. That future rule is not active in v0.3.
 
 ## M1a runtime threat table
 
@@ -59,4 +60,4 @@ Contract v0.2 does not select among multiple accepted clicks with one `click_id`
 
 M1a now has a local network service, tenant database, authenticated admin path, envelope-encrypted protected-object store, and synthetic runtime security gates. It still cannot prove production TLS termination, external secret-manager operation, real provider delivery, capacity, availability, backup recovery, live fraud controls, or incident response. Those remain operator and later production gates.
 
-The M0.2 Contract v0.2 gate requires the complete fixture and mutation suite. The M1a local gate adds the [privacy and security release-gate crosswalk](privacy-security.md#release-gates), ledger-isolation and deletion tests, envelope-encryption evidence, runtime CI, and one SBOM per workspace. Production transport and operational evidence remain unverified until an operator records them outside this repository.
+The M0.3 Contract v0.3 gate requires the complete fixture and mutation suite. The M1a local gate adds the [privacy and security release-gate crosswalk](privacy-security.md#release-gates), ledger-isolation and deletion tests, envelope-encryption evidence, runtime CI, and one SBOM per workspace. Production transport and operational evidence remain unverified until an operator records them outside this repository.

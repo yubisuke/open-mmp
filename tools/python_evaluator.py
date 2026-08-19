@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Independent Python evaluator for Open MMP Contract v0.2 fixtures."""
+"""Independent Python evaluator for Open MMP Contract v0.3 fixtures."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from typing import Any
 
 import rfc8785
 
-CONTRACT_VERSION = "0.2.0"
+CONTRACT_VERSION = "0.3.0"
 ZERO_HASH = "0" * 64
 DAY_MS = 86_400_000
 
@@ -421,6 +421,8 @@ def raw_record(attempt: dict[str, Any], lifecycle: str) -> dict[str, Any]:
         "app_id": server["app_id"],
         "producer": record["producer"],
         "producer_version": record["producer_version"],
+        **({"producer_variant": record["producer_variant"]} if record.get("producer_variant") else {}),
+        **({"wrapper_version": record["wrapper_version"]} if record.get("wrapper_version") else {}),
         "event_id": record["event_id"],
         "delivery_id": record["delivery_id"],
         "event_name": record["event_name"],
@@ -493,12 +495,26 @@ def attribution(
     if imported_producer:
         if not imported:
             return result("unattributed", "imported", "provider_reported", "provider_unattributed")
+        referenced_clicks = [
+            candidate for candidate in attempts
+            if imported.get("provider_click_ref")
+            and candidate["server"]["tenant_id"] == server["tenant_id"]
+            and candidate["server"]["app_id"] == server["app_id"]
+            and candidate["record"]["event_name"] == "click"
+            and candidate["record"]["producer"] == "redirector"
+            and candidate["record"]["payload"].get("remote_click_ref") == imported["provider_click_ref"]
+            and decision_for(decisions, candidate)["ingestion_status"] == "accepted"
+            and decision_for(decisions, candidate)["duplicate_resolution"] == "unique"
+        ]
+        imported_evidence = ({
+            "evidence_refs": [evidence(referenced_clicks[0]["record"]["record_id"]), evidence(install["record_id"])],
+        } if len(referenced_clicks) == 1 else {})
         if imported["provider_attributed"]:
             if imported["provider_attribution_strategy"] == "modeled":
-                return result("non_organic", "imported", "provider_reported", "provider_modeled_conversion")
+                return result("non_organic", "imported", "provider_reported", "provider_modeled_conversion", imported_evidence)
             if not imported.get("provider_confirmed_at"):
-                return result("non_organic", "imported", "provider_reported", "provider_time_authority_unavailable")
-            return result("non_organic", "imported", "provider_reported", "provider_attributed")
+                return result("non_organic", "imported", "provider_reported", "provider_time_authority_unavailable", imported_evidence)
+            return result("non_organic", "imported", "provider_reported", "provider_attributed", imported_evidence)
         if imported["provider_attribution_strategy"] == "organic":
             return result("organic", "imported", "provider_reported", "provider_organic")
         return result("unattributed", "imported", "provider_reported", "provider_unattributed")
@@ -508,10 +524,10 @@ def attribution(
             "non_organic", "meta_install_referrer",
             payload["meta_referrer_context"]["attribution_model"], "meta_referrer_decrypted",
         )
-    if payload.get("meta_referrer_status") == "decrypt_failed":
+    if payload.get("meta_referrer_status") in ("decrypt_failed", "auth_failed"):
         return result(
             "unattributed", "meta_install_referrer",
-            payload["meta_referrer_context"]["attribution_model"], "meta_referrer_decrypt_failed",
+            payload.get("meta_referrer_context", {}).get("attribution_model", "last_click"), "meta_referrer_decrypt_failed",
         )
     if payload.get("adservices_context", {}).get("status") == "attributed":
         return result("non_organic", "apple_adservices", "last_click", "adservices_attributed")
@@ -520,6 +536,10 @@ def attribution(
 
     if payload["referrer_status"] == "none":
         return result("organic", "none", "none", "no_referrer")
+    if payload["referrer_status"] == "third_party":
+        if payload["third_party_referrer_classification"] == "play_organic_marker":
+            return result("organic", "none", "none", "no_first_party_referrer")
+        return result("unattributed", "none", "none", "foreign_referrer_unresolved")
     if payload["referrer_status"] == "unsupported":
         return result("unattributed", "none", "none", "install_referrer_unsupported")
     if payload["referrer_status"] == "unavailable":
@@ -705,7 +725,11 @@ def scale_money(payload: dict[str, Any], target_scale: int) -> int:
     return round_half_even(int(payload["amount_unscaled"]), 10 ** -difference)
 
 
-def matches_grouping(attempt: dict[str, Any], grouping: dict[str, Any] | None) -> bool:
+def matches_grouping(
+    attempt: dict[str, Any],
+    grouping: dict[str, Any] | None,
+    attribution_statuses: dict[tuple[str, str, str], str],
+) -> bool:
     if not grouping:
         return True
     payload = attempt["record"]["payload"]
@@ -720,6 +744,14 @@ def matches_grouping(attempt: dict[str, Any], grouping: dict[str, Any] | None) -
         return False
     if grouping.get("cohort_date") is not None and attempt["record"]["event_name"] == "install" and day(attempt["record"]["occurred_at"], "UTC", "occurred_at") != grouping["cohort_date"]:
         return False
+    if grouping.get("attribution_status") is not None and attempt["record"]["event_name"] == "install":
+        status = attribution_statuses.get((
+            attempt["server"]["tenant_id"],
+            attempt["server"]["app_id"],
+            attempt["record"]["payload"]["installation_id"],
+        ))
+        if status != grouping["attribution_status"]:
+            return False
     return True
 
 
@@ -737,11 +769,16 @@ def metric_runs(
     attempts: list[dict[str, Any]],
     decisions: dict[str, dict[str, Any]],
     lifecycle: dict[tuple[str, str, str], str],
+    attributions: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     policy = value["fx_policy"]
     definitions = metric_definitions(value)
     definitions_by_name = {definition["metric_name"]: definition for definition in definitions}
     costs = cost_records(value)
+    attribution_statuses = {
+        (item["tenant_id"], item["app_id"], item["subject_ref"]): item["status"]
+        for item in attributions if item["subject_scope"] == "installation_level"
+    }
     output: list[dict[str, Any]] = []
     for evaluation in value.get("metric_evaluations", []):
         included = [
@@ -768,7 +805,11 @@ def metric_runs(
             attempt for attempt in included
             if evaluation["privacy_state"] != "after" or attempt_evidence_key(attempt) not in lifecycle
         ]
-        installs = [attempt for attempt in visible if attempt["record"]["event_name"] == "install" and matches_grouping(attempt, evaluation.get("grouping"))]
+        installs = [
+            attempt for attempt in visible
+            if attempt["record"]["event_name"] == "install"
+            and matches_grouping(attempt, evaluation.get("grouping"), attribution_statuses)
+        ]
         revenue = [
             attempt for attempt in visible
             if attempt["record"]["event_name"] == "ad_revenue"
@@ -798,6 +839,7 @@ def metric_runs(
         grouped_costs = [
             cost for cost in costs
             if cost["as_of"] <= evaluation["input_received_at_watermark"]
+            and evaluation.get("grouping", {}).get("attribution_status", "non_organic") == "non_organic"
             and (not cohort_scopes or (cost["tenant_id"], cost["app_id"]) in cohort_scopes)
             if all(evaluation.get("grouping", {}).get(field) is None or cost.get(field) == evaluation["grouping"][field] for field in ("campaign_id", "network", "country"))
             and (evaluation.get("grouping", {}).get("cohort_date") is None or cost["date"] == evaluation["grouping"]["cohort_date"])
@@ -832,6 +874,13 @@ def metric_runs(
             if metric_name not in definitions_by_name:
                 raise ValueError(f"unknown metric definition: {metric_name}")
             definition = definitions_by_name[metric_name]
+            unsupported = [
+                dimension for dimension in evaluation.get("grouping", {})
+                if definition.get("grouping_dimensions") is not None
+                and dimension not in definition["grouping_dimensions"]
+            ]
+            if unsupported:
+                raise ValueError(f"unsupported grouping for {metric_name}: {','.join(unsupported)}")
             revenue_value = 0
             for item in revenue:
                 installation = next(
@@ -1013,6 +1062,11 @@ def reconciliation_results(value: dict[str, Any], accepted: list[dict[str, Any]]
             reason = "provider_modeled_conversion"
         elif not external:
             reason = "join_key_missing"
+        elif not matched and any(
+            entry["type"] in ("provider_click_id", "provider_install_id")
+            for entry in item.get("matching_keys", [])
+        ):
+            reason = "candidate_missing"
         elif not matched:
             reason = "external_row_unmatched"
         elif len(matched) > 1 and any(entry["cardinality"] == "one_to_one" for entry in item["matching_keys"]):
@@ -1033,7 +1087,7 @@ def reconciliation_results(value: dict[str, Any], accepted: list[dict[str, Any]]
             "input_snapshot_id": item["input_snapshot_id"],
             "external_snapshot_id": item["external_snapshot_id"],
             "difference_reason_code": reason,
-            "difference_reason_version": "0.2.1" if reason == "provider_modeled_conversion" else CONTRACT_VERSION,
+            "difference_reason_version": "0.3.0" if reason == "provider_modeled_conversion" else CONTRACT_VERSION,
             "matching_keys": matching_keys,
             "candidates": sorted((candidate["candidate_id"] for candidate in matched), key=utf16_key),
             "exclusions": sorted((candidate["exclusion_reason"] for candidate in matched if candidate["excluded"]), key=utf16_key),
@@ -1177,7 +1231,7 @@ def evaluate(value: dict[str, Any]) -> dict[str, Any]:
         if request["status"] == "completed"
         for affected in request.get("affected_records", [])
     ], privacy_tombstone_sort_key)
-    fraud = sort_by_key([
+    fraud_values = [
         {
             "fraud_decision_id": f"fraud:{attempt['record']['record_id']}",
             "subject_ref": attempt["record"]["record_id"],
@@ -1202,7 +1256,54 @@ def evaluate(value: dict[str, Any]) -> dict[str, Any]:
         for attempt in accepted
         if attempt["record"]["event_name"] == "click"
         and (attempt["record"]["payload"].get("bot_prefetch") or attempt["record"]["payload"].get("replay_suspected"))
-    ], fraud_decision_sort_key)
+    ]
+    for attempt in accepted:
+        if attempt["record"]["event_name"] != "install":
+            continue
+        payload = attempt["record"]["payload"]
+        if payload.get("referrer_status") != "available" or not payload.get("click_id") or not payload.get("install_begin_at_server"):
+            continue
+        matching_clicks = [
+            candidate for candidate in accepted
+            if candidate["server"]["tenant_id"] == attempt["server"]["tenant_id"]
+            and candidate["server"]["app_id"] == attempt["server"]["app_id"]
+            and candidate["record"]["event_name"] == "click"
+            and candidate["record"]["payload"].get("click_id") == payload["click_id"]
+            and candidate["record"]["payload"].get("redirector_time_status") != "invalid"
+            and candidate["record"]["payload"].get("redirector_click_at")
+        ]
+        if len(matching_clicks) != 1:
+            continue
+        click = matching_clicks[0]
+        try:
+            delta = timestamp(payload["install_begin_at_server"], "install_begin_at_server") - timestamp(
+                click["record"]["payload"]["redirector_click_at"], "redirector_click_at"
+            )
+        except ValueError:
+            # Invalid authority is classified by attribution and cannot support CTIT evidence.
+            continue
+        threshold_seconds = attempt["server"].get("click_injection_policy", {}).get("threshold_seconds", 10)
+        if delta.total_seconds() < 0 or delta.total_seconds() >= threshold_seconds:
+            continue
+        fraud_values.append({
+            "fraud_decision_id": f"fraud:{attempt['record']['record_id']}:click-injection",
+            "subject_ref": attempt["record"]["record_id"],
+            "decision": "suspected",
+            "action": "flag",
+            "reason_code": "click_injection_suspected",
+            "reason_code_version": CONTRACT_VERSION,
+            "evidence": [{
+                "type": "ctit_category",
+                "captured_at": attempt["record"]["received_at"],
+                "digest": digest(["click_injection_suspected", click["record"]["record_id"], attempt["record"]["record_id"]]),
+                "access_class": "protected",
+            }],
+            "rule_bundle_id": "fraud-public-envelope",
+            "rule_bundle_version": CONTRACT_VERSION,
+            "rule_bundle_hash": ZERO_HASH,
+            "evaluated_at": attempt["record"]["received_at"],
+        })
+    fraud = sort_by_key(fraud_values, fraud_decision_sort_key)
     rejections = sort_by_key([
         {
             "contract_version": CONTRACT_VERSION,
@@ -1237,7 +1338,7 @@ def evaluate(value: dict[str, Any]) -> dict[str, Any]:
         "attributions": attributions,
         "cost_records": cost_records(value),
         "metric_definitions": metric_definitions(value),
-        "metric_runs": metric_runs(value, attempts, decisions, lifecycle),
+        "metric_runs": metric_runs(value, attempts, decisions, lifecycle, attributions),
         "fraud_decisions": fraud,
         "rejections": rejections,
         "reconciliation": reconciliation_results(value, accepted),

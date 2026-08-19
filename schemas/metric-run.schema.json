@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:open-mmp:schema:metric-run:v0.2",
-  "title": "Open MMP Metric Run v0.2",
+  "$id": "urn:open-mmp:schema:metric-run:v0.3",
+  "title": "Open MMP Metric Run v0.3",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -55,7 +55,8 @@
             "campaign_id": { "$ref": "common.schema.json#/$defs/id" },
             "network": { "type": "string", "minLength": 1, "maxLength": 128 },
             "country": { "type": "string", "pattern": "^[A-Z]{2}$" },
-            "cohort_date": { "type": "string", "format": "date", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" }
+            "cohort_date": { "type": "string", "format": "date", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+            "attribution_status": { "enum": ["organic", "non_organic", "unattributed"] }
           }
         },
         "dimension_digest": { "type": "string", "pattern": "^[a-f0-9]{64}$" }

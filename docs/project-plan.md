@@ -35,7 +35,7 @@ The project is an open-source product for self-hosting teams. No company-specifi
 - Detection-response timing
 - Real user, campaign, cost, revenue, and provider-export evidence
 
-Fraud decisions retain evidence references, reason codes, rule-bundle versions and digests, evaluation time, action, and supersession history. A later delayed-transparency policy for retired rules may be considered, but it is not part of v0.2.
+Fraud decisions retain evidence references, reason codes, rule-bundle versions and digests, evaluation time, action, and supersession history. A later delayed-transparency policy for retired rules may be considered, but it is not part of v0.3.
 
 ## Execution phases
 
@@ -44,6 +44,10 @@ Fraud decisions retain evidence references, reason codes, rule-bundle versions a
 ### Phase 0.2: Contract v0.2
 
 Contract v0.2 is complete and its local validation gate passes. It includes the in-place consistency migration plus imported provider-reported attribution, automatic neutral reconciliation, typed reporting dimensions, cost and cohort metrics, Apple aggregate envelopes, a minimal verified Meta envelope, and the closed processing-purpose catalog. It remains contract evidence, not production-runtime readiness.
+
+### Phase 0.3: Contract v0.3
+
+Contract v0.3 is complete and locally validated. It adds only the closed Android/Unity/Meta evidence required by Phase 2, including third-party referrer classification, typed Meta Install Referrer evidence, attribution-status grouping, custom events, click-injection classification, revenue precision, and wrapper provenance. It does not claim an SDK, device run, live campaign, or production integration.
 
 ### Phase 1a: Shadow ledger and import foundation
 
@@ -58,7 +62,7 @@ M1a is implemented and locally validated with synthetic evidence. The public rep
 
 ### Phase 1b: Cohort metrics and difference audit
 
-Phase 1b is implemented for the v0.2.1 contract and locally validated with synthetic PostgreSQL data. Snapshot supersession, SQL/evaluator parity, redaction recalculation, undefined ROAS, JSON/CSV export, persisted difference evidence, a third oracle, and a 10-million-row arithmetic floor have executable evidence. Exact 4-vCPU/8-GB capacity validation and two contract vocabulary/grouping follow-ups remain outside the completed runtime change.
+Phase 1b is implemented and locally validated with synthetic PostgreSQL data. Snapshot supersession, SQL/evaluator parity, redaction recalculation, undefined ROAS, JSON/CSV export, persisted difference evidence, a third oracle, and a 10-million-row arithmetic floor have executable evidence. Contract v0.3 closes the two vocabulary/grouping follow-ups. Exact 4-vCPU/8-GB capacity validation remains outside the completed runtime change.
 
 - Recalculable D0, ROAS, retention, and cohort-LTV engine
 - Versioned cost, revenue, FX, grouping, and watermark handling
@@ -74,7 +78,7 @@ There is no code deliverable. The owner uses the M1a/M1b evidence, operator-run 
 - Unity C# SDK and Android Kotlin bridge
 - Google Play Install Referrer and versioned deterministic attribution
 - Portable Node.js redirector, with an optional Cloudflare Workers adapter only for that redirector
-- Meta Install Referrer decryption after primary-source field verification
+- Meta Install Referrer decryption against the v0.3 typed evidence fields, using synthetic vectors for the code gate
 - Persistent queue, retry, idempotency, identifier reset, and sample application
 
 ### Phase 3: Metrics dashboard

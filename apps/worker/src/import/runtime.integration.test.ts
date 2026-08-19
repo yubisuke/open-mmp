@@ -188,10 +188,10 @@ describe("admin privacy integration", () => {
     await ensureAdminKeys(appPool, { tenantId: "tenant-local", appId: "app-local" }, [adminKey, previousKey], "2026-08-19T13:00:00.000Z");
     const metric = {
       metric_run_id: "metric:privacy-baseline", metric_name: "d0_install_to_24h_ad_revenue_usd",
-      metric_definition_version: "0.2.0", input_snapshot_id: "a".repeat(64),
+      metric_definition_version: "0.3.0", input_snapshot_id: "a".repeat(64),
       input_received_at_watermark: "2026-08-19T12:59:59.999Z", input_ledger_position: "2026-08-19T12:00:00.000Z|synthetic",
       computed_at: "2026-08-19T13:00:00.000Z", data_freshness: "complete", aggregation_time_zone: "UTC",
-      rule_bundle_id: "metric-default", rule_bundle_version: "0.2.0", rule_bundle_hash: "b".repeat(64),
+      rule_bundle_id: "metric-default", rule_bundle_version: "0.3.0", rule_bundle_hash: "b".repeat(64),
       rounding_mode: "half_even", reproducibility_status: "fully_reproducible",
       value_type: "money", value_unscaled: "0", amount_scale: 6, currency: "USD",
     };
