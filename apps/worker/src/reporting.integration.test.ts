@@ -71,13 +71,13 @@ describe("M1b reporting and difference audit", { concurrency: false }, () => {
     const address = server.address();
     assert.ok(address && typeof address === "object");
     baseUrl = `http://127.0.0.1:${address.port}`;
-  });
+  }, { timeout: 60_000 });
 
   after(async () => {
     await new Promise<void>((resolve, reject) => server?.close((error) => error ? reject(error) : resolve()));
     await appPool?.end();
     await seedPool?.end();
-  });
+  }, { timeout: 60_000 });
 
   it("B7 protects reporting with the admin key and preserves JSON/CSV values and metadata", async () => {
     const unauthorized = await fetch(`${baseUrl}/v1/reports/metrics?format=json`);
