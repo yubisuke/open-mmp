@@ -70,6 +70,7 @@ class PostgresCandidateProvider implements CandidateProvider {
   static async stageAndLoad(pool: Pool, fixtureName: string, input: Any): Promise<PostgresCandidateProvider> {
     const source = inputAttempts(input);
     await pool.query("DELETE FROM testing.fixture_attempts WHERE fixture_name = $1", [fixtureName]);
+    console.log(`Fixture ingest ${fixtureName}: candidate rows cleared`);
     for (const [ordinal, attempt] of source.entries()) {
       await pool.query(
         `INSERT INTO testing.fixture_attempts (
@@ -91,6 +92,7 @@ class PostgresCandidateProvider implements CandidateProvider {
         ],
       );
     }
+    console.log(`Fixture ingest ${fixtureName}: ${source.length} candidate rows inserted`);
     const rows = await pool.query<{ batch_id: string; server_context: Any; record: Any }>(
       `SELECT batch_id, server_context, record
        FROM testing.fixture_attempts
@@ -98,6 +100,7 @@ class PostgresCandidateProvider implements CandidateProvider {
        ORDER BY ordinal`,
       [fixtureName],
     );
+    console.log(`Fixture ingest ${fixtureName}: ${rows.rows.length} candidate rows loaded`);
     const stored = rows.rows
       .map((row) => ({ server: row.server_context, record: row.record, batch_id: row.batch_id }))
       .sort(compareCandidateAttempts);
