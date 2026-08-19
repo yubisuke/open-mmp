@@ -2,10 +2,8 @@ import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import { basename, join, relative } from "node:path";
 import { describe, it } from "node:test";
-import Ajv2020Module from "ajv/dist/2020.js";
-import addFormatsModule from "ajv-formats";
-import { canonicalize } from "json-canonicalize";
-import { evaluate, sha256, TimestampInvalidError } from "./evaluator.js";
+import { Ajv2020Module, addFormatsModule, canonicalize } from "@open-mmp/contracts/validation-tooling";
+import { evaluate, sha256, TimestampInvalidError } from "@open-mmp/attribution-core";
 
 type Any = Record<string, any>;
 type Captured<T> = { ok: true; value: T } | { ok: false; error: unknown };

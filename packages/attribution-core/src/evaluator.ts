@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { canonicalize } from "json-canonicalize";
-import type { OpenMMPEvaluationOutputV02 as EvaluationOutput } from "./generated/contract-types.js";
+import type { OpenMMPEvaluationOutputV02 as EvaluationOutput } from "@open-mmp/contracts";
 
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 type Any = Record<string, any>;

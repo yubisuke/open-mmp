@@ -4,22 +4,17 @@
   "private": true,
   "description": "Open MMP Event & Metric Contract v0.2 reference validation",
   "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "engines": {
     "node": "22.18.0",
     "npm": "11.6.2"
   },
   "scripts": {
-    "generate:types": "tsx tools/generate-contract-types.ts",
-    "validate": "npm run typecheck && node --import tsx --test tools/validate.ts && node --import tsx tools/validate.ts --summary",
-    "typecheck": "tsc --noEmit"
-  },
-  "devDependencies": {
-    "@types/node": "22.15.3",
-    "ajv": "8.20.0",
-    "ajv-formats": "3.0.1",
-    "json-canonicalize": "2.0.0",
-    "json-schema-to-typescript": "15.0.4",
-    "tsx": "4.19.3",
-    "typescript": "5.8.3"
+    "generate:types": "npm run generate:types --workspace @open-mmp/contracts",
+    "validate": "npm run typecheck && npm run validate:test --workspace @open-mmp/contracts && npm run validate:summary --workspace @open-mmp/contracts",
+    "typecheck": "npm run typecheck --workspace @open-mmp/contracts"
   }
 }
