@@ -57,10 +57,17 @@ describe("M1b SQL metric parity", { concurrency: false }, () => {
   });
 
   it("B2 SQL cohort metric_runs are JCS-byte-identical to evaluator", () => {
-    assert.equal(sqlRuns.length, 7);
+    assert.equal(oracle.length, 8);
+    assert.equal(sqlRuns.length, oracle.length);
+    assert.equal(sqlRuns.length, golden.length);
     assert.equal(Buffer.compare(Buffer.from(jcs(oracle)), Buffer.from(jcs(golden))), 0);
     assert.equal(Buffer.compare(Buffer.from(jcs(sqlRuns)), Buffer.from(jcs(oracle))), 0);
     assert.equal(Buffer.compare(Buffer.from(jcs(persistedRuns)), Buffer.from(jcs(oracle))), 0);
+
+    const organicRoas = sqlRuns.find((run) => run.metric_run_id === "run-33-organic:d1_roas");
+    assert.equal(organicRoas?.value_state, "undefined");
+    assert.equal(organicRoas?.undefined_reason, "no_attributed_cost");
+    assert.equal("value_unscaled" in (organicRoas ?? {}), false);
   });
 
   it("B3 half_even_div matches TypeScript tie vectors", async () => {
@@ -164,7 +171,9 @@ describe("M1b SQL metric parity", { concurrency: false }, () => {
     const expected = evaluate(mutation).metric_runs;
     const actual = await computeSqlMetricRuns(appPool, mutation, false);
     assert.equal(jcs(actual), jcs(expected));
-    assert.equal(actual[0]?.value_unscaled, "0");
+    const cohortSize = actual.find((run) =>
+      run.metric_run_id === "run-33-late-install:cohort_install_count");
+    assert.equal(cohortSize?.value_unscaled, "0");
   });
 
   it("B2 excludes event conflicts from snapshot and cohort values", async () => {

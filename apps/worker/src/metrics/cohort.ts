@@ -259,6 +259,7 @@ async function metricValue(
            SELECT DISTINCT ON (cost_key_digest) *
            FROM ledger.cost_records
            WHERE tenant_id=$1 AND app_id=$2 AND as_of <= $3
+             AND ($16::text IS NULL OR $16='non_organic')
              AND ($4::text IS NULL OR campaign_id=$4)
              AND ($5::text IS NULL OR network=$5)
              AND ($6::text IS NULL OR country=$6)
