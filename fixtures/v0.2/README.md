@@ -1,6 +1,6 @@
 # Contract v0.2 fixture provenance
 
-The JSON files in the 35 numbered directories are reviewed, immutable golden contract examples. They are committed as source artifacts; the validation command never creates, updates, or regenerates them.
+The JSON files in the 36 numbered directories are reviewed, immutable golden contract examples. They are committed as source artifacts; the validation command never creates, updates, or regenerates them.
 
 Each fixture has one synthetic input and 13 independently asserted output classes:
 
@@ -78,7 +78,7 @@ The public purpose catalog is exercised without adding real data: fixture 25 use
 
 Fixtures 01 through 19 preserve the reviewed v0.1 scenarios under the v0.2 schemas and semantics. Their per-file changes are recorded in `docs/contract-v0.2-migration.md`. Every fixture now includes reviewed metric definitions and an explicit cost-record output class.
 
-Each new fixture 20 through 35 contains the same 13 `expected_*.json` artifacts listed above. Empty arrays are deliberate reviewed outputs, not missing assertions.
+Each new fixture 20 through 36 contains the same 13 `expected_*.json` artifacts listed above. Empty arrays are deliberate reviewed outputs, not missing assertions.
 
 | Fixture | Independent derivation of the meaningful golden result |
 | --- | --- |
@@ -98,6 +98,7 @@ Each new fixture 20 through 35 contains the same 13 `expected_*.json` artifacts 
 | `33-stage-b-cohort-metrics` | Typed click/install dimensions and `ad_view` evidence are retained. Installation-level revenue joins one install, aggregate revenue does not. The later cost revision is current at the watermark. Per-event half-even FX produces the independently calculated D1/D3/D7 ROAS, D1/D7 retention, D7 cohort LTV, and cohort-size results described above. |
 | `34-stage-c-apple-meta-attribution` | Eleven accepted synthetic records yield eleven same-scope attributions: Meta last-click/view-through decrypted evidence, Meta decrypt failure and absent fallback, AdServices attributed/expired evidence, verified/invalid SKAdNetwork, and AdAttributionKit non-winner/source-suppressed/null-conversion branches. All 13 golden artifact classes were reviewed against the closed event/output schemas and TypeScript/Python parity. |
 | `35-privacy-request-auth-scope` | A completed synthetic tenant-admin request purges one session record and yields one correction plus one tombstone. A separate received on-device request carries an opaque authentication-decision reference and targets only the installation ID in its own synthetic session record. Mutations prove that missing authentication provenance, unknown routes, app-wide on-device scope, and a different installation target fail closed in both evaluators. No credential or device identifier is stored in `requester_auth_ref`. |
+| `36-child-directed-audience` | A synthetic child-directed app context accepts an ordinary session without any advertising identifier. Recursive schema mutations inject every reserved advertising-identifier field name into nested payload extensions and prove rejection; per-batch validation is exercised independently. The Apple Ads object field `ad_id` remains distinct from a device advertising identifier, while absent `audience` preserves the `general` default. |
 
 ## Adding a fixture
 

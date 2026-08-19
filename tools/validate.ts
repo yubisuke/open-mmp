@@ -553,8 +553,8 @@ if (!summaryOnly) {
         }
       });
     }
-    it("contains 35 fixture directories", () => {
-      check(fixtureDirs.length === 35, `expected 35 fixture directories, found ${fixtureDirs.length}`);
+    it("contains 36 fixture directories", () => {
+      check(fixtureDirs.length === 36, `expected 36 fixture directories, found ${fixtureDirs.length}`);
     });
   });
 
@@ -804,12 +804,17 @@ const scenarios: Array<[string, () => void]> = [
     check(requests["privacy-device-35"].deletion_subject_ref === "installation:device-35", "scenario 35 on-device subject");
     check(value.privacy_tombstones.length === 1 && value.corrections.length === 1, "scenario 35 completed admin deletion");
   }],
+  ["36 child-directed audience boundary", () => {
+    const value = fixture("36-child-directed-audience");
+    check(value.input.server_context.audience === "child_directed", "scenario 36 audience");
+    check(value.output.raw_records.length === 1 && value.output.rejections.length === 0, "scenario 36 safe event");
+  }],
 ];
 if (!summaryOnly) {
   describe("reviewed scenarios", () => {
     for (const [name, assertion] of scenarios) it(name, assertion);
-    it("contains 35 scenario assertions", () => {
-      check(scenarios.length === 35, "scenario assertion inventory must contain 35 entries");
+    it("contains 36 scenario assertions", () => {
+      check(scenarios.length === 36, "scenario assertion inventory must contain 36 entries");
     });
   });
 
@@ -1162,12 +1167,14 @@ if (!summaryOnly) {
       invalidDelivery.processing_purpose_id = "unregistered_purpose";
       check(!validatorFor(outputSchemaIds.deliveries)(invalidDelivery), "delivery schema accepted unknown purpose");
     });
-    it("requires privacy authentication provenance and keeps audience on hold", () => {
+    it("requires privacy authentication provenance and defines app audience", () => {
       const privacy = schemaValue("urn:open-mmp:schema:privacy-request:v0.2");
       const fixtureSchema = schemaValue("urn:open-mmp:schema:fixture-input:v0.2");
       check(equal(privacy.properties.requested_via.enum, ["on_device_sdk", "tenant_admin_api"]), "privacy request route enum mismatch");
       check(privacy.required.includes("requested_via") && privacy.required.includes("requester_auth_ref"), "privacy authentication provenance is optional");
-      check(fixtureSchema.$defs.serverContext.properties.audience === undefined, "Stage D implemented held audience");
+      const audience = fixtureSchema.$defs.serverContext.properties.audience;
+      check(equal(audience.enum, ["general", "mixed", "child_directed"]), "app audience enum mismatch");
+      check(audience.default === "general", "app audience default mismatch");
     });
   });
 }
@@ -1261,7 +1268,7 @@ const acceptance: Array<[string, () => void]> = [
     check(corrections.some((item: Any) => item.correction_type === "retraction"), "AC15 retraction");
     check(fixture("17-redaction-recalculation").output.metric_runs.some((item: Any) => item.supersedes_metric_run_id), "AC15 redaction");
   }],
-  ["AC16 clock referrer prefetch and withdrawal fixtures pass", () => check(scenarios.length === 35 && fixture("11-clock-skew").output.deliveries.some((item: Any) => item.clock_skew_suspected) && fixture("13-referrer-unsupported").output.attributions.length === 2 && fixture("19-bot-prefetch").output.fraud_decisions.length === 1 && fixture("20-timestamp-invalid").output.rejections.some((item: Any) => item.reason_code === "timestamp_invalid"), "AC16")],
+  ["AC16 clock referrer prefetch and withdrawal fixtures pass", () => check(scenarios.length === 36 && fixture("11-clock-skew").output.deliveries.some((item: Any) => item.clock_skew_suspected) && fixture("13-referrer-unsupported").output.attributions.length === 2 && fixture("19-bot-prefetch").output.fraud_decisions.length === 1 && fixture("20-timestamp-invalid").output.rejections.some((item: Any) => item.reason_code === "timestamp_invalid"), "AC16")],
   ["AC17 server-recognized withdrawal rejects and redacts payload", () => {
     for (const name of ["14-withdrawal-after-occurrence", "15-event-after-withdrawal"]) {
       const value = fixture(name).output;
@@ -1301,7 +1308,7 @@ const acceptance: Array<[string, () => void]> = [
     for (const forbidden of ["threshold", "model_weight", "watchlist", "ip_address", "user_agent", "response_timing"]) check(!schemaText.includes(forbidden), `AC20 ${forbidden}`);
     check(specText.includes("remain private"), "AC20 private boundary");
   }],
-  ["AC21 one command validates every schema registry fixture and golden", () => check(schemaPaths.length === 26 && Object.keys(registries).length === 8 && fixtureDirs.length === 35 && outputArtifactCount === 35 * 13, "AC21")],
+  ["AC21 one command validates every schema registry fixture and golden", () => check(schemaPaths.length === 26 && Object.keys(registries).length === 8 && fixtureDirs.length === 36 && outputArtifactCount === 36 * 13, "AC21")],
   ["AC22 repeated and independent evaluators produce identical JCS", () => {
     for (const { output, python } of results.values()) check(equal(output, python), "AC22 evaluator mismatch");
     const vector = { numbers: [333333333.33333329, 1e30, 4.50, 2e-3, 1e-27, -0], string: "€$\u000f\nA'B\"\\\"/" };
@@ -1475,6 +1482,54 @@ if (!summaryOnly) {
       const typescript = capture(() => evaluate(invalid));
       const python = pythonBatch([invalid])[0];
       check(!typescript.ok && !python.ok, "mutation cross-installation privacy request was accepted");
+    });
+    it("enforces child-directed advertising-identifier boundaries", () => {
+      const validator = validatorFor("urn:open-mmp:schema:fixture-input:v0.2");
+      const baseline = structuredClone(fixture("36-child-directed-audience").input);
+      check(validator(baseline), "child-directed baseline fixture is invalid");
+
+      const forbiddenNames = [
+        "advertising_id",
+        "advertising_identifier",
+        "google_advertising_id",
+        "android_advertising_id",
+        "advertising_tracking_id",
+        "gaid",
+        "aaid",
+        "idfa",
+        "rdid",
+      ];
+      for (const fieldName of forbiddenNames) {
+        const invalid = structuredClone(baseline);
+        invalid.records[0].payload.extensions = { nested: { [fieldName]: "synthetic-forbidden-value" } };
+        check(!validator(invalid), `child-directed mutation ${fieldName} was accepted`);
+      }
+
+      const appleAdsObject = structuredClone(baseline);
+      appleAdsObject.records[0].payload.extensions = { nested: { ad_id: "synthetic-apple-ads-object" } };
+      check(validator(appleAdsObject), "Apple Ads object ad_id was treated as a device advertising identifier");
+
+      const mixed = structuredClone(baseline);
+      mixed.server_context.audience = "mixed";
+      mixed.records[0].payload.extensions = { nested: { advertising_id: "synthetic-mixed-value" } };
+      check(validator(mixed), "mixed-audience advertising identifier was rejected by the child-directed rule");
+
+      const implicitGeneral = structuredClone(mixed);
+      delete implicitGeneral.server_context.audience;
+      check(validator(implicitGeneral), "implicit general audience did not preserve existing fixture behavior");
+
+      const unknown = structuredClone(baseline);
+      unknown.server_context.audience = "unknown";
+      check(!validator(unknown), "unknown audience was accepted");
+    });
+    it("enforces child-directed boundaries independently in each batch", () => {
+      const validator = validatorFor("urn:open-mmp:schema:fixture-input:v0.2");
+      const invalid = structuredClone(fixture("07-same-id-across-tenants").input);
+      invalid.batches[0].server_context.audience = "child_directed";
+      invalid.batches[0].records[0].payload.extensions = {
+        nested: { advertising_id: "synthetic-batch-value" },
+      };
+      check(!validator(invalid), "child-directed batch advertising identifier was accepted");
     });
     it("rejects cross-tenant correction references", () => {
       const crossTenantCorrection = structuredClone(fixture("16-correction-refund").input);

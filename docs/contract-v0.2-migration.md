@@ -201,19 +201,20 @@ This ledger is exhaustive relative to the final Stage C commit `d3eb86b`.
 | 17 `redaction-recalculation` | Adds required `requested_via=tenant_admin_api` and the synthetic non-identifying `requester_auth_ref`. | `expected_privacy_requests.json` adds the same authentication provenance; deletion, tombstone, and metric values are unchanged. |
 | 24 `attribution-supersession` | Adds required `requested_via=tenant_admin_api` and the synthetic non-identifying `requester_auth_ref`. | `expected_privacy_requests.json` adds the same authentication provenance; attribution supersession is unchanged. |
 | 35 `privacy-request-auth-scope` | Adds one synthetic input containing the two R-19 request routes. | Adds all 13 reviewed golden artifacts. The admin request produces one correction and tombstone; the on-device request remains active and targets only its own installation-scoped session. |
+| 36 `child-directed-audience` | Adds one synthetic child-directed app context containing an ordinary session and no advertising identifier. | Adds all 13 reviewed golden artifacts. The accepted session output is unchanged by audience classification; schema mutations prove recursive reserved-field rejection. |
 
-No other fixture input or golden file changes in Stage D. R-19 resolves D2. D3 (`audience`) remains intentionally absent pending owner decision 6-14.
+No other fixture input or golden file changes in Stage D. R-19 resolves D2. R-20 resolves D3 with an optional audience declaration whose absence is semantically `general`; therefore it does not change any inherited golden output.
 
 ## Inventory reconciliation
 
-The v0.2 fixture tree contains 35 `input.json` files and `35 * 13 = 455` golden output files, plus this README: 491 paths in the resulting tree. The base migration changes every inherited fixture-tree path because the version directory moves from v0.1 to v0.2; Git may display unchanged files as renames. Relative to the completed WO-2 tree, WO-3 Stage A adds five inputs and 60 reviewed golden files, and content-updates exactly five existing reconciliation goldens: fixtures 01, 03, 19, 21, and 23. Stage B then adds one input, 13 fixture-33 goldens, 32 explicit cost-output goldens, and the exact existing-content changes listed above. Stage C adds one input and 13 fixture-34 goldens without changing fixtures 01-33. Stage D changes exactly eight existing golden files in fixtures 17, 24, 25, 33, and 34 as listed above, and adds fixture 35 without adding an artifact class. Use:
+The v0.2 fixture tree contains 36 `input.json` files and `36 * 13 = 468` golden output files, plus this README: 505 paths in the resulting tree. The base migration changes every inherited fixture-tree path because the version directory moves from v0.1 to v0.2; Git may display unchanged files as renames. Relative to the completed WO-2 tree, WO-3 Stage A adds five inputs and 60 reviewed golden files, and content-updates exactly five existing reconciliation goldens: fixtures 01, 03, 19, 21, and 23. Stage B then adds one input, 13 fixture-33 goldens, 32 explicit cost-output goldens, and the exact existing-content changes listed above. Stage C adds one input and 13 fixture-34 goldens without changing fixtures 01-33. Stage D changes exactly eight existing golden files in fixtures 17, 24, 25, 33, and 34 as listed above, and adds fixtures 35 and 36 without adding an artifact class. Use:
 
 ```bash
 git diff --name-status --find-renames contract-v0.1..HEAD -- fixtures/
 git diff --stat contract-v0.1..HEAD -- fixtures/
 ```
 
-The expected new-side inventory is 35 inputs, 455 golden files, and one README. The tables above account for every content-changed inherited golden and every new golden; all remaining inherited goldens are path-only moves.
+The expected new-side inventory is 36 inputs, 468 golden files, and one README. The tables above account for every content-changed inherited golden and every new golden; all remaining inherited goldens are path-only moves.
 
 ## Consumer migration
 

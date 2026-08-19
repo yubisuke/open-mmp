@@ -33,7 +33,7 @@
 
 ### Advertising identifiers
 
-The initial MVP does not collect them. A future adapter may handle one only when its purpose is configured, platform rules permit it, required consent exists, and reset or deletion state is respected. It must not be joined to a persistent identifier.
+The initial MVP does not collect them. A future adapter may handle one only when its purpose is configured, platform rules permit it, required consent exists, and reset or deletion state is respected. It must not be joined to a persistent identifier. A `child_directed` app context structurally rejects reserved advertising-identifier field names at every payload depth, including extension objects; absence of an audience declaration is semantically `general`.
 
 ## Apple
 
