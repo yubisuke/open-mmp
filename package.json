@@ -13,6 +13,7 @@
     "npm": "11.6.2"
   },
   "scripts": {
+    "benchmark:metric-floor": "npm run benchmark:metric-floor --workspace @open-mmp/worker",
     "bootstrap": "node --import tsx apps/runtime/src/bootstrap.ts",
     "db:migrate": "npm run db:migrate --workspace @open-mmp/runtime",
     "db:schema:dump": "npm run db:schema:dump --workspace @open-mmp/runtime",

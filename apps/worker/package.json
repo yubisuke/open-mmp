@@ -5,6 +5,7 @@
   "description": "Open MMP ingestion worker",
   "type": "module",
   "scripts": {
+    "benchmark:metric-floor": "cd ../.. && node --env-file-if-exists=.env --import tsx apps/worker/src/metrics/benchmark.ts",
     "import": "cd ../.. && node --env-file-if-exists=.env --import tsx apps/worker/src/import/runner.ts",
     "demo:metrics": "cd ../.. && node --env-file-if-exists=.env --import tsx apps/worker/src/demo-metrics.ts",
     "seed": "cd ../.. && node --env-file-if-exists=.env --import tsx apps/worker/src/seed.ts",

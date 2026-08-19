@@ -129,6 +129,13 @@ describe("M1b SQL metric parity", { concurrency: false }, () => {
     assert.equal(Buffer.compare(readFileSync(goldenPath), goldenBefore), 0);
   });
 
+  it("B4 reproduces the independently hand-calculated D7 ROAS and D1 retention", () => {
+    const d7Roas = sqlRuns.find((run) => run.metric_name === "d7_roas");
+    const retentionD1 = sqlRuns.find((run) => run.metric_name === "retention_d1");
+    assert.equal(d7Roas?.value_unscaled, "1500000");
+    assert.equal(retentionD1?.value_unscaled, "1000000");
+  });
+
   it("B2 excludes sessions received after the fixed watermark", async () => {
     const mutation = structuredClone(input);
     mutation.metric_evaluations[0] = {
