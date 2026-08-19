@@ -162,7 +162,7 @@ async function storedArtifact(
   return artifact;
 }
 
-async function persistRaw(appPool: Pool, artifact: Any): Promise<Any> {
+async function persistRaw(appPool: Pool, artifact: Any, policyDigest: string): Promise<Any> {
   return withTenant(appPool, artifact.tenant_id, (client) => storedArtifact(
     client,
     `INSERT INTO ledger.raw_records (
@@ -171,9 +171,9 @@ async function persistRaw(appPool: Pool, artifact: Any): Promise<Any> {
       received_at, raw_payload_ref, processing_purpose_id,
       consent_evaluation_policy_version, consent_decision_reason_code,
       withdrawal_recognized_at, alternative_legal_basis_id,
-      alternative_legal_basis_policy_version, artifact
+      alternative_legal_basis_policy_version, policy_digest, artifact
     ) VALUES (
-      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21::jsonb
+      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22::jsonb
     ) ON CONFLICT (record_id) DO NOTHING RETURNING artifact`,
     [
       artifact.record_id, artifact.tenant_id, artifact.app_id, artifact.producer,
@@ -183,11 +183,18 @@ async function persistRaw(appPool: Pool, artifact: Any): Promise<Any> {
       artifact.processing_purpose_id, artifact.consent_evaluation_policy_version,
       artifact.consent_decision_reason_code, artifact.withdrawal_recognized_at ?? null,
       artifact.alternative_legal_basis_id ?? null,
-      artifact.alternative_legal_basis_policy_version ?? null, JSON.stringify(artifact),
+      artifact.alternative_legal_basis_policy_version ?? null, policyDigest, JSON.stringify(artifact),
     ],
     "SELECT artifact FROM ledger.raw_records WHERE record_id = $1",
     [artifact.record_id],
   ));
+}
+
+function policyDigestForRecord(input: Any, recordId: string): string {
+  const attempt = inputAttempts(input).find(({ record }) => record.record_id === recordId);
+  const digest = attempt?.server.policy_digest;
+  if (typeof digest !== "string") throw new Error(`missing server policy digest for ${recordId}`);
+  return digest;
 }
 
 async function persistDelivery(appPool: Pool, artifact: Any): Promise<Any> {
@@ -250,13 +257,33 @@ async function persistProjection(appPool: Pool, logical: Any, input: Any): Promi
         [logical.logical_event_id, logical.tenant_id, logical.app_id, payload.click_id, payload.redirector_click_at ?? null, projected({ click_id: payload.click_id, redirector_click_at: payload.redirector_click_at ?? null })],
       );
     } else if (logical.event_name === "install") {
+      const importContext = payload.import_context ?? {};
+      const campaignId = payload.campaign_id ?? importContext.provider_campaign_ref ?? null;
+      const network = payload.network ?? importContext.provider_network ?? null;
+      const country = payload.country ?? importContext.provider_country ?? null;
       await client.query(
         `INSERT INTO ledger.install_facts (
           logical_event_id, tenant_id, app_id, installation_id, prior_installation_id,
-          install_type, click_id, install_begin_at_server, artifact
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb)
+          install_type, click_id, install_begin_at_server, occurred_at, campaign_id,
+          network, country, artifact
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb)
         ON CONFLICT (logical_event_id) DO NOTHING`,
-        [logical.logical_event_id, logical.tenant_id, logical.app_id, payload.installation_id, payload.prior_installation_id ?? null, payload.install_type, payload.click_id ?? null, payload.install_begin_at_server ?? null, projected({ installation_id: payload.installation_id, prior_installation_id: payload.prior_installation_id ?? null, install_type: payload.install_type })],
+        [
+          logical.logical_event_id, logical.tenant_id, logical.app_id,
+          payload.installation_id, payload.prior_installation_id ?? null,
+          payload.install_type, payload.click_id ?? null,
+          payload.install_begin_at_server ?? null, attempt.record.occurred_at,
+          campaignId, network, country,
+          projected({
+            installation_id: payload.installation_id,
+            prior_installation_id: payload.prior_installation_id ?? null,
+            install_type: payload.install_type,
+            occurred_at: attempt.record.occurred_at,
+            campaign_id: campaignId,
+            network,
+            country,
+          }),
+        ],
       );
     } else if (logical.event_name === "session_start") {
       await client.query(
@@ -287,6 +314,49 @@ async function persistProjection(appPool: Pool, logical: Any, input: Any): Promi
       );
     }
   });
+}
+
+async function persistFixtureCosts(appPool: Pool, input: Any): Promise<void> {
+  const costs = input.cost_records ?? [];
+  if (costs.length === 0) return;
+  const scopes = new Map<string, Any[]>();
+  for (const cost of costs) {
+    const key = `${cost.tenant_id}\u0000${cost.app_id}`;
+    const scoped = scopes.get(key) ?? [];
+    scoped.push(cost);
+    scopes.set(key, scoped);
+  }
+  for (const scoped of scopes.values()) {
+    const first = scoped[0];
+    const sourceDigest = sha256(scoped);
+    const runId = uuidV7(Date.parse(first.as_of));
+    await withTenant(appPool, first.tenant_id, async (client) => {
+      await client.query(
+        `INSERT INTO control.import_runs (
+          import_run_id, tenant_id, app_id, source_id, source_snapshot_digest,
+          status, started_at, completed_at
+        ) VALUES ($1,$2,$3,$4,$5,'completed',$6,$6)`,
+        [runId, first.tenant_id, first.app_id, "fixture-metric-cost", sourceDigest, first.as_of],
+      );
+      for (const cost of scoped) {
+        await client.query(
+          `INSERT INTO ledger.cost_records (
+            cost_record_id, tenant_id, app_id, network, campaign_id, ad_group_id,
+            country, cost_date, spend_unscaled, spend_scale, currency, source,
+            as_of, report_snapshot_digest, cost_key_digest, import_run_id, artifact
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17::jsonb)
+          ON CONFLICT (cost_record_id) DO NOTHING`,
+          [
+            cost.cost_record_id, cost.tenant_id, cost.app_id, cost.network,
+            cost.campaign_id ?? null, cost.ad_group_id ?? null, cost.country ?? null,
+            cost.date, cost.amount_unscaled, cost.amount_scale, cost.currency,
+            cost.source, cost.as_of, cost.report_snapshot_digest,
+            cost.dimension_digest, runId, JSON.stringify(cost),
+          ],
+        );
+      }
+    });
+  }
 }
 
 async function persistCorrection(appPool: Pool, artifact: Any): Promise<Any> {
@@ -386,10 +456,11 @@ async function persistMetric(appPool: Pool, artifact: Any, scope: { tenant_id: s
       rule_bundle_id, rule_bundle_version, rule_bundle_hash, fx_rate_unscaled,
       fx_rate_scale, fx_rate_source, fx_rate_as_of, fx_rate_snapshot_id,
       fx_policy_version, rounding_mode, reproducibility_status, value_type,
-      value_unscaled, amount_scale, currency, supersedes_metric_run_id, artifact
+      value_state, undefined_reason, value_unscaled, amount_scale, currency,
+      supersedes_metric_run_id, artifact
     ) VALUES (
       $1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,
-      $19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30::jsonb
+      $19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32::jsonb
     ) ON CONFLICT (metric_run_id) DO NOTHING RETURNING artifact`,
     [
       artifact.metric_run_id, scope.tenant_id, scope.app_id, artifact.metric_name,
@@ -400,11 +471,33 @@ async function persistMetric(appPool: Pool, artifact: Any, scope: { tenant_id: s
       artifact.fx_rate_unscaled ?? null, artifact.fx_rate_scale ?? null, artifact.fx_rate_source ?? null,
       artifact.fx_rate_as_of ?? null, artifact.fx_rate_snapshot_id ?? null,
       artifact.fx_policy_version ?? null, artifact.rounding_mode, artifact.reproducibility_status,
-      artifact.value_type, artifact.value_unscaled, artifact.amount_scale ?? null,
+      artifact.value_type, artifact.value_state ?? "present", artifact.undefined_reason ?? null,
+      artifact.value_unscaled ?? null, artifact.amount_scale ?? null,
       artifact.currency ?? null, artifact.supersedes_metric_run_id ?? null, JSON.stringify(artifact),
     ],
     "SELECT artifact FROM ledger.metric_runs WHERE metric_run_id = $1",
     [artifact.metric_run_id],
+  ));
+}
+
+async function persistReconciliation(appPool: Pool, artifact: Any): Promise<Any> {
+  return withTenant(appPool, artifact.tenant_id, (client) => storedArtifact(
+    client,
+    `INSERT INTO ledger.reconciliation_results (
+      reconciliation_id, tenant_id, app_id, input_snapshot_id, external_snapshot_id,
+      difference_reason_code, difference_reason_version, freshness,
+      supersedes_reconciliation_id, artifact
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb)
+    ON CONFLICT (reconciliation_id) DO NOTHING RETURNING artifact`,
+    [
+      artifact.reconciliation_id, artifact.tenant_id, artifact.app_id,
+      artifact.input_snapshot_id, artifact.external_snapshot_id,
+      artifact.difference_reason_code, artifact.difference_reason_version,
+      artifact.freshness, artifact.supersedes_reconciliation_id ?? null,
+      JSON.stringify(artifact),
+    ],
+    "SELECT artifact FROM ledger.reconciliation_results WHERE reconciliation_id=$1",
+    [artifact.reconciliation_id],
   ));
 }
 
@@ -515,7 +608,7 @@ export async function ingestFixture(
   );
 
   for (const raw of baseOutput.raw_records) {
-    const stored = await persistRaw(appPool, raw);
+    const stored = await persistRaw(appPool, raw, policyDigestForRecord(input, raw.record_id));
     assertRoundTrip(raw, stored, `${fixtureName}/base raw/${raw.record_id}`);
     await withTenant(appPool, raw.tenant_id, async (client) => {
       await client.query(
@@ -532,7 +625,11 @@ export async function ingestFixture(
     assertRoundTrip(logical, stored, `${fixtureName}/base logical/${logical.logical_event_id}`);
     await persistProjection(appPool, logical, input);
   }
+  await persistFixtureCosts(appPool, input);
   await persistLifecycle(appPool, input);
+  for (const reconciliation of output.reconciliation ?? []) {
+    await persistReconciliation(appPool, reconciliation);
+  }
 
   let count = 0;
   for (const kind of parityKinds) {
@@ -542,7 +639,7 @@ export async function ingestFixture(
     for (const [ordinal, artifact] of values.entries()) {
       const scope = scopeForDerived(artifact, baseOutput, input);
       let stored: Any;
-      if (kind === "raw_records") stored = await persistRaw(appPool, artifact);
+      if (kind === "raw_records") stored = await persistRaw(appPool, artifact, policyDigestForRecord(input, (artifact as Any).record_id));
       else if (kind === "deliveries") stored = await persistDelivery(appPool, artifact);
       else if (kind === "logical_events") stored = await persistLogical(appPool, artifact);
       else if (kind === "corrections") stored = await persistCorrection(appPool, artifact);
@@ -568,6 +665,7 @@ export type RuntimeIngestionResult = {
   logical_events: Any[];
   rejections: Any[];
   attributions: Any[];
+  reconciliation: Any[];
 };
 
 function runtimeInput(attempts: readonly CandidateAttempt[]): Any {
@@ -602,7 +700,7 @@ export async function ingestRuntimeBatch(
   historicalAttempts: readonly CandidateAttempt[] = [],
 ): Promise<RuntimeIngestionResult> {
   if (attempts.length === 0) {
-    return { raw_records: [], deliveries: [], logical_events: [], rejections: [], attributions: [] };
+    return { raw_records: [], deliveries: [], logical_events: [], rejections: [], attributions: [], reconciliation: [] };
   }
   const allAttempts = [...historicalAttempts, ...attempts].sort(compareCandidateAttempts);
   const input = runtimeInput(allAttempts);
@@ -621,9 +719,11 @@ export async function ingestRuntimeBatch(
     logical_events: output.logical_events.filter(belongsToCurrent),
     rejections: output.rejections.filter(belongsToCurrent),
     attributions: output.attributions.filter(belongsToCurrent),
+    reconciliation: (output.reconciliation ?? []).filter((artifact: Any) =>
+      artifact.tenant_id === attempts[0].server.tenant_id && artifact.app_id === attempts[0].server.app_id),
   };
   for (const raw of selected.raw_records) {
-    await persistRaw(appPool, raw);
+    await persistRaw(appPool, raw, policyDigestForRecord(input, raw.record_id));
     await withTenant(appPool, raw.tenant_id, (client) => client.query(
       `INSERT INTO ledger.raw_payload_states (
         tenant_id, app_id, record_id, lifecycle_status, changed_at
@@ -641,5 +741,6 @@ export async function ingestRuntimeBatch(
   for (const attribution of selected.attributions) {
     await persistAttribution(appPool, attribution);
   }
+  for (const reconciliation of selected.reconciliation) await persistReconciliation(appPool, reconciliation);
   return selected;
 }

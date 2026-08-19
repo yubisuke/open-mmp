@@ -137,12 +137,13 @@ Initial Android rule:
 
 ### Reporting API
 
-- Separate raw-record access from aggregate reporting
-- Require an explicit time zone for every period query
-- Include attribution method, rule version, input watermark, and data freshness
-- Include an immutable input snapshot ID or ledger position so equal timestamps cannot select different record sets
-- Expose late-arrival and recalculation state
-- Never present aggregate privacy reports as installation-level records
+- `GET /v1/reports/metrics?format=json|csv` returns tenant/app-scoped metric rows after bearer-key verification.
+- `GET /v1/audit/differences?format=json|csv` returns the persisted reconciliation artifact, including internal/external snapshots, protected matching-key metadata, candidates, exclusions, windows, joins, freshness, and neutral reason codes.
+- JSON and CSV are generated from one normalized row model. Metric rows carry the metric-definition version, policy versions, input watermark, immutable snapshot ID, freshness, and explicit present/undefined value state.
+- Undefined ROAS has an absent numeric value and an explicit reason. It is not coerced to zero or infinity.
+- Raw-record access remains separate from aggregate reporting; these endpoints never expose raw payloads.
+- The authenticated scope, not request parameters, fixes the tenant and app. Responses use `cache-control: no-store`.
+- Aggregate privacy reports are never presented as installation-level records.
 
 ## Data layers
 

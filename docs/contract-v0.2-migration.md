@@ -14,6 +14,10 @@ Contract v0.2 is an in-place contract migration from the immutable `contract-v0.
 
 The `contract-v0.1` tag points to the pre-migration `main` commit. The versioning rules are in [schema-versioning.md](schema-versioning.md).
 
+### v0.2.1 patch (R-23)
+
+Release `0.2.1` keeps every schema `$id` and registry filename on the `v0.2` minor line. Metric-run adds optional `value_state=present | undefined` and `undefined_reason=no_attributed_cost | no_activity_events | empty_cohort`. Omitted `value_state` means present, so fixtures 01 through 36 and all of their existing goldens remain byte-for-byte unchanged. The difference-reason registry advances to `contract_version=0.2.1`; reconciliation adds `provider_modeled_conversion`, and only that reason uses `difference_reason_version=0.2.1`. Existing reasons remain `0.2.0`. Event and fixture-envelope versions remain `0.2.0` because those artifact schemas did not change.
+
 ## Contract field migration
 
 | Artifact or field | v0.2 change | Reason / work-order authority |
@@ -205,16 +209,27 @@ This ledger is exhaustive relative to the final Stage C commit `d3eb86b`.
 
 No other fixture input or golden file changes in Stage D. R-19 resolves D2. R-20 resolves D3 with an optional audience declaration whose absence is semantically `general`; therefore it does not change any inherited golden output.
 
+### R-23 v0.2.1 golden ledger
+
+This ledger is exhaustive relative to the accepted Stage D baseline. Fixtures 01 through 36 have no input or golden change.
+
+| Fixture | Meaningful non-empty golden fields | Authority |
+| --- | --- | --- |
+| 37 `undefined-organic-roas` | Organic attribution plus one ratio metric run with `value_state=undefined`, `undefined_reason=no_attributed_cost`, no `value_unscaled`, and retained ratio scale/evidence. All other empty output classes remain explicit reviewed arrays. | R-23 metric-run undefined-value contract. |
+| 38 `provider-modeled-reconciliation` | Imported modeled attribution plus automatically derived reconciliation `difference_reason_code=provider_modeled_conversion`, `difference_reason_version=0.2.1`, and no matching keys or candidates. | R-23 modeled-row difference classification. |
+
+Each fixture adds one synthetic `input.json` and all 13 reviewed `expected_*.json` files. The golden values were independently compared across TypeScript and Python evaluators, schema-validated, and documented in `fixtures/v0.2/README.md`; no generated or real-world data was used.
+
 ## Inventory reconciliation
 
-The v0.2 fixture tree contains 36 `input.json` files and `36 * 13 = 468` golden output files, plus this README: 505 paths in the resulting tree. The base migration changes every inherited fixture-tree path because the version directory moves from v0.1 to v0.2; Git may display unchanged files as renames. Relative to the completed WO-2 tree, WO-3 Stage A adds five inputs and 60 reviewed golden files, and content-updates exactly five existing reconciliation goldens: fixtures 01, 03, 19, 21, and 23. Stage B then adds one input, 13 fixture-33 goldens, 32 explicit cost-output goldens, and the exact existing-content changes listed above. Stage C adds one input and 13 fixture-34 goldens without changing fixtures 01-33. Stage D changes exactly eight existing golden files in fixtures 17, 24, 25, 33, and 34 as listed above, and adds fixtures 35 and 36 without adding an artifact class. Use:
+The v0.2 fixture tree contains 38 `input.json` files and `38 * 13 = 494` golden output files, plus this README: 533 paths in the resulting tree. The base migration changes every inherited fixture-tree path because the version directory moves from v0.1 to v0.2; Git may display unchanged files as renames. Relative to the completed WO-2 tree, WO-3 Stage A adds five inputs and 60 reviewed golden files, and content-updates exactly five existing reconciliation goldens: fixtures 01, 03, 19, 21, and 23. Stage B then adds one input, 13 fixture-33 goldens, 32 explicit cost-output goldens, and the exact existing-content changes listed above. Stage C adds one input and 13 fixture-34 goldens without changing fixtures 01-33. Stage D changes exactly eight existing golden files in fixtures 17, 24, 25, 33, and 34 as listed above, and adds fixtures 35 and 36 without adding an artifact class. R-23 adds fixtures 37 and 38 without changing any inherited fixture. Use:
 
 ```bash
 git diff --name-status --find-renames contract-v0.1..HEAD -- fixtures/
 git diff --stat contract-v0.1..HEAD -- fixtures/
 ```
 
-The expected new-side inventory is 36 inputs, 468 golden files, and one README. The tables above account for every content-changed inherited golden and every new golden; all remaining inherited goldens are path-only moves.
+The expected new-side inventory is 38 inputs, 494 golden files, and one README. The tables above account for every content-changed inherited golden and every new golden; all remaining inherited goldens are path-only moves.
 
 ## Consumer migration
 

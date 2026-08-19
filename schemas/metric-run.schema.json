@@ -8,7 +8,7 @@
     "metric_run_id", "metric_name", "metric_definition_version", "input_snapshot_id",
     "input_received_at_watermark", "input_ledger_position", "computed_at", "data_freshness",
     "aggregation_time_zone", "rule_bundle_id", "rule_bundle_version", "rule_bundle_hash",
-    "rounding_mode", "reproducibility_status", "value_type", "value_unscaled", "evidence_refs"
+    "rounding_mode", "reproducibility_status", "value_type", "evidence_refs"
   ],
   "properties": {
     "metric_run_id": { "$ref": "common.schema.json#/$defs/id" },
@@ -32,6 +32,12 @@
     "rounding_mode": { "const": "half_even" },
     "reproducibility_status": { "enum": ["fully_reproducible", "redaction_affected", "retention_affected"] },
     "value_type": { "enum": ["money", "ratio", "count"] },
+    "value_state": {
+      "enum": ["present", "undefined"],
+      "default": "present",
+      "description": "Absence is semantically present for v0.2.0 compatibility."
+    },
+    "undefined_reason": { "enum": ["no_attributed_cost", "no_activity_events", "empty_cohort"] },
     "value_unscaled": { "type": "string", "pattern": "^-?[0-9]+$" },
     "amount_scale": { "type": "integer", "minimum": 0, "maximum": 18 },
     "ratio_scale": { "type": "integer", "minimum": 0, "maximum": 18 },
@@ -60,16 +66,44 @@
   },
   "allOf": [
     {
+      "if": {
+        "properties": { "value_state": { "const": "undefined" } },
+        "required": ["value_state"]
+      },
+      "then": {
+        "properties": { "undefined_reason": {} },
+        "required": ["undefined_reason"],
+        "not": {
+          "properties": { "value_unscaled": {} },
+          "required": ["value_unscaled"]
+        }
+      },
+      "else": {
+        "properties": { "value_unscaled": {} },
+        "required": ["value_unscaled"],
+        "not": {
+          "properties": { "undefined_reason": {} },
+          "required": ["undefined_reason"]
+        }
+      }
+    },
+    {
       "if": { "properties": { "value_type": { "const": "money" } }, "required": ["value_type"] },
       "then": {
-        "properties": {
-          "amount_scale": {}, "currency": {}, "fx_rate_unscaled": {}, "fx_rate_scale": {},
-          "fx_rate_source": {}, "fx_rate_as_of": {}, "fx_rate_snapshot_id": {}, "fx_policy_version": {}
+        "if": {
+          "properties": { "value_state": { "const": "undefined" } },
+          "required": ["value_state"]
         },
-        "required": [
-          "amount_scale", "currency", "fx_rate_unscaled", "fx_rate_scale", "fx_rate_source",
-          "fx_rate_as_of", "fx_rate_snapshot_id", "fx_policy_version"
-        ]
+        "else": {
+          "properties": {
+            "amount_scale": {}, "currency": {}, "fx_rate_unscaled": {}, "fx_rate_scale": {},
+            "fx_rate_source": {}, "fx_rate_as_of": {}, "fx_rate_snapshot_id": {}, "fx_policy_version": {}
+          },
+          "required": [
+            "amount_scale", "currency", "fx_rate_unscaled", "fx_rate_scale", "fx_rate_source",
+            "fx_rate_as_of", "fx_rate_snapshot_id", "fx_policy_version"
+          ]
+        }
       },
       "else": {
         "not": {

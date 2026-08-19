@@ -46,12 +46,14 @@ Evidence gate: A clean Docker Compose startup ingests the synthetic fixtures thr
 
 ## M1b Cohort metrics and difference audit
 
+M1b is implemented and locally validated with synthetic inputs. The SQL engine is JCS-byte-identical to the evaluator for the reviewed cohort fixture, supports immutable snapshot supersession and redaction recalculation, and exposes authenticated JSON/CSV metric and difference-audit reads. The 10-million-row synthetic arithmetic floor completed well below ten minutes on the recorded development environment. Exact 4-vCPU/8-GB cgroup validation, the contract vocabulary for a withheld `candidate_missing` case, and a contract grouping dimension that separates organic from unattributed cohorts remain explicit follow-up work.
+
 - Recalculable D0, ROAS, retention, and cohort-LTV metric engine
 - Cost and revenue snapshots with versioned FX, grouping, and watermarks
 - Difference-audit API for candidates, exclusions, windows, joins, freshness, and neutral reason codes
 - Operator-facing real-data validation checklist whose outputs remain outside the public repository
 
-Evidence gate: The same inputs and policy versions reproduce the same aggregates and difference reasons, and synthetic runtime results remain canonically equal to contract goldens.
+Evidence gate: `npm run test:metric-parity`, `npm run test:integration`, and the reduced CI benchmark pass; the manual third oracle and the recorded 10-million-row run remain reproducible without real data or credentials.
 
 ## M1.5 Continuation decision gate
 

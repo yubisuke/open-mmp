@@ -1,6 +1,6 @@
 # Open MMP Event & Metric Contract v0.2
 
-Contract version: `0.2.0`.
+Contract release: `0.2.1`.
 
 This document is normative for the v0.2 schemas, registries, fixtures, and reference evaluators. It defines synthetic, vendor-neutral measurement behavior; it does not define a production ingestion service.
 
@@ -196,7 +196,9 @@ Metric definitions are data, not hard-coded evaluator branches. A definition dec
 
 Cost records are append-only imported reports. Their required identity is tenant, app, network, campaign, acquisition date, money, source, `as_of`, report-snapshot digest, and a dimension digest. `ad_group_id` and `country` are optional. `dimension_digest` is SHA-256 over RFC 8785 JCS of exactly the present ordered-key object drawn from `network`, `campaign_id`, `ad_group_id`, and `country`. For each `(tenant_id, app_id, dimension_digest)`, the current row is the latest `as_of` at or before the metric watermark. Revisions do not overwrite older rows.
 
-The reference definitions support elapsed-window D1, D3, and D7 ROAS, activity-day D1 and D7 retention, cohort LTV, and cohort installation count. Cohort grouping is anchored to the install and may include campaign, network, country, and the install date in the metric time zone. Revenue windows are half-open from install time through `install + (N + 1) days`; retention counts installations with an accepted configured activity event on activity day N; cohort LTV divides cumulative rounded revenue by cohort size; ROAS divides cumulative rounded revenue by the current acquisition-date cost snapshot. Missing eligible cost is undefined and fails closed rather than becoming zero.
+The reference definitions support elapsed-window D1, D3, and D7 ROAS, activity-day D1 and D7 retention, cohort LTV, and cohort installation count. Cohort grouping is anchored to the install and may include campaign, network, country, and the install date in the metric time zone. Revenue windows are half-open from install time through `install + (N + 1) days`; retention counts installations with an accepted configured activity event on activity day N; cohort LTV divides cumulative rounded revenue by cohort size; ROAS divides cumulative rounded revenue by the current acquisition-date cost snapshot.
+
+Metric-run values have an optional `value_state=present | undefined`. Absence of `value_state` is semantically `present`, preserving every v0.2.0 metric run. A present run requires `value_unscaled` and forbids `undefined_reason`. An undefined run requires exactly one versioned reason from `no_attributed_cost`, `no_activity_events`, or `empty_cohort` and omits `value_unscaled`; money currency, amount-scale, and FX fields are no longer required for that undefined result. Its `value_type`-specific structural field such as `ratio_scale` remains present. Missing eligible cost therefore yields `undefined/no_attributed_cost`; it never becomes zero or infinity. `no_activity_events` means the approved import profile cannot supply a configured activity event, while `empty_cohort` means the selected cohort contains no eligible installation.
 
 ## Input snapshots and recalculation
 
@@ -249,6 +251,7 @@ Inputs contain typed matching keys, candidate rows, window status, freshness, an
 - `redaction_caused_recalculation`
 - `currency_policy_mismatch`
 - `scope_mismatch`
+- `provider_modeled_conversion`
 
 Results record both snapshot IDs, matching keys used, candidates, exclusions, windows, joins, and freshness. Difference reasons describe measurement semantics and available evidence; they never rate provider quality.
 
@@ -258,7 +261,7 @@ For each accepted unique imported install, the evaluator also derives reconcilia
 2. `provider_click_ref`, when present, maps to the existing protected, tenant/app-scoped, one-to-one `provider_click_id` matching-key type. The payload field keeps the opaque-reference name, while the WO-2 matching-key vocabulary remains canonical.
 3. The normalized imported install is the candidate for the provider row and carries the same typed keys. Candidate identity is the accepted `record_id`.
 4. Provider-reported attribution does not claim a first-party seven-day window, so the derived candidate window is `not_applicable`; freshness is `current` at import evaluation.
-5. At least one derived key yields `matched`. No provider install or click reference yields `join_key_missing`.
+5. At least one derived key yields `matched`. No provider install or click reference normally yields `join_key_missing`. If the provider explicitly marked that keyless external row as modeled, it yields `provider_modeled_conversion` instead: the row is classified as provider-modeled without an internal candidate, not treated as an unexplained provider-quality failure.
 
 Provider install and click key values never expose the source reference. Both automatically derived and manually supplied provider keys require `value_encoding=sha256`, `access_class=protected`, and a lowercase 64-character digest. The digest is `SHA-256(JCS({provider,type,value}))`, where `provider` is the deployment-private provider alias, `type` is the canonical matching-key type, and `value` is the raw opaque provider reference. This provider namespace prevents equal raw references from colliding across providers. Comparison, ordering, and rendered join evidence include `value_encoding`; raw references remain only in protected event evidence. Hashing prevents direct disclosure in reconciliation output but is not a secrecy guarantee for low-entropy source values.
 
@@ -272,7 +275,7 @@ Production signals, IP or User-Agent values, live thresholds, model weights, wat
 
 ## Reviewed fixture and validation gate
 
-The reviewed gate compiles 26 schemas and validates 8 registries. The 36 fixture directories contain synthetic input plus 13 reviewed golden output classes: raw records, deliveries, logical events, corrections, privacy requests, privacy tombstones, attributions, metric definitions, metric runs, cost records, public fraud decisions, rejections, and reconciliation. Fixture 10 demonstrates both paid reinstall attribution and no-referrer redownload attribution. Fixtures 28 through 32 exercise imported attribution, automatically derived reconciliation, every registered producer form, and stale-evidence rejection. Fixture 33 exercises reporting dimensions, advertiser-side ad views, installation and aggregate revenue, default-currency provenance, append-only cost revisions, per-event half-even FX, ROAS, retention, and cohort LTV/count. Fixture 34 exercises every Stage C method/model row, both Apple aggregate event names, every Stage C reason, synthetic postback producers, and the intentionally minimal Meta envelope. Fixture 35 exercises authenticated tenant-admin and on-device privacy-request provenance plus same-installation scope enforcement. Fixture 36 exercises the child-directed audience boundary without adding an advertising identifier to the canonical event vocabulary. Fixtures 25, 33, and 34 collectively exercise every registered processing purpose. Validation also exercises invalid calendar timestamps, reconciliation reasons, attribution supersession, replay suspicion, retention expiry, impression-to-revenue evidence, reorder invariance, install-type evidence dominance, record-ID collision, click ambiguity, millisecond normalization boundaries, scoped-reference mutations, child-directed advertising-identifier rejection, and unknown-purpose rejection; golden files remain committed review artifacts.
+The reviewed gate compiles 26 schemas and validates 8 registries. The 38 fixture directories contain synthetic input plus 13 reviewed golden output classes: raw records, deliveries, logical events, corrections, privacy requests, privacy tombstones, attributions, metric definitions, metric runs, cost records, public fraud decisions, rejections, and reconciliation. Fixture 10 demonstrates both paid reinstall attribution and no-referrer redownload attribution. Fixtures 28 through 32 exercise imported attribution, automatically derived reconciliation, every registered producer form, and stale-evidence rejection. Fixture 33 exercises reporting dimensions, advertiser-side ad views, installation and aggregate revenue, default-currency provenance, append-only cost revisions, per-event half-even FX, ROAS, retention, and cohort LTV/count. Fixture 34 exercises every Stage C method/model row, both Apple aggregate event names, every Stage C reason, synthetic postback producers, and the intentionally minimal Meta envelope. Fixture 35 exercises authenticated tenant-admin and on-device privacy-request provenance plus same-installation scope enforcement. Fixture 36 exercises the child-directed audience boundary without adding an advertising identifier to the canonical event vocabulary. Fixture 37 proves that an organic cohort without attributed cost emits an undefined ROAS rather than zero or infinity. Fixture 38 classifies a modeled external row without an internal candidate as `provider_modeled_conversion`. Fixtures 25, 33, and 34 collectively exercise every registered processing purpose. Validation also exercises invalid calendar timestamps, reconciliation reasons, attribution supersession, replay suspicion, retention expiry, impression-to-revenue evidence, reorder invariance, install-type evidence dominance, record-ID collision, click ambiguity, millisecond normalization boundaries, scoped-reference mutations, child-directed advertising-identifier rejection, and unknown-purpose rejection; golden files remain committed review artifacts.
 
 The validation command never writes fixture files. `npm run validate`:
 
@@ -280,8 +283,8 @@ The validation command never writes fixture files. `npm run validate`:
 2. compiles every Draft 2020-12 schema;
 3. validates registry shape, uniqueness, and cross-references;
 4. validates every input event through its event schema;
-5. validates all 468 golden output artifacts;
-6. runs named assertions for all 36 scenarios and 26 acceptance criteria (AC01-AC26);
+5. validates all 494 golden output artifacts;
+6. runs named assertions for all 38 scenarios and 26 acceptance criteria (AC01-AC26);
 7. runs deliberate negative mutations;
 8. runs the TypeScript evaluator twice;
 9. runs the independently implemented Python evaluator;
@@ -290,6 +293,12 @@ The validation command never writes fixture files. `npm run validate`:
 Environment setup is `npm ci` and `python -m pip install --require-hashes --requirement requirements-contract.txt`.
 
 ## Changes from v0.1
+
+### v0.2.1 patch
+
+- R-23 adds the optional metric-run `value_state` and `undefined_reason` fields. Omitted `value_state` retains the v0.2.0 present-value meaning, so existing metric-run goldens are unchanged.
+- R-23 adds `provider_modeled_conversion` to the difference-reason registry and reconciliation schema. Only that new difference reason uses `difference_reason_version=0.2.1`; existing reasons remain `0.2.0`.
+- Schema `$id` values and registry filenames retain the `v0.2` minor-line identity. Existing v0.2.0 event, fixture-envelope, and output artifact versions remain valid where their artifact schema did not change.
 
 - The in-place v0.2 contract uses `:v0.2` schema identifiers, `0.2.0` object versions, v0.2 registries, and `fixtures/v0.2/`; the immutable v0.1 baseline is the `contract-v0.1` Git tag.
 - Logical-record lifecycle and protected-payload availability are separate axes: `record_lifecycle` is `active | retracted`, while payload/evidence lifecycle is `available | redacted | purged`.

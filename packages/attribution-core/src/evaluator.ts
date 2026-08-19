@@ -653,7 +653,7 @@ function makeAggregatePostbackAttribution(
   };
 }
 
-function roundHalfEven(numerator: bigint, denominator: bigint): bigint {
+export function roundHalfEven(numerator: bigint, denominator: bigint): bigint {
   if (denominator <= 0n) throw new Error("denominator must be positive");
   const negative = numerator < 0n;
   const absolute = negative ? -numerator : numerator;
@@ -816,7 +816,8 @@ function metricRuns(
           : sum;
       }, 0n);
       const cohortSize = BigInt(new Set(installs.map((install) => install.record.payload.installation_id)).size);
-      let value: bigint;
+      let value: bigint | undefined;
+      let undefined_reason: "no_attributed_cost" | "no_activity_events" | "empty_cohort" | undefined;
       if (definition.definition.calculation === "revenue_sum") {
         value = revenueValue;
       } else if (definition.definition.calculation === "revenue_over_cost") {
@@ -824,25 +825,34 @@ function metricRuns(
           if (item.currency !== fxPolicy.target_currency) throw new Error(`cost currency mismatch: ${item.cost_record_id}`);
           return sum + scaleMoney(item, fxPolicy.target_scale);
         }, 0n);
-        if (cost === 0n) throw new Error(`undefined ROAS without cost: ${metricName}`);
-        value = roundHalfEven(revenueValue * (10n ** BigInt(definition.ratio_scale ?? 6)), cost);
-      } else if (definition.definition.calculation === "active_installations_over_cohort") {
-        if (cohortSize === 0n) throw new Error(`undefined retention without cohort: ${metricName}`);
-        const activityEvents = new Set(definition.activity_events ?? ["session_start"]);
-        const active = new Set<string>();
-        for (const session of activities.filter((item) => activityEvents.has(item.record.event_name))) {
-          const installation = installs.find((candidate) =>
-            candidate.server.tenant_id === session.server.tenant_id && candidate.server.app_id === session.server.app_id &&
-            candidate.record.payload.installation_id === session.record.payload.installation_id,
-          );
-          if (!installation) continue;
-          const dayIndex = Math.floor((time(session.record.occurred_at, "occurred_at") - time(installation.record.occurred_at, "occurred_at")) / DAY_MS);
-          if (dayIndex === definition.definition.window.day) active.add(installation.record.payload.installation_id);
+        if (cost === 0n) {
+          undefined_reason = "no_attributed_cost";
+        } else {
+          value = roundHalfEven(revenueValue * (10n ** BigInt(definition.ratio_scale ?? 6)), cost);
         }
-        value = roundHalfEven(BigInt(active.size) * (10n ** BigInt(definition.ratio_scale ?? 6)), cohortSize);
+      } else if (definition.definition.calculation === "active_installations_over_cohort") {
+        if (cohortSize === 0n) {
+          undefined_reason = "empty_cohort";
+        } else {
+          const activityEvents = new Set(definition.activity_events ?? ["session_start"]);
+          const active = new Set<string>();
+          for (const session of activities.filter((item) => activityEvents.has(item.record.event_name))) {
+            const installation = installs.find((candidate) =>
+              candidate.server.tenant_id === session.server.tenant_id && candidate.server.app_id === session.server.app_id &&
+              candidate.record.payload.installation_id === session.record.payload.installation_id,
+            );
+            if (!installation) continue;
+            const dayIndex = Math.floor((time(session.record.occurred_at, "occurred_at") - time(installation.record.occurred_at, "occurred_at")) / DAY_MS);
+            if (dayIndex === definition.definition.window.day) active.add(installation.record.payload.installation_id);
+          }
+          value = roundHalfEven(BigInt(active.size) * (10n ** BigInt(definition.ratio_scale ?? 6)), cohortSize);
+        }
       } else if (definition.definition.calculation === "revenue_over_cohort") {
-        if (cohortSize === 0n) throw new Error(`undefined LTV without cohort: ${metricName}`);
-        value = roundHalfEven(revenueValue, cohortSize);
+        if (cohortSize === 0n) {
+          undefined_reason = "empty_cohort";
+        } else {
+          value = roundHalfEven(revenueValue, cohortSize);
+        }
       } else if (definition.definition.calculation === "cohort_size") {
         value = cohortSize;
       } else {
@@ -852,7 +862,7 @@ function metricRuns(
         dimensions: evaluation.grouping,
         dimension_digest: sha256(evaluation.grouping),
       } : undefined;
-      const moneyFields = definition.value_type === "money" ? {
+      const moneyFields = definition.value_type === "money" && value !== undefined ? {
         fx_rate_unscaled: fxRate.rate_unscaled,
         fx_rate_scale: fxRate.rate_scale,
         fx_rate_source: fxRate.source,
@@ -878,7 +888,9 @@ function metricRuns(
         rounding_mode: fxPolicy.rounding_mode,
         reproducibility_status,
         value_type: definition.value_type,
-        value_unscaled: value.toString(),
+        ...(value === undefined
+          ? { value_state: "undefined" as const, undefined_reason }
+          : { value_unscaled: value.toString() }),
         ...moneyFields,
         ...(definition.value_type === "ratio" ? { ratio_scale: definition.ratio_scale } : {}),
         ...(grouping ? { grouping } : {}),
@@ -921,6 +933,8 @@ function importedReconciliationInputs(accepted: Attempt[]): Any[] {
         input_snapshot_id: `snapshot:internal:${attempt.record.record_id}`,
         external_snapshot_id: `snapshot:provider:${attempt.record.record_id}`,
         matching_keys,
+        provider_modeled_without_candidate:
+          context.provider_attribution_strategy === "modeled" && matching_keys.length === 0,
         candidates: matching_keys.length ? [{
           candidate_id: attempt.record.record_id,
           tenant_id: attempt.server.tenant_id,
@@ -983,6 +997,7 @@ function reconciliationResults(input: Any, accepted: Attempt[]): Reconciliation[
     );
     let difference_reason_code: Reconciliation["difference_reason_code"] = "matched";
     if (item.privacy_effect === "redaction") difference_reason_code = "redaction_caused_recalculation";
+    else if (item.provider_modeled_without_candidate && !matched.length) difference_reason_code = "provider_modeled_conversion";
     else if (!externalKeys.size) difference_reason_code = "join_key_missing";
     else if (!matched.length) difference_reason_code = "external_row_unmatched";
     else if (matched.length > 1 && item.matching_keys.some((entry: Any) => entry.cardinality === "one_to_one")) difference_reason_code = "join_key_ambiguous";
@@ -997,7 +1012,7 @@ function reconciliationResults(input: Any, accepted: Attempt[]): Reconciliation[
       input_snapshot_id: item.input_snapshot_id,
       external_snapshot_id: item.external_snapshot_id,
       difference_reason_code,
-      difference_reason_version: CONTRACT_VERSION,
+      difference_reason_version: difference_reason_code === "provider_modeled_conversion" ? "0.2.1" : CONTRACT_VERSION,
       matching_keys: sortedKeys,
       candidates: matched.map((candidate: Any) => candidate.candidate_id).sort(compareText),
       exclusions: matched.filter((candidate: Any) => candidate.excluded).map((candidate: Any) => candidate.exclusion_reason).sort(compareText),

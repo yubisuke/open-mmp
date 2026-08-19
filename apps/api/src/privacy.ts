@@ -167,10 +167,11 @@ export async function executePrivacyRequest(
           rule_bundle_id, rule_bundle_version, rule_bundle_hash, fx_rate_unscaled,
           fx_rate_scale, fx_rate_source, fx_rate_as_of, fx_rate_snapshot_id,
           fx_policy_version, rounding_mode, reproducibility_status, value_type,
-          value_unscaled, amount_scale, currency, supersedes_metric_run_id, artifact
+          value_state, undefined_reason, value_unscaled, amount_scale, currency,
+          supersedes_metric_run_id, artifact
         ) VALUES (
           $1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,
-          $19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30::jsonb
+          $19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32::jsonb
         ) ON CONFLICT DO NOTHING`,
         [replacement.metric_run_id, body.tenant_id, body.app_id, replacement.metric_name,
           replacement.metric_definition_version, JSON.stringify(replacement.grouping?.dimensions ?? {}),
@@ -182,7 +183,8 @@ export async function executePrivacyRequest(
           replacement.fx_rate_source ?? null, replacement.fx_rate_as_of ?? null,
           replacement.fx_rate_snapshot_id ?? null, replacement.fx_policy_version ?? null,
           replacement.rounding_mode, replacement.reproducibility_status, replacement.value_type,
-          replacement.value_unscaled, replacement.amount_scale ?? null, replacement.currency ?? null,
+          replacement.value_state ?? "present", replacement.undefined_reason ?? null,
+          replacement.value_unscaled ?? null, replacement.amount_scale ?? null, replacement.currency ?? null,
           replacement.supersedes_metric_run_id, JSON.stringify(replacement)],
       );
     }

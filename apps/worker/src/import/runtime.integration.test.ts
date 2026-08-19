@@ -201,8 +201,8 @@ describe("admin privacy integration", () => {
         grouping, grouping_digest, input_snapshot_id, input_received_at_watermark,
         input_ledger_position, computed_at, data_freshness, aggregation_time_zone,
         rule_bundle_id, rule_bundle_version, rule_bundle_hash, rounding_mode,
-        reproducibility_status, value_type, value_unscaled, amount_scale, currency, artifact
-      ) VALUES ($1,'tenant-local','app-local',$2,$3,'{}'::jsonb,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20::jsonb)
+        reproducibility_status, value_type, value_state, value_unscaled, amount_scale, currency, artifact
+      ) VALUES ($1,'tenant-local','app-local',$2,$3,'{}'::jsonb,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,'present',$17,$18,$19,$20::jsonb)
       ON CONFLICT DO NOTHING`,
       [metric.metric_run_id, metric.metric_name, metric.metric_definition_version, "c".repeat(64), metric.input_snapshot_id,
         metric.input_received_at_watermark, metric.input_ledger_position, metric.computed_at, metric.data_freshness,

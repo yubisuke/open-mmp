@@ -1,6 +1,6 @@
 {
   "name": "open-mmp-contract",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "Open MMP Event & Metric Contract v0.2 reference validation",
   "type": "module",
@@ -13,6 +13,7 @@
     "npm": "11.6.2"
   },
   "scripts": {
+    "benchmark:metric-floor": "npm run benchmark:metric-floor --workspace @open-mmp/worker",
     "bootstrap": "node --import tsx apps/runtime/src/bootstrap.ts",
     "db:migrate": "npm run db:migrate --workspace @open-mmp/runtime",
     "db:schema:dump": "npm run db:schema:dump --workspace @open-mmp/runtime",
@@ -26,7 +27,8 @@
     "test:db-invariants": "npm run test:db-invariants --workspace @open-mmp/runtime",
     "test:env-coverage": "node --import tsx apps/runtime/src/env-coverage.test.ts",
     "test": "node --import tsx --test \"apps/**/*.unit.test.ts\"",
-    "test:integration": "node --env-file-if-exists=.env --import tsx --test \"apps/**/*.integration.test.ts\"",
+    "test:integration": "node --env-file-if-exists=.env --import tsx --test --test-concurrency=1 \"apps/**/*.integration.test.ts\"",
+    "test:metric-parity": "node --env-file-if-exists=.env --import tsx --test apps/worker/src/metric-parity.metric.test.ts",
     "smoke:runtime": "node --import tsx tools/runtime-smoke.ts",
     "validate": "npm run typecheck && npm run validate:test --workspace @open-mmp/contracts && npm run validate:summary --workspace @open-mmp/contracts",
     "verify:parity": "npm run verify:parity --workspace @open-mmp/worker",

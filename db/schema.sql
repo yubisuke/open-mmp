@@ -692,3 +692,127 @@ GRANT SELECT, INSERT ON control.admin_keys, control.admin_key_states TO openmmp_
 GRANT USAGE, SELECT ON SEQUENCE control.admin_key_states_admin_key_state_seq_seq TO openmmp_app;
 
 GRANT TRUNCATE ON control.admin_keys, control.admin_key_states TO openmmp_seed;
+
+-- 005_metric_engine.sql
+ALTER TABLE ledger.install_facts
+  ADD COLUMN occurred_at control.canonical_timestamp,
+  ADD COLUMN occurred_at_ts timestamptz
+    GENERATED ALWAYS AS (control.canonical_timestamp_value(occurred_at)) STORED,
+  ADD COLUMN campaign_id text,
+  ADD COLUMN network text,
+  ADD COLUMN country text CHECK (country IS NULL OR country ~ '^[A-Z]{2}$');
+
+CREATE INDEX install_facts_cohort_idx
+  ON ledger.install_facts (tenant_id, app_id, campaign_id, country, occurred_at_ts);
+
+CREATE INDEX session_facts_activity_idx
+  ON ledger.session_facts (tenant_id, app_id, installation_id, occurred_at_ts);
+
+CREATE INDEX cost_records_watermark_idx
+  ON ledger.cost_records (tenant_id, app_id, cost_key_digest, as_of, cost_record_id);
+
+CREATE FUNCTION ledger.half_even_div(numerator numeric, denominator numeric)
+RETURNS numeric
+LANGUAGE plpgsql
+IMMUTABLE
+STRICT
+PARALLEL SAFE
+AS $$
+DECLARE
+  absolute_numerator numeric;
+  quotient numeric;
+  remainder numeric;
+  rounded numeric;
+BEGIN
+  IF denominator <= 0 OR denominator <> trunc(denominator) THEN
+    RAISE EXCEPTION 'half_even_div denominator must be a positive integer';
+  END IF;
+  IF numerator <> trunc(numerator) THEN
+    RAISE EXCEPTION 'half_even_div numerator must be an integer';
+  END IF;
+
+  absolute_numerator := abs(numerator);
+  quotient := trunc(absolute_numerator / denominator);
+  remainder := mod(absolute_numerator, denominator);
+  rounded := quotient;
+
+  IF remainder * 2 > denominator
+    OR (remainder * 2 = denominator AND mod(quotient, 2) = 1)
+  THEN
+    rounded := quotient + 1;
+  END IF;
+
+  IF numerator < 0 THEN
+    RETURN -rounded;
+  END IF;
+  RETURN rounded;
+END
+$$;
+
+REVOKE ALL ON FUNCTION ledger.half_even_div(numeric, numeric) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION ledger.half_even_div(numeric, numeric)
+  TO openmmp_app, openmmp_reader, openmmp_seed;
+
+-- 006_metric_engine_indexes.sql
+CREATE INDEX ad_revenue_facts_installation_time_idx
+  ON ledger.ad_revenue_facts (tenant_id, app_id, installation_id, occurred_at_ts);
+
+-- 007_metric_snapshots.sql
+ALTER TABLE ledger.raw_records
+  ADD COLUMN policy_digest text CHECK (policy_digest IS NULL OR length(policy_digest) > 0);
+
+CREATE INDEX raw_records_metric_snapshot_idx
+  ON ledger.raw_records (tenant_id, app_id, received_at, record_id)
+  INCLUDE (policy_digest);
+
+COMMENT ON COLUMN ledger.raw_records.policy_digest IS
+  'Server policy digest used by M1b snapshot identity. NULL marks pre-M1b rows that cannot be recomputed.';
+
+-- 008_reporting_audit.sql
+ALTER TABLE ledger.metric_runs
+  ALTER COLUMN value_unscaled DROP NOT NULL,
+  ADD COLUMN value_state text NOT NULL DEFAULT 'present'
+    CHECK (value_state IN ('present', 'undefined')),
+  ADD COLUMN undefined_reason text
+    CHECK (undefined_reason IS NULL OR undefined_reason IN (
+      'no_attributed_cost', 'no_activity_events', 'empty_cohort'
+    ));
+
+ALTER TABLE ledger.metric_runs
+  ALTER COLUMN value_state DROP DEFAULT,
+  ADD CONSTRAINT metric_runs_value_presence_check CHECK (
+    (value_state='present' AND value_unscaled IS NOT NULL AND undefined_reason IS NULL)
+    OR (value_state='undefined' AND value_unscaled IS NULL AND undefined_reason IS NOT NULL)
+  );
+
+CREATE TABLE ledger.reconciliation_results (
+  reconciliation_id control.identifier PRIMARY KEY,
+  tenant_id control.identifier NOT NULL,
+  app_id control.identifier NOT NULL,
+  input_snapshot_id control.identifier NOT NULL,
+  external_snapshot_id control.identifier NOT NULL,
+  difference_reason_code text NOT NULL,
+  difference_reason_version text NOT NULL,
+  freshness text NOT NULL CHECK (freshness IN ('current', 'stale', 'recalculated')),
+  supersedes_reconciliation_id control.identifier,
+  artifact jsonb NOT NULL,
+  FOREIGN KEY (tenant_id, app_id) REFERENCES control.apps (tenant_id, app_id)
+);
+
+CREATE INDEX reconciliation_results_scope_idx
+  ON ledger.reconciliation_results (tenant_id, app_id, difference_reason_code, reconciliation_id);
+
+ALTER TABLE ledger.reconciliation_results ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ledger.reconciliation_results FORCE ROW LEVEL SECURITY;
+CREATE POLICY reconciliation_results_tenant ON ledger.reconciliation_results
+  USING (tenant_id = current_setting('open_mmp.tenant_id', true))
+  WITH CHECK (tenant_id = current_setting('open_mmp.tenant_id', true));
+
+CREATE TRIGGER reconciliation_results_append_only
+  BEFORE UPDATE OR DELETE ON ledger.reconciliation_results
+  FOR EACH ROW EXECUTE FUNCTION ledger.reject_append_only_mutation();
+
+REVOKE ALL ON ledger.reconciliation_results FROM PUBLIC;
+GRANT SELECT, INSERT ON ledger.reconciliation_results TO openmmp_app;
+GRANT SELECT ON ledger.reconciliation_results TO openmmp_reader;
+GRANT TRUNCATE ON ledger.reconciliation_results TO openmmp_seed;

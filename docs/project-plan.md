@@ -58,6 +58,8 @@ M1a is implemented and locally validated with synthetic evidence. The public rep
 
 ### Phase 1b: Cohort metrics and difference audit
 
+Phase 1b is implemented for the v0.2.1 contract and locally validated with synthetic PostgreSQL data. Snapshot supersession, SQL/evaluator parity, redaction recalculation, undefined ROAS, JSON/CSV export, persisted difference evidence, a third oracle, and a 10-million-row arithmetic floor have executable evidence. Exact 4-vCPU/8-GB capacity validation and two contract vocabulary/grouping follow-ups remain outside the completed runtime change.
+
 - Recalculable D0, ROAS, retention, and cohort-LTV engine
 - Versioned cost, revenue, FX, grouping, and watermark handling
 - Difference-audit API for candidates, exclusions, windows, joins, freshness, and neutral reasons

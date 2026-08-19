@@ -7,7 +7,7 @@ Repository location: `docs/design/m1-baseline.md`.
 Baseline commit: `main` = `1b6fa44`. Contract gate re-run on 2026-08-19: `516` `node --test` assertions pass and the summary line reads
 
 ```
-Validated 26 schemas, 8 registries, 36 reviewed fixtures, 468 golden output artifacts, 36 scenario assertions, 26 acceptance criteria, deterministic TypeScript, independent Python, and RFC 8785 conformance.
+Validated 26 schemas, 8 registries, 38 reviewed fixtures, 494 golden output artifacts, 38 scenario assertions, 26 acceptance criteria, deterministic TypeScript, independent Python, and RFC 8785 conformance.
 ```
 
 Contract v0.2 (WO-2 consistency + WO-3 extension) is landed. The original contract handoffs are recorded as resolved under [Handoffs to contract v0.2](#handoffs-to-contract-v02).
@@ -741,17 +741,20 @@ PostgreSQL's `round(numeric, int)` rounds half **away from zero**, not half to e
 
 ### M-4. Cohort definitions
 
+- **Executable definitions**: `packages/contracts/src/m1b-metric-definitions.ts` is the M1b definition set. It uses the same contract objects and rule-bundle values exercised by synthetic fixture 33. The set contains D0/D1/D3/D7 ROAS, D1/D7 retention, D0/D1/D3/D7 cohort LTV in USD, and cohort install count.
 - **Cohort key**: `(app_id, campaign_id, country, cohort_date)` where `cohort_date` is the install day in the metric's `aggregation_time_zone`.
-- **DN revenue**: revenue events with `occurred_at ∈ [install.occurred_at, install.occurred_at + (N+1)·24h)`, converted per event, summed exactly — matching the existing D0 semantics rather than inventing a second convention.
+- **DN revenue**: revenue events with `occurred_at ∈ [install.occurred_at, install.occurred_at + (N+1)·24h)`, converted and half-even rounded per event before exact summation — matching the existing D0 semantics rather than inventing a second convention.
 - **DN ROAS**: DN revenue ÷ cost for the cohort's `(campaign_id, country, cohort_date)` from `cost_records_current`.
-- **Retention DN**: distinct installations from the cohort with an activity event in day N ÷ cohort size.
+- **Retention DN**: distinct installations from the cohort with an event named by `activity_events` in day N ÷ cohort size. The default activity set is `["session_start"]`.
 - **Cohort LTV DN**: DN revenue ÷ cohort size.
 
 Three consequences that must be visible in the design, not discovered in the data:
 
-1. **Organic and unattributed cohorts have no cost.** ROAS for them is undefined. It must be emitted as absent with an explicit reason, never as `0` and never as infinity, and never folded into a blended number. Acceptance criterion B8 tests this.
-2. **Retention needs activity events, and M1 has no SDK.** The only source is the imported provider export, and not every provider exports sessions. Retention is therefore **conditional on the import profile carrying an activity event**; the M1 gate must state it that way instead of asserting retention works.
-3. **Cost is a spend-day fact; a cohort is an install-day fact.** The convention (cost on the cohort's acquisition day for that campaign × country) must be written into the metric definition, because the alternative conventions produce different numbers and the difference is invisible without the definition.
+1. **Organic and unattributed cohorts have no attributed cost.** ROAS for them is undefined. It is emitted with `value_state=undefined` and `undefined_reason=no_attributed_cost`, never as `0`, infinity, or part of a blended number. Acceptance criterion B8 tests this.
+2. **Retention needs activity events, and M1 has no SDK.** The only source is the imported provider export, and not every provider exports sessions. Retention is computed only when the import profile carries at least one configured activity event; otherwise it is emitted with `value_state=undefined` and `undefined_reason=no_activity_events`.
+3. **Cost is a spend-day fact; a cohort is an install-day fact.** `cost_records_current` supplies cost on the cohort acquisition date for the same campaign and country. This convention is part of every ROAS definition through `cost_basis: cohort_acquisition_day_current_snapshot`; alternative spend allocation must use another versioned definition.
+
+**Implemented evidence (2026-08-19).** `ledger.half_even_div` applies conversion and half-even rounding per event before exact summation. `npm run test:metric-parity` compares SQL artifacts to the evaluator after JCS, fixes snapshot identity inside `REPEATABLE READ`, exercises late-input supersession and privacy redaction, and independently asserts the fixture-33 hand calculations: D7 ROAS `1500000` at scale 6 and D1 retention `1000000` at scale 6. The reporting API persists explicit undefined values and neutral reconciliation artifacts rather than manufacturing numeric fallbacks.
 
 ---
 
@@ -776,6 +779,12 @@ At DAU 300,000 and 25 impressions per DAU: 7.5 M rows/day, ~2.7 B rows/year. At 
 - the daily cohort aggregation exceeding **30 minutes**, or p95 above one quarter of its scheduling interval.
 
 The worker records rows/day, table size, and aggregation duration so the trigger is a query, not a hunch. Mitigations to apply first, in order, before adding a tier: monthly partitioning (from day one), daily pre-aggregation into `ad_revenue_daily` (from day one), then dropping raw impression rows past a retention horizon while keeping the daily aggregate.
+
+### Recorded M1b performance floor
+
+On 2026-08-19, `OPENMMP_BENCHMARK_ROWS=10000000 npm run benchmark:metric-floor` inserted 10,000,000 synthetic one-day revenue rows in **4,703.702 ms** and ran the per-event half-even aggregate in **5,028.475 ms**. The unlogged benchmark relation occupied **521,953,280 bytes** and produced the independently checked integer result `10000010000000`. The script rolls the table back after recording the measurement.
+
+Environment: Node.js 22.18.0; PostgreSQL 17.11 (`x86_64-pc-linux-musl`); Windows host with 24 logical CPUs and 33,413,771,264 bytes RAM; PostgreSQL cgroup CPU and memory limits were `max`; the benchmark session allowed at most three parallel workers plus the leader and used `work_mem=64MB`. Observed container memory after aggregation was 854,376,448 bytes. This proves the arithmetic floor is far below the ten-minute trigger on the measured machine, but it is **not** an exact 4-vCPU/8-GB cgroup run. That exact capacity run remains an operator/environment verification item; no performance claim is made for real data or the full production join path. CI runs the same instrument with 100,000 synthetic rows to catch functional regressions without turning pull requests into capacity tests.
 
 ---
 

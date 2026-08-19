@@ -1,6 +1,7 @@
 name: Runtime
 
 on:
+  workflow_dispatch:
   pull_request:
   push:
     branches: [main]
@@ -56,6 +57,10 @@ jobs:
           npm run test:env-coverage
       - name: Reproduce contract goldens through PostgreSQL
         run: npm run seed && npm run verify:parity
+      - name: Verify SQL cohort metrics against the contract evaluator
+        run: npm run test:metric-parity
+      - name: Run reduced synthetic metric performance floor
+        run: OPENMMP_BENCHMARK_ROWS=100000 npm run benchmark:metric-floor
       - name: Check threat-model coverage
         run: npm run check:threat-model
       - name: Compose first-run smoke
