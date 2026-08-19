@@ -7,10 +7,10 @@ describe("Install Referrer client response mapping", () => {
     const clickId = "AbCdEf0123456789_-abcd";
     assert.deepEqual(mapInstallReferrer({ response: "ok", referrer: `omv=1&cid=${clickId}` }), {
       referrer_status: "available", referrer_client_response: "ok", retry: "none",
-      attribution_reason: "window_evaluation", click_id: clickId,
+      requires_window_evaluation: true, click_id: clickId,
     });
-    assert.equal(mapInstallReferrer({ response: "ok", referrer: "foreign=value" }).attribution_reason, "unknown_click_id");
-    assert.equal(mapInstallReferrer({ response: "ok" }).attribution_reason, "no_referrer");
+    assert.equal(mapInstallReferrer({ response: "ok", referrer: "foreign=value" }).terminal_reason, "unknown_click_id");
+    assert.equal(mapInstallReferrer({ response: "ok" }).terminal_reason, "no_referrer");
     const expected: Record<Exclude<InstallReferrerClientResponse, "ok">, [string, string]> = {
       service_unavailable: ["unavailable", "bounded"],
       service_disconnected: ["unavailable", "bounded"],

@@ -371,6 +371,16 @@ describe("M2a signed SDK ingestion", () => {
     const artifact = await response.json() as Record<string, unknown>;
     assert.equal(artifact.deletion_subject_ref, undefined);
     assert.match(String(artifact.requester_auth_ref), /^sdk_auth:/);
+    assert.ok(await withTenant(pool, tenantId, async (client) => (await client.query<{ count: number }>(
+      `SELECT count(*)::int AS count FROM ledger.privacy_tombstones
+       WHERE tenant_id=$1 AND app_id=$2 AND privacy_request_id=$3`,
+      [tenantId, appId, artifact.privacy_request_id],
+    )).rows[0].count) >= 1);
+    assert.ok(await withTenant(pool, tenantId, async (client) => (await client.query<{ count: number }>(
+      `SELECT count(*)::int AS count FROM ledger.corrections
+       WHERE tenant_id=$1 AND app_id=$2 AND artifact->>'correction_reason'='privacy_deletion'`,
+      [tenantId, appId],
+    )).rows[0].count) >= 1);
     assert.equal(await withTenant(pool, tenantId, async (client) => (await client.query(
       `SELECT metric_run_id FROM ledger.metric_runs
        WHERE tenant_id=$1 AND app_id=$2 AND supersedes_metric_run_id=$3`, [tenantId, appId, priorMetricId],
