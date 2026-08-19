@@ -1,6 +1,7 @@
 import { Pool } from "pg";
 import { EncryptedFilePayloadStore, EnvironmentSecretStore } from "@open-mmp/runtime";
 import { processMaxInbox } from "./import/max-worker.js";
+import { processSdkInbox } from "./sdk-worker.js";
 
 const connectionString = process.env.OPENMMP_APP_DATABASE_URL;
 if (!connectionString) throw new Error("OPENMMP_APP_DATABASE_URL is required");
@@ -11,6 +12,7 @@ console.log("Open MMP worker connected to PostgreSQL");
 
 const interval = Number(process.env.OPENMMP_WORKER_POLL_MS ?? "5000");
 const maxTenantId = process.env.OPENMMP_MAX_TENANT_ID ?? "tenant-local";
+const sdkTenantId = process.env.OPENMMP_SDK_TENANT_ID ?? maxTenantId;
 const secrets = new EnvironmentSecretStore({
   OPENMMP_PAYLOAD_MASTER_KEY: { value: process.env.OPENMMP_PAYLOAD_MASTER_KEY, file: process.env.OPENMMP_PAYLOAD_MASTER_KEY_FILE },
 });
@@ -22,7 +24,10 @@ let busy = false;
 const tick = async (): Promise<void> => {
   if (busy) return;
   busy = true;
-  try { await processMaxInbox(pool, payloadStore, maxTenantId); }
+  try {
+    await processMaxInbox(pool, payloadStore, maxTenantId);
+    await processSdkInbox(pool, payloadStore, sdkTenantId);
+  }
   finally { busy = false; }
 };
 await tick();

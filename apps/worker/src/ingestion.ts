@@ -312,6 +312,16 @@ async function persistProjection(appPool: Pool, logical: Any, input: Any): Promi
         ON CONFLICT (logical_event_id) DO NOTHING`,
         [logical.logical_event_id, logical.tenant_id, logical.app_id, payload.installation_id ?? null, payload.anchor_source ?? null, payload.impression_id ?? null, payload.ad_unit_id ?? null, payload.ad_network ?? null, payload.amount_unscaled, payload.amount_scale, payload.currency, payload.revenue_source, payload.country ?? null, attempt.record.occurred_at, projected({ installation_id: payload.installation_id ?? null, anchor_source: payload.anchor_source ?? null, impression_id: payload.impression_id ?? null, amount_unscaled: payload.amount_unscaled, amount_scale: payload.amount_scale, currency: payload.currency, revenue_source: payload.revenue_source })],
       );
+    } else if (logical.event_name === "custom_event") {
+      await client.query(
+        `INSERT INTO ledger.custom_event_facts (
+          logical_event_id, tenant_id, app_id, installation_id, event_key, artifact
+        ) VALUES ($1,$2,$3,$4,$5,$6::jsonb)
+        ON CONFLICT (logical_event_id) DO NOTHING`,
+        [logical.logical_event_id, logical.tenant_id, logical.app_id,
+          payload.installation_id, payload.event_key,
+          projected({ installation_id: payload.installation_id, event_key: payload.event_key })],
+      );
     }
   });
 }
@@ -665,6 +675,7 @@ export type RuntimeIngestionResult = {
   logical_events: Any[];
   rejections: Any[];
   attributions: Any[];
+  fraud_decisions: Any[];
   reconciliation: Any[];
 };
 
@@ -700,7 +711,7 @@ export async function ingestRuntimeBatch(
   historicalAttempts: readonly CandidateAttempt[] = [],
 ): Promise<RuntimeIngestionResult> {
   if (attempts.length === 0) {
-    return { raw_records: [], deliveries: [], logical_events: [], rejections: [], attributions: [], reconciliation: [] };
+    return { raw_records: [], deliveries: [], logical_events: [], rejections: [], attributions: [], fraud_decisions: [], reconciliation: [] };
   }
   const allAttempts = [...historicalAttempts, ...attempts].sort(compareCandidateAttempts);
   const input = runtimeInput(allAttempts);
@@ -710,8 +721,9 @@ export async function ingestRuntimeBatch(
   const deliveryIds = new Set(attempts.map((attempt) => attempt.record.delivery_id));
   const belongsToCurrent = (artifact: Any): boolean =>
     recordIds.has(artifact.record_id)
+    || recordIds.has(artifact.subject_ref)
     || deliveryIds.has(artifact.delivery_id)
-    || (artifact.evidence_refs ?? []).some((ref: Any) => recordIds.has(ref.record_id));
+    || (artifact.evidence_refs ?? []).some((ref: Any) => recordIds.has(ref.record_id ?? ref.ref));
 
   const selected: RuntimeIngestionResult = {
     raw_records: output.raw_records.filter(belongsToCurrent),
@@ -719,6 +731,7 @@ export async function ingestRuntimeBatch(
     logical_events: output.logical_events.filter(belongsToCurrent),
     rejections: output.rejections.filter(belongsToCurrent),
     attributions: output.attributions.filter(belongsToCurrent),
+    fraud_decisions: output.fraud_decisions.filter(belongsToCurrent),
     reconciliation: (output.reconciliation ?? []).filter((artifact: Any) =>
       artifact.tenant_id === attempts[0].server.tenant_id && artifact.app_id === attempts[0].server.app_id),
   };
@@ -740,6 +753,9 @@ export async function ingestRuntimeBatch(
   for (const rejection of selected.rejections) await persistRejection(appPool, rejection);
   for (const attribution of selected.attributions) {
     await persistAttribution(appPool, attribution);
+  }
+  for (const fraud of selected.fraud_decisions) {
+    await persistFraud(appPool, fraud, { tenant_id: attempts[0].server.tenant_id, app_id: attempts[0].server.app_id });
   }
   for (const reconciliation of selected.reconciliation) await persistReconciliation(appPool, reconciliation);
   return selected;

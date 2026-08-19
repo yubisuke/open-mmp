@@ -12,6 +12,16 @@ export type PrivacyRequestBody = {
   deletion_subject_ref: string;
 };
 
+export type PrivacyIdentity = {
+  tenantId: string;
+  appId: string;
+  actorType: "admin_key" | "sdk_installation";
+  actorRef: string;
+  requesterAuthRef: string;
+  installationKeyId?: string;
+  deletionSubjectDigest?: string;
+};
+
 function currentTimestamp(now?: Date): string { return (now ?? new Date()).toISOString(); }
 
 async function affectedRecordIds(client: any, body: PrivacyRequestBody): Promise<string[]> {
@@ -31,8 +41,9 @@ async function affectedRecordIds(client: any, body: PrivacyRequestBody): Promise
      LEFT JOIN ledger.session_facts AS session USING (logical_event_id, tenant_id, app_id)
      LEFT JOIN ledger.purchase_facts AS purchase USING (logical_event_id, tenant_id, app_id)
      LEFT JOIN ledger.ad_revenue_facts AS revenue USING (logical_event_id, tenant_id, app_id)
+     LEFT JOIN ledger.custom_event_facts AS custom USING (logical_event_id, tenant_id, app_id)
      WHERE logical.tenant_id=$1 AND logical.app_id=$2
-       AND COALESCE(install.installation_id, session.installation_id, purchase.installation_id, revenue.installation_id)=$3
+       AND COALESCE(install.installation_id, session.installation_id, purchase.installation_id, revenue.installation_id, custom.installation_id)=$3
      ORDER BY logical.record_id`,
     [body.tenant_id, body.app_id, body.deletion_subject_ref],
   );
@@ -41,18 +52,24 @@ async function affectedRecordIds(client: any, body: PrivacyRequestBody): Promise
 
 export async function executePrivacyRequest(
   pool: Pool,
-  identity: AdminIdentity,
+  identity: AdminIdentity | PrivacyIdentity,
   body: PrivacyRequestBody,
   payloadStore: PayloadStore,
   now?: Date,
 ): Promise<Any> {
-  if (body.requested_via === "on_device_sdk") {
+  if (body.requested_via === "on_device_sdk"
+    && (!("actorType" in identity) || identity.actorType !== "sdk_installation")) {
     const error = new Error("on_device_path_not_implemented");
     (error as Any).statusCode = 501;
     throw error;
   }
+  if (body.requested_via === "tenant_admin_api" && "actorType" in identity) {
+    const error = new Error("tenant_admin_path_requires_admin_auth");
+    (error as Any).statusCode = 403;
+    throw error;
+  }
   if (identity.tenantId !== body.tenant_id || identity.appId !== body.app_id) {
-    const error = new Error("admin_scope_mismatch");
+    const error = new Error("requester_scope_mismatch");
     (error as Any).statusCode = 403;
     throw error;
   }
@@ -77,8 +94,32 @@ export async function executePrivacyRequest(
            ORDER BY inbox_id`,
           [body.tenant_id, body.deletion_scope, body.app_id],
         );
-    for (const payload of payloads.rows) await payloadStore.purge(payload.raw_query_ref);
-    const subjectDigest = sha256([body.tenant_id, body.app_id, body.deletion_scope, body.deletion_subject_ref]);
+    const installationKeyId = "installationKeyId" in identity ? identity.installationKeyId : undefined;
+    const batchPayloads = body.deletion_scope === "installation"
+      ? await client.query<{ body_ref: string }>(
+          `SELECT DISTINCT batch.body_ref
+           FROM ledger.ingest_batches AS batch
+           LEFT JOIN ledger.ingest_batch_records AS member
+             ON member.ingest_batch_id=batch.ingest_batch_id
+            AND member.tenant_id=batch.tenant_id AND member.app_id=batch.app_id
+           WHERE batch.tenant_id=$1 AND batch.app_id=$2
+             AND (member.record_id=ANY($3::text[]) OR batch.installation_key_id=$4)
+           ORDER BY batch.body_ref`,
+          [body.tenant_id, body.app_id, records, installationKeyId ?? null],
+        )
+      : await client.query<{ body_ref: string }>(
+          `SELECT body_ref FROM ledger.ingest_batches
+           WHERE tenant_id=$1 AND ($2='tenant' OR app_id=$3)
+           ORDER BY inbox_seq`,
+          [body.tenant_id, body.deletion_scope, body.app_id],
+        );
+    for (const reference of new Set([
+      ...payloads.rows.map((payload) => payload.raw_query_ref),
+      ...batchPayloads.rows.map((payload) => payload.body_ref),
+    ])) await payloadStore.purge(reference);
+    const subjectDigest = "deletionSubjectDigest" in identity && identity.deletionSubjectDigest
+      ? identity.deletionSubjectDigest
+      : sha256([body.tenant_id, body.app_id, body.deletion_scope, body.deletion_subject_ref]);
     const artifact = {
       contract_version: "0.3.0",
       tenant_id: body.tenant_id,
@@ -87,7 +128,7 @@ export async function executePrivacyRequest(
       deletion_subject_digest: subjectDigest,
       deletion_scope: body.deletion_scope,
       requested_via: body.requested_via,
-      requester_auth_ref: `admin_key:${identity.keyId}`,
+      requester_auth_ref: "requesterAuthRef" in identity ? identity.requesterAuthRef : `admin_key:${identity.keyId}`,
       requested_at: completedAt,
       completed_at: completedAt,
       status: "completed",
@@ -193,9 +234,12 @@ export async function executePrivacyRequest(
         audit_log_id, tenant_id, app_id, occurred_at, actor_type, actor_ref,
         action, target_scope, target_ref, policy_version, request_digest,
         outcome, reason_code
-      ) VALUES ($1,$2,$3,$4,'admin_key',$5,'privacy_delete','privacy_request',$6,
-        'privacy-v0.2',$7,'succeeded',NULL)`,
-      [uuidV7(), body.tenant_id, body.app_id, completedAt, `admin_key:${identity.keyId}`, requestId, sha256(Object.keys(body).sort())],
+      ) VALUES ($1,$2,$3,$4,$5,$6,'privacy_delete','privacy_request',$7,
+        'privacy-v0.2',$8,'succeeded',NULL)`,
+      [uuidV7(), body.tenant_id, body.app_id, completedAt,
+        "actorType" in identity ? identity.actorType : "admin_key",
+        "actorRef" in identity ? identity.actorRef : `admin_key:${identity.keyId}`,
+        requestId, sha256(body)],
     );
     return artifact;
   });

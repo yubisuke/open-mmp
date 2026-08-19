@@ -1,8 +1,8 @@
 {
-  "name": "@open-mmp/api",
+  "name": "@open-mmp/redirector",
   "version": "0.1.0",
   "private": true,
-  "description": "Open MMP HTTP API",
+  "description": "Portable Open MMP redirector HTTP service",
   "type": "module",
   "dependencies": {
     "@open-mmp/redirector-core": "0.1.0",
