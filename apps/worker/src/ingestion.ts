@@ -250,13 +250,33 @@ async function persistProjection(appPool: Pool, logical: Any, input: Any): Promi
         [logical.logical_event_id, logical.tenant_id, logical.app_id, payload.click_id, payload.redirector_click_at ?? null, projected({ click_id: payload.click_id, redirector_click_at: payload.redirector_click_at ?? null })],
       );
     } else if (logical.event_name === "install") {
+      const importContext = payload.import_context ?? {};
+      const campaignId = payload.campaign_id ?? importContext.provider_campaign_ref ?? null;
+      const network = payload.network ?? importContext.provider_network ?? null;
+      const country = payload.country ?? importContext.provider_country ?? null;
       await client.query(
         `INSERT INTO ledger.install_facts (
           logical_event_id, tenant_id, app_id, installation_id, prior_installation_id,
-          install_type, click_id, install_begin_at_server, artifact
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb)
+          install_type, click_id, install_begin_at_server, occurred_at, campaign_id,
+          network, country, artifact
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb)
         ON CONFLICT (logical_event_id) DO NOTHING`,
-        [logical.logical_event_id, logical.tenant_id, logical.app_id, payload.installation_id, payload.prior_installation_id ?? null, payload.install_type, payload.click_id ?? null, payload.install_begin_at_server ?? null, projected({ installation_id: payload.installation_id, prior_installation_id: payload.prior_installation_id ?? null, install_type: payload.install_type })],
+        [
+          logical.logical_event_id, logical.tenant_id, logical.app_id,
+          payload.installation_id, payload.prior_installation_id ?? null,
+          payload.install_type, payload.click_id ?? null,
+          payload.install_begin_at_server ?? null, attempt.record.occurred_at,
+          campaignId, network, country,
+          projected({
+            installation_id: payload.installation_id,
+            prior_installation_id: payload.prior_installation_id ?? null,
+            install_type: payload.install_type,
+            occurred_at: attempt.record.occurred_at,
+            campaign_id: campaignId,
+            network,
+            country,
+          }),
+        ],
       );
     } else if (logical.event_name === "session_start") {
       await client.query(
@@ -287,6 +307,49 @@ async function persistProjection(appPool: Pool, logical: Any, input: Any): Promi
       );
     }
   });
+}
+
+async function persistFixtureCosts(appPool: Pool, input: Any): Promise<void> {
+  const costs = input.cost_records ?? [];
+  if (costs.length === 0) return;
+  const scopes = new Map<string, Any[]>();
+  for (const cost of costs) {
+    const key = `${cost.tenant_id}\u0000${cost.app_id}`;
+    const scoped = scopes.get(key) ?? [];
+    scoped.push(cost);
+    scopes.set(key, scoped);
+  }
+  for (const scoped of scopes.values()) {
+    const first = scoped[0];
+    const sourceDigest = sha256(scoped);
+    const runId = uuidV7(Date.parse(first.as_of));
+    await withTenant(appPool, first.tenant_id, async (client) => {
+      await client.query(
+        `INSERT INTO control.import_runs (
+          import_run_id, tenant_id, app_id, source_id, source_snapshot_digest,
+          status, started_at, completed_at
+        ) VALUES ($1,$2,$3,$4,$5,'completed',$6,$6)`,
+        [runId, first.tenant_id, first.app_id, "fixture-metric-cost", sourceDigest, first.as_of],
+      );
+      for (const cost of scoped) {
+        await client.query(
+          `INSERT INTO ledger.cost_records (
+            cost_record_id, tenant_id, app_id, network, campaign_id, ad_group_id,
+            country, cost_date, spend_unscaled, spend_scale, currency, source,
+            as_of, report_snapshot_digest, cost_key_digest, import_run_id, artifact
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17::jsonb)
+          ON CONFLICT (cost_record_id) DO NOTHING`,
+          [
+            cost.cost_record_id, cost.tenant_id, cost.app_id, cost.network,
+            cost.campaign_id ?? null, cost.ad_group_id ?? null, cost.country ?? null,
+            cost.date, cost.amount_unscaled, cost.amount_scale, cost.currency,
+            cost.source, cost.as_of, cost.report_snapshot_digest,
+            cost.dimension_digest, runId, JSON.stringify(cost),
+          ],
+        );
+      }
+    });
+  }
 }
 
 async function persistCorrection(appPool: Pool, artifact: Any): Promise<Any> {
@@ -532,6 +595,7 @@ export async function ingestFixture(
     assertRoundTrip(logical, stored, `${fixtureName}/base logical/${logical.logical_event_id}`);
     await persistProjection(appPool, logical, input);
   }
+  await persistFixtureCosts(appPool, input);
   await persistLifecycle(appPool, input);
 
   let count = 0;

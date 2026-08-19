@@ -653,7 +653,7 @@ function makeAggregatePostbackAttribution(
   };
 }
 
-function roundHalfEven(numerator: bigint, denominator: bigint): bigint {
+export function roundHalfEven(numerator: bigint, denominator: bigint): bigint {
   if (denominator <= 0n) throw new Error("denominator must be positive");
   const negative = numerator < 0n;
   const absolute = negative ? -numerator : numerator;
