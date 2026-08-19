@@ -1,6 +1,6 @@
 import type { Pool } from "pg";
 import { sha256 } from "@open-mmp/attribution-core";
-import { uuidV7, withTenant } from "@open-mmp/runtime";
+import { uuidV7, withTenant, type PayloadStore } from "@open-mmp/runtime";
 import type { AdminIdentity } from "./admin-auth.js";
 
 type Any = Record<string, any>;
@@ -43,6 +43,7 @@ export async function executePrivacyRequest(
   pool: Pool,
   identity: AdminIdentity,
   body: PrivacyRequestBody,
+  payloadStore: PayloadStore,
   now?: Date,
 ): Promise<Any> {
   if (body.requested_via === "on_device_sdk") {
@@ -59,6 +60,24 @@ export async function executePrivacyRequest(
   const requestId = `privacy:${uuidV7(now?.valueOf())}`;
   return withTenant(pool, body.tenant_id, async (client) => {
     const records = await affectedRecordIds(client, body);
+    const payloads = body.deletion_scope === "installation"
+      ? await client.query<{ raw_query_ref: string }>(
+          `SELECT DISTINCT inbox.raw_query_ref
+           FROM ledger.ingest_inbox AS inbox
+           JOIN ledger.raw_records AS raw
+             ON raw.tenant_id=inbox.tenant_id AND raw.app_id=inbox.app_id
+            AND raw.producer=inbox.producer AND raw.event_id=inbox.event_id
+           WHERE inbox.tenant_id=$1 AND inbox.app_id=$2 AND raw.record_id=ANY($3::text[])
+           ORDER BY inbox.raw_query_ref`,
+          [body.tenant_id, body.app_id, records],
+        )
+      : await client.query<{ raw_query_ref: string }>(
+          `SELECT raw_query_ref FROM ledger.ingest_inbox
+           WHERE tenant_id=$1 AND ($2='tenant' OR app_id=$3)
+           ORDER BY inbox_id`,
+          [body.tenant_id, body.deletion_scope, body.app_id],
+        );
+    for (const payload of payloads.rows) await payloadStore.purge(payload.raw_query_ref);
     const subjectDigest = sha256([body.tenant_id, body.app_id, body.deletion_scope, body.deletion_subject_ref]);
     const artifact = {
       contract_version: "0.2.0",

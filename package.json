@@ -20,10 +20,13 @@
     "generate:types": "npm run generate:types --workspace @open-mmp/contracts",
     "import": "npm run import --workspace @open-mmp/worker --",
     "seed": "npm run seed --workspace @open-mmp/worker",
+    "sbom": "node --import tsx tools/sbom.ts",
+    "check:threat-model": "node --import tsx tools/check-threat-model.ts",
     "test:db-invariants": "npm run test:db-invariants --workspace @open-mmp/runtime",
     "test:env-coverage": "node --import tsx apps/runtime/src/env-coverage.test.ts",
     "test": "node --import tsx --test \"apps/**/*.unit.test.ts\"",
     "test:integration": "node --env-file-if-exists=.env --import tsx --test \"apps/**/*.integration.test.ts\"",
+    "smoke:runtime": "node --import tsx tools/runtime-smoke.ts",
     "validate": "npm run typecheck && npm run validate:test --workspace @open-mmp/contracts && npm run validate:summary --workspace @open-mmp/contracts",
     "verify:parity": "npm run verify:parity --workspace @open-mmp/worker",
     "typecheck": "npm run typecheck --workspace @open-mmp/contracts"

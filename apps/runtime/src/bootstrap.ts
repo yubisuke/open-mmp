@@ -60,6 +60,7 @@ const seedPassword = existing.OPENMMP_SEED_DATABASE_PASSWORD ?? secret();
 const adminKey = existing.OPENMMP_ADMIN_KEY ?? secret();
 const maxPathSecret = existing.OPENMMP_MAX_PATH_SECRET ?? secret(24);
 const maxEventKey = existing.OPENMMP_MAX_EVENT_KEY ?? secret();
+const payloadMasterKey = existing.OPENMMP_PAYLOAD_MASTER_KEY ?? secret();
 const migrationDatabaseUrl = url("postgres", postgresPassword, databaseHost, databasePort, databaseName);
 const appDatabaseUrl = url("openmmp_app", appPassword, databaseHost, databasePort, databaseName);
 const seedDatabaseUrl = url("openmmp_seed", seedPassword, databaseHost, databasePort, databaseName);
@@ -80,6 +81,7 @@ const appEntries: Record<string, string> = {
   OPENMMP_ADMIN_KEY: adminKey,
   OPENMMP_MAX_PATH_SECRET: maxPathSecret,
   OPENMMP_MAX_EVENT_KEY: maxEventKey,
+  OPENMMP_PAYLOAD_MASTER_KEY: payloadMasterKey,
   OPENMMP_PUBLIC_BASE_URL: publicBaseUrl,
   OPENMMP_API_PORT: "8080",
   OPENMMP_WORKER_POLL_MS: "5000",

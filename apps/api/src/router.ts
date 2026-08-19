@@ -4,6 +4,7 @@ import type { PayloadStore } from "@open-mmp/runtime";
 import { verifyAdminKey } from "./admin-auth.js";
 import { receiveMax, type MaxReceiverConfig } from "./max-receiver.js";
 import { executePrivacyRequest, type PrivacyRequestBody } from "./privacy.js";
+import type { TokenBucket } from "./rate-limit.js";
 
 async function jsonBody(request: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
@@ -21,6 +22,8 @@ export function createRequestHandler(dependencies: {
   pool: Pool;
   payloadStore: PayloadStore;
   maxConfig: MaxReceiverConfig;
+  maxBucket?: TokenBucket;
+  adminBucket?: TokenBucket;
 }): RequestListener {
   return (request, response) => {
     void (async () => {
@@ -30,6 +33,11 @@ export function createRequestHandler(dependencies: {
         return;
       }
       if (request.method === "GET" && request.url?.startsWith(`/v1/ingest/max/${dependencies.maxConfig.pathSecret}?`)) {
+        if (dependencies.maxBucket && !dependencies.maxBucket.allow()) {
+          response.writeHead(429, { "retry-after": "1" });
+          response.end();
+          return;
+        }
         await receiveMax(request, response, {
           pool: dependencies.pool,
           payloadStore: dependencies.payloadStore,
@@ -38,6 +46,11 @@ export function createRequestHandler(dependencies: {
         return;
       }
       if (request.method === "POST" && request.url === "/v1/admin/privacy-requests") {
+        if (dependencies.adminBucket && !dependencies.adminBucket.allow()) {
+          response.writeHead(429, { "retry-after": "1" });
+          response.end();
+          return;
+        }
         const identity = await verifyAdminKey(
           dependencies.pool,
           { tenantId: dependencies.maxConfig.tenantId, appId: dependencies.maxConfig.appId },
@@ -49,7 +62,12 @@ export function createRequestHandler(dependencies: {
           return;
         }
         try {
-          const result = await executePrivacyRequest(dependencies.pool, identity, await jsonBody(request) as PrivacyRequestBody);
+          const result = await executePrivacyRequest(
+            dependencies.pool,
+            identity,
+            await jsonBody(request) as PrivacyRequestBody,
+            dependencies.payloadStore,
+          );
           response.writeHead(201, { "content-type": "application/json", "cache-control": "no-store" });
           response.end(`${JSON.stringify(result)}\n`);
         } catch (error) {

@@ -47,7 +47,7 @@ services:
       timeout: 3s
       retries: 30
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:${OPENMMP_POSTGRES_HOST_PORT:-5432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - postgres-secrets:/run/openmmp/postgres:ro
@@ -75,7 +75,7 @@ services:
       migrate:
         condition: service_completed_successfully
     ports:
-      - "8080:8080"
+      - "${OPENMMP_API_HOST_PORT:-8080}:8080"
     networks:
       - backend
       - edge

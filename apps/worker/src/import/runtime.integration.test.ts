@@ -5,22 +5,27 @@ import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createServer } from "node:http";
-import { createAppPool, createMigrationPool, LocalPayloadStore, withTenant } from "@open-mmp/runtime";
+import { createAppPool, createMigrationPool, EncryptedFilePayloadStore, withTenant } from "@open-mmp/runtime";
 import { runMmpImport } from "./runner.js";
 import { persistCostImport } from "./cost.js";
 import { expectedMaxTokenAll, receiveMax, type MaxReceiverConfig } from "../../../api/src/max-receiver.js";
 import { processMaxInbox } from "./max-worker.js";
 import { ensureAdminKeys } from "../../../api/src/admin-auth.js";
 import { createRequestHandler } from "../../../api/src/router.js";
+import { TokenBucket } from "../../../api/src/rate-limit.js";
 
 const appPool = createAppPool();
 const ownerPool = createMigrationPool();
 const temporary = mkdtempSync(join(tmpdir(), "openmmp-runtime-test-"));
+const payloadStore = new EncryptedFilePayloadStore(
+  join(temporary, "payloads"),
+  "synthetic-payload-master-key-000000000000000000000000000001",
+);
 const mappingPath = "examples/mappings/synthetic-provider-click.json";
 const source = readFileSync("examples/synthetic/mmp-raw-events.json", "utf8");
 
 async function reset(): Promise<void> {
-  await ownerPool.query("TRUNCATE control.apps CASCADE");
+  await ownerPool.query("TRUNCATE ledger.audit_logs, control.apps CASCADE");
 }
 
 before(reset);
@@ -93,8 +98,6 @@ describe("MAX receiver integration", () => {
     eventKey: "synthetic-event-key", tokenMode: "all_with_event_fallback",
     maxParameters: 40, maxQueryBytes: 8192,
   };
-  const payloadStore = new LocalPayloadStore(join(temporary, "payloads"));
-
   it("A6 verifies, durably enqueues, returns 204, and deduplicates in the worker", async () => {
     const send = async (eventId: string): Promise<{ status: number; elapsed: number }> => {
       const parameters = new URLSearchParams({ event_id: eventId, revenue: "0.123456", ts: "1787097600", ad_unit_id: "synthetic-unit", network: "synthetic-network", cc: "US" });
@@ -131,6 +134,25 @@ describe("MAX receiver integration", () => {
       assert.ok(audit.rows[0].count >= 2);
     });
   });
+
+  it("A10 returns 429 before a second postback is persisted", async () => {
+    const server = createServer(createRequestHandler({
+      pool: appPool, payloadStore, maxConfig: config, maxBucket: new TokenBucket(0.0001, 1, performance.now()),
+    }));
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    assert.ok(address && typeof address === "object");
+    const parameters = new URLSearchParams({ event_id: "rate-limit-synthetic", revenue: "0.1", ts: "1787097600" });
+    parameters.set("event_token_all", expectedMaxTokenAll(parameters, config.eventKey));
+    try {
+      const first = await fetch(`http://127.0.0.1:${address.port}/v1/ingest/max/synthetic-path?${parameters}`);
+      const second = await fetch(`http://127.0.0.1:${address.port}/v1/ingest/max/synthetic-path?${parameters}`);
+      assert.equal(first.status, 204);
+      assert.equal(second.status, 429);
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+  });
 });
 
 describe("admin privacy integration", () => {
@@ -166,7 +188,12 @@ describe("admin privacy integration", () => {
       tenantId: "tenant-local", appId: "app-local", pathSecret: "synthetic-path",
       eventKey: "synthetic-event-key", tokenMode: "all", maxParameters: 40, maxQueryBytes: 8192,
     };
-    const server = createServer(createRequestHandler({ pool: appPool, payloadStore: new LocalPayloadStore(join(temporary, "privacy-payloads")), maxConfig: config }));
+    const payloadReference = await withTenant(appPool, "tenant-local", async (client) =>
+      (await client.query<{ raw_query_ref: string }>("SELECT raw_query_ref FROM ledger.ingest_inbox ORDER BY received_at LIMIT 1")).rows[0].raw_query_ref,
+    );
+    assert.equal(await payloadStore.scanFor("0.123456"), false);
+    assert.match((await payloadStore.read(payloadReference)).toString("utf8"), /0\.123456/);
+    const server = createServer(createRequestHandler({ pool: appPool, payloadStore, maxConfig: config }));
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     const address = server.address();
     assert.ok(address && typeof address === "object");
@@ -194,6 +221,7 @@ describe("admin privacy integration", () => {
       assert.equal(counts.rows[0].superseding, 1);
       assert.equal(counts.rows[0].audits, 1);
     });
+    await assert.rejects(payloadStore.read(payloadReference));
   });
 });
 
