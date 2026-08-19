@@ -16,7 +16,7 @@ This is the canonical milestone sequence. `docs/project-plan.md` is a phase summ
 
 ## M0.2 Contract v0.2
 
-Contract v0.2 is complete and the full local contract validation suite passes. It retains the M0.1 hardening and adds imported provider-reported attribution, automatic neutral reconciliation, reporting dimensions, cost and cohort metrics, Apple aggregate envelopes, a minimal verified Meta envelope, and a closed processing-purpose catalog. The contract remains a reference implementation; M1a is next, not a runtime release. The immutable v0.1 baseline is the `contract-v0.1` Git tag.
+Contract v0.2 is complete and the full local contract validation suite passes. It retains the M0.1 hardening and adds imported provider-reported attribution, automatic neutral reconciliation, reporting dimensions, cost and cohort metrics, Apple aggregate envelopes, a minimal verified Meta envelope, and a closed processing-purpose catalog. The immutable v0.1 baseline is the `contract-v0.1` Git tag.
 
 - Versioned event envelope and raw-record contract
 - Attribution result, reason codes, state transitions, and reconciliation
@@ -31,6 +31,8 @@ Contract v0.2 is complete and the full local contract validation suite passes. I
 Evidence gate: Independently implemented evaluators reproduce the same reviewed canonical outputs from the same synthetic fixtures and policy versions.
 
 ## M1a Shadow ledger and import foundation
+
+M1a is implemented and locally validated with synthetic inputs. PostgreSQL runtime parity, import idempotency/restatement, MAX receipt, deletion, encryption/purge, rate limits, environment coverage, SBOM generation, and threat coverage are executable gates. External API account connectivity, operator real-data validation, production TLS, capacity, and deployment operations remain unverified by design.
 
 - PostgreSQL append-only received-evidence ledger with lawful correction and redaction records
 - Docker Compose, Node.js API and worker services, and automated migrations and tests
@@ -112,4 +114,4 @@ Evidence gate: A production pilot completes backup restoration, deletion, replay
 
 ## Immediate next step
 
-Plan and implement M1a Shadow ledger and import foundation. Contract validation evidence is recorded; runtime, operator-run real-data validation, device validation, platform approval, and production evidence remain separate states.
+Run the M1a CI and operator checklist, then implement M1b cohort metrics and neutral difference audit. Real provider connectivity, operator-run validation, device validation, platform approval, and production evidence remain separate states.

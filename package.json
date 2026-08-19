@@ -17,6 +17,7 @@
     "db:migrate": "npm run db:migrate --workspace @open-mmp/runtime",
     "db:schema:dump": "npm run db:schema:dump --workspace @open-mmp/runtime",
     "db:schema:check": "npm run db:schema:check --workspace @open-mmp/runtime",
+    "demo:metrics": "npm run demo:metrics --workspace @open-mmp/worker",
     "generate:types": "npm run generate:types --workspace @open-mmp/contracts",
     "import": "npm run import --workspace @open-mmp/worker --",
     "seed": "npm run seed --workspace @open-mmp/worker",
