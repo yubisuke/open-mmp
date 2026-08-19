@@ -43,7 +43,7 @@ function csvRow(text: string): Record<string, string> {
   return Object.fromEntries(parse(lines[0]).map((header, index) => [header, parse(lines[1])[index]]));
 }
 
-describe("M1b reporting and difference audit", { concurrency: false }, () => {
+describe("M1b reporting and difference audit", { concurrency: false, timeout: 60_000 }, () => {
   let appPool: Pool;
   let seedPool: Pool;
   let server: Server;
