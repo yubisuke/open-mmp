@@ -44,6 +44,8 @@ try {
     seed_can_select_raw: boolean;
     seed_can_truncate_raw: boolean;
     seed_can_manage_fixtures: boolean;
+    app_can_delete_nonce: boolean;
+    app_can_delete_ledger: boolean;
   }>(`
     SELECT
       rolbypassrls AS bypass,
@@ -64,7 +66,9 @@ try {
         'openmmp_seed',
         'testing.fixture_inputs',
         'SELECT,INSERT,UPDATE,DELETE'
-      ) AS seed_can_manage_fixtures
+      ) AS seed_can_manage_fixtures,
+      has_table_privilege('openmmp_app', 'ephemeral.request_nonces', 'DELETE') AS app_can_delete_nonce,
+      has_table_privilege('openmmp_app', 'ledger.ingest_batches', 'DELETE') AS app_can_delete_ledger
     FROM pg_roles r
     WHERE rolname = 'openmmp_app'
   `);
@@ -76,6 +80,8 @@ try {
   assert.equal(role.rows[0].seed_can_select_raw, false);
   assert.equal(role.rows[0].seed_can_truncate_raw, true);
   assert.equal(role.rows[0].seed_can_manage_fixtures, true);
+  assert.equal(role.rows[0].app_can_delete_nonce, true);
+  assert.equal(role.rows[0].app_can_delete_ledger, false);
 
   await appClient.query("BEGIN");
   await setTenant(tenantA);
@@ -83,6 +89,17 @@ try {
     "INSERT INTO control.apps (tenant_id, app_id, created_at) VALUES ($1, $2, $3)",
     [tenantA, appA, timestamp],
   );
+  await appClient.query(
+    `INSERT INTO ephemeral.request_nonces (
+      tenant_id, app_id, principal_type, principal_key_id, nonce,
+      timestamp_ms, created_at, expires_at
+    ) VALUES ($1,$2,'sdk_key',$3,$4,0,clock_timestamp(),clock_timestamp() + interval '15 minutes')`,
+    [tenantA, appA, `sdk-key-${suffix}`, `Nonce_${"a".repeat(24)}`],
+  );
+  assert.equal((await appClient.query(
+    "DELETE FROM ephemeral.request_nonces WHERE tenant_id=$1 AND app_id=$2 RETURNING nonce",
+    [tenantA, appA],
+  )).rowCount, 1, "only ephemeral replay state should be deletable by the app role");
   await appClient.query(
     `INSERT INTO ledger.raw_records (
       record_id, tenant_id, app_id, producer, producer_version, event_id, delivery_id,
