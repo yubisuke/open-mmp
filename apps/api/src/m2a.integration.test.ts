@@ -89,22 +89,16 @@ function workerProcess(delayMs: number) {
     import { createAppPool, EncryptedFilePayloadStore } from "@open-mmp/runtime";
     import { processSdkInbox } from "./apps/worker/src/sdk-worker.ts";
     const pool = createAppPool();
-    const store = new EncryptedFilePayloadStore(process.env.OPENMMP_TEST_PAYLOAD_ROOT, process.env.OPENMMP_TEST_MASTER_KEY);
+    const store = new EncryptedFilePayloadStore(${JSON.stringify(root)}, ${JSON.stringify(masterKey)});
     await pool.query("SELECT 1");
     console.log("worker-ready");
-    await new Promise((resolve) => setTimeout(resolve, Number(process.env.OPENMMP_TEST_WORKER_DELAY_MS)));
-    await processSdkInbox(pool, store, process.env.OPENMMP_TEST_TENANT_ID);
+    await new Promise((resolve) => setTimeout(resolve, ${delayMs}));
+    await processSdkInbox(pool, store, ${JSON.stringify(tenantId)});
     await pool.end();
   `;
   return spawn(process.execPath, ["--import", "tsx", "--input-type=module", "--eval", source], {
     cwd: process.cwd(),
-    env: {
-      ...process.env,
-      OPENMMP_TEST_PAYLOAD_ROOT: root,
-      OPENMMP_TEST_MASTER_KEY: masterKey,
-      OPENMMP_TEST_TENANT_ID: tenantId,
-      OPENMMP_TEST_WORKER_DELAY_MS: String(delayMs),
-    },
+    env: process.env,
     stdio: ["ignore", "pipe", "pipe"],
   });
 }
