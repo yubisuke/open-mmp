@@ -421,6 +421,8 @@ def raw_record(attempt: dict[str, Any], lifecycle: str) -> dict[str, Any]:
         "app_id": server["app_id"],
         "producer": record["producer"],
         "producer_version": record["producer_version"],
+        **({"producer_variant": record["producer_variant"]} if record.get("producer_variant") else {}),
+        **({"wrapper_version": record["wrapper_version"]} if record.get("wrapper_version") else {}),
         "event_id": record["event_id"],
         "delivery_id": record["delivery_id"],
         "event_name": record["event_name"],
@@ -1229,7 +1231,7 @@ def evaluate(value: dict[str, Any]) -> dict[str, Any]:
         if request["status"] == "completed"
         for affected in request.get("affected_records", [])
     ], privacy_tombstone_sort_key)
-    fraud = sort_by_key([
+    fraud_values = [
         {
             "fraud_decision_id": f"fraud:{attempt['record']['record_id']}",
             "subject_ref": attempt["record"]["record_id"],
@@ -1254,7 +1256,54 @@ def evaluate(value: dict[str, Any]) -> dict[str, Any]:
         for attempt in accepted
         if attempt["record"]["event_name"] == "click"
         and (attempt["record"]["payload"].get("bot_prefetch") or attempt["record"]["payload"].get("replay_suspected"))
-    ], fraud_decision_sort_key)
+    ]
+    for attempt in accepted:
+        if attempt["record"]["event_name"] != "install":
+            continue
+        payload = attempt["record"]["payload"]
+        if payload.get("referrer_status") != "available" or not payload.get("click_id") or not payload.get("install_begin_at_server"):
+            continue
+        matching_clicks = [
+            candidate for candidate in accepted
+            if candidate["server"]["tenant_id"] == attempt["server"]["tenant_id"]
+            and candidate["server"]["app_id"] == attempt["server"]["app_id"]
+            and candidate["record"]["event_name"] == "click"
+            and candidate["record"]["payload"].get("click_id") == payload["click_id"]
+            and candidate["record"]["payload"].get("redirector_time_status") != "invalid"
+            and candidate["record"]["payload"].get("redirector_click_at")
+        ]
+        if len(matching_clicks) != 1:
+            continue
+        click = matching_clicks[0]
+        try:
+            delta = timestamp(payload["install_begin_at_server"], "install_begin_at_server") - timestamp(
+                click["record"]["payload"]["redirector_click_at"], "redirector_click_at"
+            )
+        except ValueError:
+            # Invalid authority is classified by attribution and cannot support CTIT evidence.
+            continue
+        threshold_seconds = attempt["server"].get("click_injection_policy", {}).get("threshold_seconds", 10)
+        if delta.total_seconds() < 0 or delta.total_seconds() >= threshold_seconds:
+            continue
+        fraud_values.append({
+            "fraud_decision_id": f"fraud:{attempt['record']['record_id']}:click-injection",
+            "subject_ref": attempt["record"]["record_id"],
+            "decision": "suspected",
+            "action": "flag",
+            "reason_code": "click_injection_suspected",
+            "reason_code_version": CONTRACT_VERSION,
+            "evidence": [{
+                "type": "ctit_category",
+                "captured_at": attempt["record"]["received_at"],
+                "digest": digest(["click_injection_suspected", click["record"]["record_id"], attempt["record"]["record_id"]]),
+                "access_class": "protected",
+            }],
+            "rule_bundle_id": "fraud-public-envelope",
+            "rule_bundle_version": CONTRACT_VERSION,
+            "rule_bundle_hash": ZERO_HASH,
+            "evaluated_at": attempt["record"]["received_at"],
+        })
+    fraud = sort_by_key(fraud_values, fraud_decision_sort_key)
     rejections = sort_by_key([
         {
             "contract_version": CONTRACT_VERSION,

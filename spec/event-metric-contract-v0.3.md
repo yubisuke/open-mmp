@@ -76,6 +76,8 @@ Producer values are closed by `registries/producer-values-v0.3.json`:
 
 The provider, network, and postback-kind suffixes are deployment-private mappings. Registry patterns validate syntax only; they do not authorize a source. An M1 runtime must enforce a tenant-scoped private allowlist before contract evaluation. Public fixtures and their golden outputs use only synthetic suffixes.
 
+Raw records may carry `producer_variant` and `wrapper_version` as separate optional provenance fields. `producer_version` remains the core producer version; wrappers such as Unity must not encode their own version by concatenating a delimiter onto `producer_version`.
+
 For Install Referrer attribution:
 
 - `redirector_click_at` is the authoritative click time.
@@ -90,6 +92,8 @@ Click payloads may carry the typed reporting dimensions `ad_group_id`, `creative
 `referrer_client_response` is evidence-only. Its closed values are `ok`, `service_unavailable`, `feature_not_supported`, `developer_error`, `service_disconnected`, and `permission_error`; none changes attribution by itself. The first five normalize Android Install Referrer client response outcomes. `permission_error` is a defensive integration diagnostic and was not found in the Android client response-code reference checked for this contract.
 
 `ad_impression` is mediation-side impression evidence. `ad_view` is the advertiser-side view event. The two names are not aliases and are retained independently. Ad revenue declares `subject_scope=installation_level | aggregate`; installation-level revenue requires `installation_id`, while aggregate revenue forbids it and is never joined into an installation cohort. Optional mediation, country, and ad-unit dimensions remain evidence. `anchor_source` is accepted only from an authenticated `postback:<kind>` producer because it denotes server-to-server anchoring.
+
+`custom_event` is a closed installation-level envelope. It requires a deployment-catalog key matching `^[a-z][a-z0-9_]{0,63}$`, permits optional contract money, and permits at most 20 scalar attributes whose keys use the same form. Strings are limited to 256 characters; nested objects and arrays are rejected. The public contract validates only this shape. Authorization of a deployment-private event catalog remains a runtime responsibility.
 
 ## Consent and withdrawal
 
@@ -164,6 +168,8 @@ The install envelope may carry a closed `adservices_context`. `status=attributed
 
 The install envelope may carry one of six `meta_referrer_status` values: `provider_unavailable` when the content provider cannot be resolved, `app_version_unsupported` when the installed provider cannot satisfy the integration, `no_campaign_data` when the provider returns no campaign row, `decrypt_failed` for malformed decrypted content, `auth_failed` for an authentication-tag or key failure, and `decrypted` for validated normalized evidence. Only `decrypted` creates Meta attribution. `decrypt_failed` and `auth_failed` yield `unattributed/meta_install_referrer/<model>/meta_referrer_decrypt_failed`; the other non-decrypted states continue through ordinary first-party evidence rules. If decrypted Meta evidence and a resolvable first-party click coexist, Meta Install Referrer wins and emits `meta_referrer_decrypted`; the first-party click remains protected evidence and is not selected. This ordering follows Meta's documented deduplication guidance.
 
+For `decrypted`, the closed `meta_referrer_context` may retain `campaign_group_id`, `campaign_id`, `adgroup_id`, `ad_id`, `account_id`, `ad_objective_name`, `is_instagram`, `publisher_platform`, and `platform_position`. Free-form `*_name` fields are deliberately excluded. The outer `is_ct` evidence is `1` for click-through and `0` for impression; `actual_timestamp` is the source click or impression time in seconds. These two outer values are evidence and do not replace the authoritative Install Referrer timestamps used by first-party window evaluation.
+
 The following primary Apple documentation was checked on 2026-08-18:
 
 - SKAdNetwork postback parameters: <https://developer.apple.com/documentation/storekit/identifying-the-parameters-in-install-validation-postbacks>
@@ -174,7 +180,15 @@ The following primary Apple documentation was checked on 2026-08-18:
 - AdAttributionKit and SKAdNetwork interoperability: <https://developer.apple.com/documentation/adattributionkit/adattributionkit-skadnetwork-interoperability>
 - Apple AdServices attribution token and response: <https://developer.apple.com/documentation/AdServices/AAAttribution/attributionToken%28%29>
 
-The Meta Install Referrer primary page at <https://developers.facebook.com/docs/app-ads/meta-install-referrer> could not be retrieved on 2026-08-18. No provider-specific decrypted field was inferred from secondary material.
+The following Android and Meta primary documentation was checked on 2026-08-19:
+
+- Android Install Referrer client response codes: <https://developer.android.com/reference/com/android/installreferrer/api/InstallReferrerClient.InstallReferrerResponse>
+- Android Install Referrer response fields: <https://developer.android.com/reference/com/android/installreferrer/api/ReferrerDetails>
+- Android Install Referrer service contract: <https://developer.android.com/google/play/installreferrer/igetinstallreferrerservice>
+- Meta Install Referrer: <https://developers.facebook.com/documentation/app-ads/meta-install-referrer>
+- Meta Google Play Install Referrer integration: <https://developers.facebook.com/documentation/app-ads/install-referrer>
+
+Meta documents the outer `is_ct` mapping, the seconds unit for `actual_timestamp`, the normalized decrypted fields above, and its deduplication guidance. Optional Instagram fields and their possible values are documented as samples rather than an exhaustive future-proof enum. Android documents no organic-result enum; the `play_organic_marker` classification therefore remains an explicit deployment mapping. `permission_error` remains a defensive integration diagnostic rather than an Android-documented client response code.
 
 ## Money, FX, cost, and cohort metrics
 
@@ -189,6 +203,8 @@ The reference evaluator joins installation-level revenue to one explicit accepte
 Imported source money with an absent or empty upstream currency is normalized before contract ingress. The deployment supplies an uppercase ISO 4217 `currency`, and the event records `currency_source=default`; an explicit upstream value records `currency_source=reported`. Empty currency strings are never accepted by the closed event schema.
 
 All amounts are nonnegative; direction is expressed by event type and `financial_status`. A refund is a refund event, not a negative purchase or ad-revenue amount.
+
+An ad-revenue event may record `revenue_precision=exact | estimated | publisher_defined | undefined`. Precision is source provenance: it does not change the money representation, FX calculation, rounding, or aggregation rule. This vocabulary follows the MAX Android impression-level revenue API checked on 2026-08-19: <https://support.applovin.com/en/max/android/overview/advanced-settings>.
 
 The three baseline v0.2 definitions are:
 
@@ -275,13 +291,15 @@ Manually supplied reconciliation input remains supported for other synthetic con
 
 ## Public fraud envelope
 
-The public contract exposes only the decision, action, high-level reason category, evidence type/digest/access class, rule-bundle digest, and evaluation time. Synthetic `bot_prefetch` and `replay_suspected` fixtures demonstrate this envelope. Replay suspicion is a fraud-decision category, not a substitute for `duplicate_delivery` or idempotency classification.
+The public contract exposes only the decision, action, high-level reason category, evidence type/digest/access class, rule-bundle digest, and evaluation time. Synthetic `bot_prefetch`, `replay_suspected`, and `click_injection_suspected` fixtures demonstrate this envelope. Replay suspicion is a fraud-decision category, not a substitute for `duplicate_delivery` or idempotency classification.
+
+Click-to-install time (CTIT) is `install_begin_at_server - redirector_click_at`, using only server-authoritative timestamps. The fixture server context carries a closed `click_injection_policy`; its default threshold classifies a nonnegative CTIT strictly below 10 seconds as `click_injection_suspected`. Exactly 10 seconds is outside that category. This public rule demonstrates deterministic contract behavior only. Production thresholds, features, and response policy remain deployment-private, versioned controls.
 
 Production signals, IP or User-Agent values, live thresholds, model weights, watchlists, keys, and response timing remain private and access-controlled.
 
 ## Reviewed fixture and validation gate
 
-The reviewed gate compiles 26 schemas and validates 8 registries. The 38 fixture directories contain synthetic input plus 13 reviewed golden output classes: raw records, deliveries, logical events, corrections, privacy requests, privacy tombstones, attributions, metric definitions, metric runs, cost records, public fraud decisions, rejections, and reconciliation. Fixture 10 demonstrates both paid reinstall attribution and no-referrer redownload attribution. Fixtures 28 through 32 exercise imported attribution, automatically derived reconciliation, every registered producer form, and stale-evidence rejection. Fixture 33 exercises reporting dimensions, advertiser-side ad views, installation and aggregate revenue, default-currency provenance, append-only cost revisions, per-event half-even FX, ROAS, retention, and cohort LTV/count. Fixture 34 exercises every Stage C method/model row, both Apple aggregate event names, every Stage C reason, synthetic postback producers, and the intentionally minimal Meta envelope. Fixture 35 exercises authenticated tenant-admin and on-device privacy-request provenance plus same-installation scope enforcement. Fixture 36 exercises the child-directed audience boundary without adding an advertising identifier to the canonical event vocabulary. Fixture 37 proves that an organic cohort without attributed cost emits an undefined ROAS rather than zero or infinity. Fixture 38 classifies a modeled external row without an internal candidate as `provider_modeled_conversion`. Fixtures 25, 33, and 34 collectively exercise every registered processing purpose. Validation also exercises invalid calendar timestamps, reconciliation reasons, attribution supersession, replay suspicion, retention expiry, impression-to-revenue evidence, reorder invariance, install-type evidence dominance, record-ID collision, click ambiguity, millisecond normalization boundaries, scoped-reference mutations, child-directed advertising-identifier rejection, and unknown-purpose rejection; golden files remain committed review artifacts.
+The reviewed gate compiles 27 schemas and validates 8 registries. The 41 fixture directories contain synthetic input plus 13 reviewed golden output classes: raw records, deliveries, logical events, corrections, privacy requests, privacy tombstones, attributions, metric definitions, metric runs, cost records, public fraud decisions, rejections, and reconciliation. Fixture 10 demonstrates both paid reinstall attribution and no-referrer redownload attribution. Fixtures 28 through 32 exercise imported attribution, automatically derived reconciliation, every registered producer form, and stale-evidence rejection. Fixture 33 exercises reporting dimensions, advertiser-side ad views, installation and aggregate revenue, default-currency provenance, append-only cost revisions, per-event half-even FX, attribution-status-separated ROAS, retention, and cohort LTV/count. Fixture 34 exercises every Stage C method/model row, both Apple aggregate event names, every Stage C reason, synthetic postback producers, and typed Meta evidence. Fixture 35 exercises authenticated tenant-admin and on-device privacy-request provenance plus same-installation scope enforcement. Fixture 36 exercises the child-directed audience boundary without adding an advertising identifier to the canonical event vocabulary. Fixture 37 proves that an organic cohort without attributed cost emits an undefined ROAS rather than zero or infinity. Fixture 38 classifies a modeled external row without an internal candidate as `provider_modeled_conversion`. Fixture 39 classifies a foreign third-party referrer. Fixture 40 validates the closed custom-event envelope plus wrapper provenance. Fixture 41 derives the public click-injection category from server CTIT. Fixtures 25, 33, and 34 collectively exercise every registered processing purpose. Validation also exercises invalid calendar timestamps, reconciliation reasons, attribution supersession, replay suspicion, retention expiry, impression-to-revenue evidence, reorder invariance, install-type evidence dominance, record-ID collision, click ambiguity, millisecond normalization boundaries, scoped-reference mutations, child-directed advertising-identifier rejection, CTIT boundaries, custom-event bounds, and unknown-purpose rejection; golden files remain committed review artifacts.
 
 The validation command never writes fixture files. `npm run validate`:
 
@@ -289,8 +307,8 @@ The validation command never writes fixture files. `npm run validate`:
 2. compiles every Draft 2020-12 schema;
 3. validates registry shape, uniqueness, and cross-references;
 4. validates every input event through its event schema;
-5. validates all 494 golden output artifacts;
-6. runs named assertions for all 38 scenarios and 26 acceptance criteria (AC01-AC26);
+5. validates all 533 golden output artifacts;
+6. runs named assertions for all 41 scenarios and 26 acceptance criteria (AC01-AC26);
 7. runs deliberate negative mutations;
 8. runs the TypeScript evaluator twice;
 9. runs the independently implemented Python evaluator;
@@ -306,6 +324,8 @@ Environment setup is `npm ci` and `python -m pip install --require-hashes --requ
 - R-23 adds `provider_modeled_conversion` to the difference-reason registry and reconciliation schema. Only that new difference reason uses `difference_reason_version=0.2.1`; existing reasons remain `0.2.0`.
 - Schema `$id` values and registry filenames retain the `v0.2` minor-line identity. Existing v0.2.0 event, fixture-envelope, and output artifact versions remain valid where their artifact schema did not change.
 
+### v0.3.0 minor release
+
 - The in-place v0.3 contract uses `:v0.3` schema identifiers, `0.3.0` object versions, v0.3 registries, and `fixtures/v0.3/`; the immutable v0.2.1 baseline is the `contract-v0.2.1` Git tag.
 - Logical-record lifecycle and protected-payload availability are separate axes: `record_lifecycle` is `active | retracted`, while payload/evidence lifecycle is `available | redacted | purged`.
 - Money uses the shared nonnegative type for ad revenue, purchase, and refund. FX rates are represented by integer `fx_rate_unscaled` and `fx_rate_scale` fields.
@@ -319,4 +339,5 @@ Environment setup is `npm ci` and `python -m pip install --require-hashes --requ
 - Stage C adds aggregate SKAdNetwork and AdAttributionKit envelopes, a closed minimal Meta Install Referrer envelope, Apple AdServices evidence, platform-specific compatibility rows, and versioned platform attribution reasons. Provider fields that could not be verified from primary documentation are deliberately absent.
 - Stage D adds the closed processing-purpose catalog and schema-level purpose validation. R-19 adds authenticated tenant-admin and same-installation on-device privacy-request provenance. R-20 adds the optional app-audience classification, preserves `general` as the default, and structurally excludes reserved advertising-identifier fields from child-directed payloads.
 - Stage E aligns the public security, deployment, milestone, and serialization documentation with the completed v0.2 contract without adding runtime claims.
-- Full migration details and the golden-change ledger are in `docs/contract-v0.2-migration.md`.
+- Contract v0.3 adds third-party-referrer classification, explicit Meta evidence and precedence, imported click evidence, attribution-status grouping, a closed custom event, public click-injection classification, ad-revenue precision, and wrapper provenance. It also fixes the deterministic distinction between `candidate_missing` and `external_row_unmatched`.
+- Full migration details and the golden-change ledger are in `docs/contract-v0.3-migration.md`.

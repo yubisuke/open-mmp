@@ -464,6 +464,8 @@ function makeRawRecord(attempt: Attempt, lifecycle: "available" | "redacted" | "
     app_id: server.app_id,
     producer: record.producer,
     producer_version: record.producer_version,
+    ...(record.producer_variant ? { producer_variant: record.producer_variant } : {}),
+    ...(record.wrapper_version ? { wrapper_version: record.wrapper_version } : {}),
     event_id: record.event_id,
     delivery_id: record.delivery_id,
     event_name: record.event_name,
@@ -1220,7 +1222,7 @@ export function evaluate(
   }
   const privacy_tombstones = sortByKey(privacyTombstoneValues,
     (tombstone) => [tombstone.privacy_request_id, tombstone.record_id, tombstone.tenant_id, tombstone.app_id]);
-  const fraud_decisions = sortByKey(acceptedUnique
+  const transportFraud = acceptedUnique
     .filter((attempt) => attempt.record.event_name === "click" && (attempt.record.payload.bot_prefetch || attempt.record.payload.replay_suspected))
     .map((attempt): FraudDecision => {
       const reason_code: FraudDecision["reason_code"] = attempt.record.payload.replay_suspected ? "replay_suspected" : "bot_prefetch";
@@ -1242,7 +1244,49 @@ export function evaluate(
       rule_bundle_hash: HASH,
       evaluated_at: attempt.record.received_at,
     });
-    }), (decision) => [decision.fraud_decision_id]);
+    });
+  const clickInjectionFraud = acceptedUnique.flatMap((attempt): FraudDecision[] => {
+    if (attempt.record.event_name !== "install") return [];
+    const payload = attempt.record.payload;
+    if (payload.referrer_status !== "available" || !payload.click_id || !payload.install_begin_at_server) return [];
+    const matchingClicks = acceptedUnique.filter((candidate) =>
+      candidate.server.tenant_id === attempt.server.tenant_id && candidate.server.app_id === attempt.server.app_id &&
+      candidate.record.event_name === "click" && candidate.record.payload.click_id === payload.click_id &&
+      candidate.record.payload.redirector_time_status !== "invalid" && candidate.record.payload.redirector_click_at,
+    );
+    if (matchingClicks.length !== 1) return [];
+    const click = matchingClicks[0];
+    let delta: number;
+    try {
+      delta = time(payload.install_begin_at_server, "install_begin_at_server") -
+        time(click.record.payload.redirector_click_at, "redirector_click_at");
+    } catch {
+      // Invalid authority is classified by attribution and cannot support CTIT evidence.
+      return [];
+    }
+    const thresholdSeconds = attempt.server.click_injection_policy?.threshold_seconds ?? 10;
+    if (delta < 0 || delta >= thresholdSeconds * 1000) return [];
+    return [{
+      fraud_decision_id: `fraud:${attempt.record.record_id}:click-injection`,
+      subject_ref: attempt.record.record_id,
+      decision: "suspected",
+      action: "flag",
+      reason_code: "click_injection_suspected",
+      reason_code_version: CONTRACT_VERSION,
+      evidence: [{
+        type: "ctit_category",
+        captured_at: attempt.record.received_at,
+        digest: sha256(["click_injection_suspected", click.record.record_id, attempt.record.record_id]),
+        access_class: "protected",
+      }],
+      rule_bundle_id: "fraud-public-envelope",
+      rule_bundle_version: CONTRACT_VERSION,
+      rule_bundle_hash: HASH,
+      evaluated_at: attempt.record.received_at,
+    }];
+  });
+  const fraud_decisions = sortByKey([...transportFraud, ...clickInjectionFraud],
+    (decision) => [decision.fraud_decision_id]);
   const rejections = sortByKey(decisionsList
     .filter((decision) => decision.ingestion_status === "rejected")
     .map((decision): Rejection => ({

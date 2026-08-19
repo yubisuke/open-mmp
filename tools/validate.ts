@@ -460,7 +460,7 @@ if (!summaryOnly) {
         check(value.contract_version === expectedVersion, `registry version: ${name}`);
         if (name === "events") {
           unique(value.event_names, "event name");
-          check(value.event_names.length === 11, "event-name registry must contain the eleven Stage C v0.2 events");
+          check(value.event_names.length === 12, "event-name registry must contain the twelve Contract v0.3 events");
         } else if (name === "reasons") {
           for (const [reasonName, values] of Object.entries(value).filter(([key]) => key !== "contract_version")) {
             if (Array.isArray(values)) unique(values, `reason code in ${reasonName}`);
@@ -553,8 +553,8 @@ if (!summaryOnly) {
         }
       });
     }
-    it("contains 39 fixture directories", () => {
-      check(fixtureDirs.length === 39, `expected 39 fixture directories, found ${fixtureDirs.length}`);
+    it("contains 41 fixture directories", () => {
+      check(fixtureDirs.length === 41, `expected 41 fixture directories, found ${fixtureDirs.length}`);
     });
   });
 
@@ -829,12 +829,22 @@ const scenarios: Array<[string, () => void]> = [
     check(value.attributions.length === 1, "scenario 39 attribution count");
     check(value.attributions[0].status === "unattributed" && value.attributions[0].reason_code === "foreign_referrer_unresolved", "scenario 39 classification");
   }],
+  ["40 custom event and wrapper provenance", () => {
+    const value = fixture("40-custom-event-wrapper");
+    check(value.output.logical_events[0].event_name === "custom_event", "scenario 40 custom event");
+    check(value.output.raw_records[0].producer_variant === "unity" && value.output.raw_records[0].wrapper_version === "0.3.0", "scenario 40 wrapper provenance");
+  }],
+  ["41 click injection suspicion", () => {
+    const value = fixture("41-click-injection-suspected").output;
+    check(value.attributions[0].reason_code === "valid_install_referrer", "scenario 41 attribution remains evidence-based");
+    check(value.fraud_decisions[0].reason_code === "click_injection_suspected" && value.fraud_decisions[0].action === "flag", "scenario 41 public fraud classification");
+  }],
 ];
 if (!summaryOnly) {
   describe("reviewed scenarios", () => {
     for (const [name, assertion] of scenarios) it(name, assertion);
-    it("contains 39 scenario assertions", () => {
-      check(scenarios.length === 39, "scenario assertion inventory must contain 39 entries");
+    it("contains 41 scenario assertions", () => {
+      check(scenarios.length === 41, "scenario assertion inventory must contain 41 entries");
     });
   });
 
@@ -1101,15 +1111,16 @@ if (!summaryOnly) {
       check(output.raw_records.some((item: Any) => item.event_name === "skan_postback"), "Stage C SKAN event not exercised");
       check(output.raw_records.some((item: Any) => item.event_name === "adattributionkit_postback"), "Stage C AAK event not exercised");
     });
-    it("keeps unverified Meta provider fields outside the closed contract", () => {
+    it("accepts verified Meta identifiers while excluding free-text names", () => {
       const installValidator = validatorFor("urn:open-mmp:schema:event-install:v0.3");
       const input = fixture("34-stage-c-apple-meta-attribution").input;
       const decrypted = structuredClone(input.records.find((item: Any) => item.record_id === "meta-click-install-34").payload);
-      decrypted.meta_referrer_context.campaign_id = "unverified-field";
-      check(!installValidator({ event_name: "install", ...decrypted }), "Stage C accepted an unverified Meta decrypted field");
+      check(installValidator({ event_name: "install", ...decrypted }), `Stage C rejected verified Meta fields: ${ajv.errorsText(installValidator.errors)}`);
+      decrypted.meta_referrer_context.campaign_name = "forbidden-free-text";
+      check(!installValidator({ event_name: "install", ...decrypted }), "Stage C accepted a Meta campaign name");
       const absent = structuredClone(input.records.find((item: Any) => item.record_id === "meta-absent-install-34").payload);
       absent.meta_referrer_context = { attribution_model: "last_click" };
-      check(!installValidator({ event_name: "install", ...absent }), "Stage C accepted Meta context when status is absent");
+      check(!installValidator({ event_name: "install", ...absent }), "Stage C accepted Meta context when no campaign data exists");
     });
     it("validates normalized Apple envelopes and aggregate subject namespaces", () => {
       const value = fixture("34-stage-c-apple-meta-attribution");
@@ -1197,6 +1208,48 @@ if (!summaryOnly) {
     });
   });
 
+  describe("WO-5.5 Stage 2 SDK-facing contract extensions", () => {
+    it("validates verified Meta outer evidence and typed decrypted identifiers", () => {
+      const payload = fixture("34-stage-c-apple-meta-attribution").input.records.find((record: Any) => record.record_id === "meta-click-install-34").payload;
+      check(payload.is_ct === 1 && Number.isInteger(payload.actual_timestamp), "Meta outer evidence");
+      check(payload.meta_referrer_context.campaign_id && payload.meta_referrer_context.adgroup_id && payload.meta_referrer_context.ad_id, "Meta identifier coverage");
+      check(!("campaign_name" in payload.meta_referrer_context) && !("adgroup_name" in payload.meta_referrer_context), "Meta free-text name exclusion");
+    });
+    it("keeps custom events closed, bounded, and scalar-only", () => {
+      const validator = validatorFor("urn:open-mmp:schema:event-custom-event:v0.3");
+      const payload = fixture("40-custom-event-wrapper").input.records[0].payload;
+      check(validator({ event_name: "custom_event", ...payload }), `custom event baseline: ${ajv.errorsText(validator.errors)}`);
+      check(!validator({ event_name: "custom_event", ...payload, event_key: "Invalid-Key" }), "custom event accepted an invalid event key");
+      check(!validator({ event_name: "custom_event", ...payload, attributes: { nested: { forbidden: true } } }), "custom event accepted nested attributes");
+      check(!validator({ event_name: "custom_event", ...payload, attributes: Object.fromEntries(Array.from({ length: 21 }, (_, index) => [`key_${index}`, index])) }), "custom event accepted more than 20 attributes");
+    });
+    it("derives CTIT from server authority and keeps the ten-second boundary clear", () => {
+      const baseline = fixture("41-click-injection-suspected");
+      check(baseline.output.fraud_decisions.some((item: Any) => item.reason_code === "click_injection_suspected"), "9.999-second CTIT classification");
+      const boundary = structuredClone(baseline.input);
+      const install = boundary.records.find((record: Any) => record.record_id === "install-41");
+      install.payload.install_begin_at_server = "2026-08-19T02:00:10.000Z";
+      const typescript = evaluate(boundary);
+      const [python] = pythonOutputs([boundary]);
+      check(equal(typescript, python), "CTIT boundary cross-language mismatch");
+      check(!typescript.fraud_decisions.some((item: Any) => item.reason_code === "click_injection_suspected"), "ten-second CTIT was classified as below threshold");
+    });
+    it("exercises MAX-compatible revenue precision without changing amount semantics", () => {
+      const validator = validatorFor("urn:open-mmp:schema:event-ad-revenue:v0.3");
+      const payload = fixture("27-ad-impression-revenue-link").input.records.find((record: Any) => record.record_id === "revenue-27").payload;
+      check(payload.revenue_precision === "exact" && validator({ event_name: "ad_revenue", ...payload }), "revenue precision fixture");
+      for (const precision of ["exact", "estimated", "publisher_defined", "undefined"]) {
+        check(validator({ event_name: "ad_revenue", ...payload, revenue_precision: precision }), `revenue precision enum: ${precision}`);
+      }
+      check(!validator({ event_name: "ad_revenue", ...payload, revenue_precision: "undisclosed" }), "unsupported revenue precision was accepted");
+    });
+    it("keeps Kotlin core and wrapper versions in separate raw-record fields", () => {
+      const input = fixture("40-custom-event-wrapper").input.records[0];
+      const raw = fixture("40-custom-event-wrapper").output.raw_records[0];
+      check(input.producer_version === raw.producer_version && raw.producer_variant === "unity" && raw.wrapper_version === "0.3.0", "wrapper provenance separation");
+    });
+  });
+
   describe("WO-3 Stage D processing purposes", () => {
     it("closes every fixture purpose reference against the registry", () => {
       const exercised = new Set<string>();
@@ -1246,7 +1299,7 @@ if (!summaryOnly) {
 const contractText = capture(() => readFileSync(join(root, "spec", "event-metric-contract-v0.3.md"), "utf8"));
 const fraudSchemaText = capture(() => readFileSync(join(root, "schemas", "fraud-decision.schema.json"), "utf8"));
 const acceptance: Array<[string, () => void]> = [
-  ["AC01 Draft 2020-12 schemas have stable IDs and versions", () => check(schemaPaths.length === 26 && schemaIds.every(Boolean), "AC01")],
+  ["AC01 Draft 2020-12 schemas have stable IDs and versions", () => check(schemaPaths.length === 27 && schemaIds.every(Boolean), "AC01")],
   ["AC02 canonical event names agree across registry and schemas", () => {
     const rawSchema = schemaValues.find(({ value }) => value.$id === outputSchemaIds.raw_records)?.value;
     check(rawSchema, "AC02 raw schema missing");
@@ -1332,7 +1385,7 @@ const acceptance: Array<[string, () => void]> = [
     check(corrections.some((item: Any) => item.correction_type === "retraction"), "AC15 retraction");
     check(fixture("17-redaction-recalculation").output.metric_runs.some((item: Any) => item.supersedes_metric_run_id), "AC15 redaction");
   }],
-  ["AC16 clock referrer prefetch and withdrawal fixtures pass", () => check(scenarios.length === 39 && fixture("11-clock-skew").output.deliveries.some((item: Any) => item.clock_skew_suspected) && fixture("13-referrer-unsupported").output.attributions.length === 2 && fixture("19-bot-prefetch").output.fraud_decisions.length === 1 && fixture("20-timestamp-invalid").output.rejections.some((item: Any) => item.reason_code === "timestamp_invalid"), "AC16")],
+  ["AC16 clock referrer prefetch and withdrawal fixtures pass", () => check(scenarios.length === 41 && fixture("11-clock-skew").output.deliveries.some((item: Any) => item.clock_skew_suspected) && fixture("13-referrer-unsupported").output.attributions.length === 2 && fixture("19-bot-prefetch").output.fraud_decisions.length === 1 && fixture("41-click-injection-suspected").output.fraud_decisions.length === 1 && fixture("20-timestamp-invalid").output.rejections.some((item: Any) => item.reason_code === "timestamp_invalid"), "AC16")],
   ["AC17 server-recognized withdrawal rejects and redacts payload", () => {
     for (const name of ["14-withdrawal-after-occurrence", "15-event-after-withdrawal"]) {
       const value = fixture(name).output;
@@ -1372,7 +1425,7 @@ const acceptance: Array<[string, () => void]> = [
     for (const forbidden of ["threshold", "model_weight", "watchlist", "ip_address", "user_agent", "response_timing"]) check(!schemaText.includes(forbidden), `AC20 ${forbidden}`);
     check(specText.includes("remain private"), "AC20 private boundary");
   }],
-  ["AC21 one command validates every schema registry fixture and golden", () => check(schemaPaths.length === 26 && Object.keys(registries).length === 8 && fixtureDirs.length === 39 && outputArtifactCount === 39 * 13, "AC21")],
+  ["AC21 one command validates every schema registry fixture and golden", () => check(schemaPaths.length === 27 && Object.keys(registries).length === 8 && fixtureDirs.length === 41 && outputArtifactCount === 41 * 13, "AC21")],
   ["AC22 repeated and independent evaluators produce identical JCS", () => {
     for (const { output, python } of results.values()) check(equal(output, python), "AC22 evaluator mismatch");
     const vector = { numbers: [333333333.33333329, 1e30, 4.50, 2e-3, 1e-27, -0], string: "€$\u000f\nA'B\"\\\"/" };

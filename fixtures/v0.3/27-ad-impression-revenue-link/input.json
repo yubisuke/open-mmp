@@ -19,7 +19,7 @@
     {
       "contract_version": "0.3.0", "record_id": "revenue-27", "delivery_id": "delivery:revenue-27", "tenant_id": "tenant-a", "app_id": "app-a", "producer": "sdk-android", "producer_version": "fixture-v0.2", "event_id": "event:revenue-27", "event_name": "ad_revenue", "schema_version": "0.3.0",
       "occurred_at": "2026-08-12T01:00:00.000Z", "occurred_at_source": "device", "received_at": "2026-08-12T01:01:00.000Z", "processing_purpose_id": "analytics", "processing_sequence": 1,
-      "payload": { "subject_scope": "installation_level", "installation_id": "installation:install-27", "impression_id": "impression:27", "ad_unit_id": "ad-unit-27", "ad_network": "synthetic-network", "amount_unscaled": "3000000", "amount_scale": 6, "currency": "USD", "revenue_source": "server_verified" }
+      "payload": { "subject_scope": "installation_level", "installation_id": "installation:install-27", "impression_id": "impression:27", "ad_unit_id": "ad-unit-27", "ad_network": "synthetic-network", "amount_unscaled": "3000000", "amount_scale": 6, "currency": "USD", "revenue_source": "server_verified", "revenue_precision": "exact" }
     }
   ]
 }

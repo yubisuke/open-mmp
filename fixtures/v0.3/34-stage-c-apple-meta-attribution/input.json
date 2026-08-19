@@ -58,7 +58,12 @@
       "payload": {
         "installation_id": "installation:meta-click-34", "install_type": "first_install", "referrer_status": "available",
         "click_id": "synthetic_click_ref_0034", "install_begin_at_server_status": "available", "install_begin_at_server": "2026-08-18T01:00:00.000Z",
-        "referrer_client_response": "ok", "meta_referrer_status": "decrypted", "meta_referrer_context": { "attribution_model": "last_click" }
+        "referrer_client_response": "ok", "meta_referrer_status": "decrypted", "is_ct": 1, "actual_timestamp": 1787011200,
+        "meta_referrer_context": {
+          "attribution_model": "last_click", "campaign_group_id": "synthetic-campaign-group-34", "campaign_id": "synthetic-campaign-34",
+          "adgroup_id": "synthetic-adgroup-34", "ad_id": "synthetic-ad-34", "account_id": "synthetic-account-34",
+          "ad_objective_name": "SYNTHETIC_APP_PROMOTION", "is_instagram": false, "publisher_platform": "synthetic-platform", "platform_position": "synthetic-placement"
+        }
       }
     },
     {
@@ -69,7 +74,8 @@
       "processing_purpose_id": "analytics", "processing_sequence": 2,
       "payload": {
         "installation_id": "installation:meta-view-34", "install_type": "first_install", "referrer_status": "unavailable",
-        "referrer_client_response": "service_unavailable", "meta_referrer_status": "decrypted", "meta_referrer_context": { "attribution_model": "view_through" }
+        "referrer_client_response": "service_unavailable", "meta_referrer_status": "decrypted", "is_ct": 0, "actual_timestamp": 1787014800,
+        "meta_referrer_context": { "attribution_model": "view_through", "campaign_id": "synthetic-view-campaign-34", "is_instagram": true, "publisher_platform": "instagram", "platform_position": "instagram_stories" }
       }
     },
     {

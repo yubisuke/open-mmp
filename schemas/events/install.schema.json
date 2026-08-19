@@ -30,12 +30,23 @@
     "ad_tracking_limited": { "type": "boolean" },
     "attribution_confirmed_at": { "$ref": "../common.schema.json#/$defs/dateTime" },
     "meta_referrer_status": { "enum": ["provider_unavailable", "app_version_unsupported", "no_campaign_data", "decrypt_failed", "auth_failed", "decrypted"] },
+    "is_ct": { "type": "integer", "enum": [0, 1] },
+    "actual_timestamp": { "type": "integer", "minimum": 0 },
     "meta_referrer_context": {
       "type": "object",
       "additionalProperties": false,
       "required": ["attribution_model"],
       "properties": {
-        "attribution_model": { "enum": ["last_click", "view_through"] }
+        "attribution_model": { "enum": ["last_click", "view_through"] },
+        "campaign_group_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "campaign_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "adgroup_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "ad_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "account_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "ad_objective_name": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "is_instagram": { "type": "boolean" },
+        "publisher_platform": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "platform_position": { "type": "string", "minLength": 1, "maxLength": 128 }
       }
     },
     "adservices_context": {
@@ -98,7 +109,7 @@
     {
       "if": { "properties": { "meta_referrer_status": { "const": "decrypted" } }, "required": ["meta_referrer_status"] },
       "then": {
-        "properties": { "meta_referrer_context": {} },
+        "properties": { "meta_referrer_context": {}, "is_ct": {}, "actual_timestamp": {} },
         "required": ["meta_referrer_context"]
       }
     },
@@ -106,8 +117,11 @@
       "if": { "properties": { "meta_referrer_status": { "enum": ["provider_unavailable", "app_version_unsupported", "no_campaign_data", "decrypt_failed", "auth_failed"] } }, "required": ["meta_referrer_status"] },
       "then": {
         "not": {
-          "properties": { "meta_referrer_context": {} },
-          "required": ["meta_referrer_context"]
+          "anyOf": [
+            { "properties": { "meta_referrer_context": {} }, "required": ["meta_referrer_context"] },
+            { "properties": { "is_ct": {} }, "required": ["is_ct"] },
+            { "properties": { "actual_timestamp": {} }, "required": ["actual_timestamp"] }
+          ]
         }
       }
     },

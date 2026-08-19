@@ -303,6 +303,8 @@ export interface OpenMMPRawRecordV03 {
   app_id: string;
   producer: string;
   producer_version: string;
+  producer_variant?: string;
+  wrapper_version?: string;
   event_id: string;
   delivery_id: string;
   event_name:
@@ -315,6 +317,7 @@ export interface OpenMMPRawRecordV03 {
     | "purchase"
     | "refund"
     | "consent_changed"
+    | "custom_event"
     | "skan_postback"
     | "adattributionkit_postback";
   schema_version: "0.3.0";
@@ -353,6 +356,7 @@ export interface OpenMMPLogicalEventV03 {
     | "purchase"
     | "refund"
     | "consent_changed"
+    | "custom_event"
     | "skan_postback"
     | "adattributionkit_postback";
   record_lifecycle: "active" | "retracted";
@@ -398,7 +402,7 @@ export interface OpenMMPFraudDecisionV03 {
   subject_ref: string;
   decision: "clear" | "suspected" | "confirmed";
   action: "allow" | "flag" | "exclude" | "quarantine";
-  reason_code: "bot_prefetch" | "replay_suspected";
+  reason_code: "bot_prefetch" | "replay_suspected" | "click_injection_suspected";
   reason_code_version: "0.3.0";
   evidence: {
     type: string;
