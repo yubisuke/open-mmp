@@ -741,17 +741,18 @@ PostgreSQL's `round(numeric, int)` rounds half **away from zero**, not half to e
 
 ### M-4. Cohort definitions
 
+- **Executable definitions**: `packages/contracts/src/m1b-metric-definitions.ts` is the M1b definition set. It uses the same contract objects and rule-bundle values exercised by synthetic fixture 33. The set contains D0/D1/D3/D7 ROAS, D1/D7 retention, D0/D1/D3/D7 cohort LTV in USD, and cohort install count.
 - **Cohort key**: `(app_id, campaign_id, country, cohort_date)` where `cohort_date` is the install day in the metric's `aggregation_time_zone`.
-- **DN revenue**: revenue events with `occurred_at ∈ [install.occurred_at, install.occurred_at + (N+1)·24h)`, converted per event, summed exactly — matching the existing D0 semantics rather than inventing a second convention.
+- **DN revenue**: revenue events with `occurred_at ∈ [install.occurred_at, install.occurred_at + (N+1)·24h)`, converted and half-even rounded per event before exact summation — matching the existing D0 semantics rather than inventing a second convention.
 - **DN ROAS**: DN revenue ÷ cost for the cohort's `(campaign_id, country, cohort_date)` from `cost_records_current`.
-- **Retention DN**: distinct installations from the cohort with an activity event in day N ÷ cohort size.
+- **Retention DN**: distinct installations from the cohort with an event named by `activity_events` in day N ÷ cohort size. The default activity set is `["session_start"]`.
 - **Cohort LTV DN**: DN revenue ÷ cohort size.
 
 Three consequences that must be visible in the design, not discovered in the data:
 
-1. **Organic and unattributed cohorts have no cost.** ROAS for them is undefined. It must be emitted as absent with an explicit reason, never as `0` and never as infinity, and never folded into a blended number. Acceptance criterion B8 tests this.
-2. **Retention needs activity events, and M1 has no SDK.** The only source is the imported provider export, and not every provider exports sessions. Retention is therefore **conditional on the import profile carrying an activity event**; the M1 gate must state it that way instead of asserting retention works.
-3. **Cost is a spend-day fact; a cohort is an install-day fact.** The convention (cost on the cohort's acquisition day for that campaign × country) must be written into the metric definition, because the alternative conventions produce different numbers and the difference is invisible without the definition.
+1. **Organic and unattributed cohorts have no cost.** ROAS for them is undefined. It is emitted as absent with an explicit `cost_unavailable` reason, never as `0`, infinity, or part of a blended number. Acceptance criterion B8 tests this.
+2. **Retention needs activity events, and M1 has no SDK.** The only source is the imported provider export, and not every provider exports sessions. Retention is computed only when the import profile carries at least one configured activity event; otherwise it is absent with `activity_events_unavailable`.
+3. **Cost is a spend-day fact; a cohort is an install-day fact.** `cost_records_current` supplies cost on the cohort acquisition date for the same campaign and country. This convention is part of every ROAS definition through `cost_basis: cohort_acquisition_day_current_snapshot`; alternative spend allocation must use another versioned definition.
 
 ---
 
