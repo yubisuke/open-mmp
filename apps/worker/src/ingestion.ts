@@ -561,3 +561,85 @@ export async function ingestFixture(
   }
   return count;
 }
+
+export type RuntimeIngestionResult = {
+  raw_records: Any[];
+  deliveries: Any[];
+  logical_events: Any[];
+  rejections: Any[];
+  attributions: Any[];
+};
+
+function runtimeInput(attempts: readonly CandidateAttempt[]): Any {
+  return {
+    contract_version: "0.2.0",
+    batches: attempts.map((attempt, index) => ({
+      batch_id: attempt.batch_id || `runtime-batch-${index}`,
+      server_context: attempt.server,
+      records: [attempt.record],
+    })),
+    fx_policy: {
+      policy_version: "runtime-no-fx-v0.2",
+      target_currency: "USD",
+      target_scale: 6,
+      rounding_mode: "half_even",
+      rates: [],
+    },
+    metric_evaluations: [],
+    reconciliation_inputs: [],
+    privacy_requests: [],
+  };
+}
+
+/**
+ * Persist a production import batch through the same evaluator and ledger writers used by
+ * golden parity. Historical import attempts participate in candidate selection so retries are
+ * classified deterministically, while only the current deliveries are appended.
+ */
+export async function ingestRuntimeBatch(
+  attempts: readonly CandidateAttempt[],
+  appPool: Pool,
+  historicalAttempts: readonly CandidateAttempt[] = [],
+): Promise<RuntimeIngestionResult> {
+  if (attempts.length === 0) {
+    return { raw_records: [], deliveries: [], logical_events: [], rejections: [], attributions: [] };
+  }
+  const allAttempts = [...historicalAttempts, ...attempts].sort(compareCandidateAttempts);
+  const input = runtimeInput(allAttempts);
+  await ensureApps(appPool, input);
+  const output = evaluate(input, (values) => new IndexedCandidateProvider(values));
+  const recordIds = new Set(attempts.map((attempt) => attempt.record.record_id));
+  const deliveryIds = new Set(attempts.map((attempt) => attempt.record.delivery_id));
+  const belongsToCurrent = (artifact: Any): boolean =>
+    recordIds.has(artifact.record_id)
+    || deliveryIds.has(artifact.delivery_id)
+    || (artifact.evidence_refs ?? []).some((ref: Any) => recordIds.has(ref.record_id));
+
+  const selected: RuntimeIngestionResult = {
+    raw_records: output.raw_records.filter(belongsToCurrent),
+    deliveries: output.deliveries.filter(belongsToCurrent),
+    logical_events: output.logical_events.filter(belongsToCurrent),
+    rejections: output.rejections.filter(belongsToCurrent),
+    attributions: output.attributions.filter(belongsToCurrent),
+  };
+  for (const raw of selected.raw_records) {
+    await persistRaw(appPool, raw);
+    await withTenant(appPool, raw.tenant_id, (client) => client.query(
+      `INSERT INTO ledger.raw_payload_states (
+        tenant_id, app_id, record_id, lifecycle_status, changed_at
+      ) VALUES ($1,$2,$3,'available',$4)
+      ON CONFLICT (record_id, lifecycle_status) DO NOTHING`,
+      [raw.tenant_id, raw.app_id, raw.record_id, raw.received_at],
+    ).then(() => undefined));
+  }
+  for (const delivery of selected.deliveries) await persistDelivery(appPool, delivery);
+  for (const logical of selected.logical_events) {
+    await persistLogical(appPool, logical);
+    await persistProjection(appPool, logical, input);
+  }
+  for (const rejection of selected.rejections) await persistRejection(appPool, rejection);
+  for (const attribution of selected.attributions) {
+    await persistAttribution(appPool, attribution);
+  }
+  return selected;
+}

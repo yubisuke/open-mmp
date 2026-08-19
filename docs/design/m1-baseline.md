@@ -646,8 +646,8 @@ Selection criteria: what a small self-hosting team actually spends on, and how o
 
 **Decided (R-22): (b).** Meta and Google are the two networks nearly every small app team buys from, and both expose read access to one's own account without partner status:
 
-- **Meta Marketing API Insights** — requires the `ads_read` permission and an app; insights are available at `account`, `campaign`, `adset`, and `ad` level; `time_increment` accepts an integer of 1–90 days, so `time_increment=1` gives daily rows; `country` is a supported breakdown; large pulls use the asynchronous flow (POST returns a `report_run_id` to poll). Verified 2026-08-18.
-- **Google Ads API** — requires a developer token. A **test-account** token cannot read production accounts; **Basic Access** covers production at 15,000 operations/day and applications take about five business days; there is a read-only "Permissible Use" designation for `GoogleAdsService.Search`/`SearchStream` against one's own accounts. Daily campaign cost comes from a GAQL query over `campaign` with `metrics.cost_micros` and `segments.date`; country segmentation uses the `geographic_view` resource (`geographic_view.country_criterion_id`, `segments.date`, `metrics.cost_micros`, `campaign.id`). Verified 2026-08-18.
+- **Meta Marketing API Insights** — requires the `ads_read` permission and an app; insights are available at `account`, `campaign`, `adset`, and `ad` level; `time_increment` accepts an integer of 1–90 days, so `time_increment=1` gives daily rows; `country` is a supported breakdown; large pulls use the asynchronous flow (POST returns a `report_run_id` to poll). Verified 2026-08-19 against the current `v26.0` documentation.
+- **Google Ads API** — requires a developer token. A **test-account** token cannot read production accounts; **Basic Access** covers production at 15,000 operations/day; daily campaign cost comes from a GAQL query with `metrics.cost_micros` and `segments.date`, and country segmentation uses `geographic_view.country_criterion_id`. The importer resolves that criterion through `geo_target_constant.country_code`, which is ISO-3166-1 alpha-2. Verified 2026-08-19 against `v25`. Setting App campaign `ad_group_id` to null is an Open MMP normalization decision, not a verified Google guarantee.
 
 Two integration facts that must be in the WO, not discovered during implementation:
 
@@ -960,17 +960,22 @@ R-22 adopts this baseline after the contract and repository prerequisites were r
 
 ## References
 
-All URLs fetched and checked on **2026-08-18** unless noted.
+All URLs fetched and checked on **2026-08-19** unless noted.
 
 | Topic | URL | What was confirmed |
 | --- | --- | --- |
 | AppLovin MAX S2S impression-level API | `https://support.applovin.com/en/max/advanced-features/s2s-impression-level-api/` | Enabled by the account team; HTTP/HTTPS `GET`; `{EVENT_ID}` = 40 hex chars; `{EVENT_TOKEN}` = `sha1(event-ID + event-key)`; `{EVENT_TOKEN_ALL}` = `sha256(all macros alphabetically as-is + event-key)`; **no retries**; 5 s timeout; macros include `{IDFA}`, `{IDFV}`, `{IP}`, `{CC}`, `{REVENUE}`, `{ALL_REVENUE}`, `{PRECISION}`, `{NETWORK}`, `{AD_UNIT_ID}`, `{USER_ID}`, `{TS}`. No IP allowlist or signature header documented. (Note: this URL resolves, unlike the `developers.applovin.com` URL Lane D found unreachable on 2026-08-17.) |
-| Meta Marketing API — Insights | `https://developers.facebook.com/docs/marketing-api/insights` | `ads_read` permission required; levels `account`/`campaign`/`adset`/`ad`; asynchronous report runs exist |
-| Meta Marketing API — breakdowns | `https://developers.facebook.com/docs/marketing-api/insights/breakdowns` | `country` is a supported breakdown; combination restrictions apply mainly to action breakdowns |
-| Meta Marketing API — ad account insights reference | `https://developers.facebook.com/docs/marketing-api/reference/ad-account/insights/` | `time_increment` accepts `all_days`, `monthly`, or an integer 1–90 (so `1` = daily); `level` accepts `ad`/`adset`/`campaign`/`account`; async POST returns `report_run_id` |
-| Google Ads API — access levels | `https://developers.google.com/google-ads/api/docs/access-levels` | Test tokens cannot reach production; Basic Access = production at 15,000 ops/day, ~5 business days; read-only "Permissible Use" designation exists for `Search`/`SearchStream` |
+| AppLovin MAX Revenue Reporting API | `https://support.applovin.com/en/max/reporting-apis/revenue-reporting-api` | `GET https://r.applovin.com/maxReport`; UTC; JSON/CSV; 45-day maximum range; daily, country, ad-unit, network, and estimated-revenue dimensions support aggregate backfill. |
+| Meta Marketing API — Insights | `https://developers.facebook.com/documentation/ads-commerce/marketing-api/insights` | `ads_read` permission required; levels `account`/`campaign`/`adset`/`ad`; asynchronous report runs exist; current examples use Graph API `v26.0`. |
+| Meta Marketing API — breakdowns | `https://developers.facebook.com/documentation/ads-commerce/marketing-api/insights/breakdowns` | `country` is a supported breakdown; combination restrictions apply. |
+| Meta Marketing API — ad account insights reference | `https://developers.facebook.com/documentation/ads-commerce/marketing-api/reference/ad-account/insights` | `time_increment` accepts an integer 1–90; level accepts ad/adset/campaign/account; async POST returns a report run. |
+| Meta Marketing API — asynchronous best practices | `https://developers.facebook.com/documentation/ads-commerce/marketing-api/insights/best-practices` | Large reports use the asynchronous report-run polling flow. |
+| Google Ads API — access levels | `https://developers.google.com/google-ads/api/docs/api-policy/access-levels` | Test-account access cannot reach production; production access is separately reviewed and quota-limited. |
+| Google Ads API — Search and SearchStream | `https://developers.google.com/google-ads/api/rest/common/search` | `GoogleAdsService.SearchStream` uses GAQL and returns the complete result as a stream. |
 | Google Ads API — reporting overview | `https://developers.google.com/google-ads/api/docs/reporting/overview` | GAQL through `GoogleAdsService.SearchStream`; `metrics.cost_micros`, `segments.date`, `campaign.id`, `campaign.advertising_channel_type` |
-| Google Ads API — `geographic_view` | `https://developers.google.com/google-ads/api/fields/v21/geographic_view` | `geographic_view.country_criterion_id`, `segments.date`, `metrics.cost_micros`, `campaign.id`; compatible with campaign fields |
+| Google Ads API — metrics v25 | `https://developers.google.com/google-ads/api/fields/v25/metrics` | `metrics.cost_micros` is an INT64 in one-millionth units of the account currency. |
+| Google Ads API — `geographic_view` v25 | `https://developers.google.com/google-ads/api/fields/v25/geographic_view` | `geographic_view.country_criterion_id`, `segments.date`, `metrics.cost_micros`, and `campaign.id`. |
+| Google Ads API — geo target constants v25 | `https://developers.google.com/google-ads/api/fields/v25/geo_target_constant` | `geo_target_constant.country_code` is ISO-3166-1 alpha-2 and resolves the geographic criterion ID. |
 | Google Ads API — App campaign reporting | `https://developers.google.com/google-ads/api/docs/app-campaigns/reporting` | Campaign-level and asset-level (`ad_group_ad_asset_view`) reporting; no general ad-group cost breakdown documented |
 
 **Not verified.** Stated as unverified rather than assumed:
@@ -978,7 +983,8 @@ All URLs fetched and checked on **2026-08-18** unless noted.
 - Whether AppLovin exposes an IP range or any second authentication factor for S2S postbacks — the documentation describes only the event-key tokens.
 - Whether `{EVENT_TOKEN_ALL}` is available on every MAX account or requires a specific account-team setting.
 - Whether `{USER_ID}` is populated by default for a publisher that has not set it — assumed absent.
-- Google Ads geo target constant → ISO-3166 mapping mechanics (documented to exist; the exact retrieval path was not confirmed here).
+- Whether a live Google Ads v25 `geographic_view` query accepts every selected Stage 3 field combination; credentials and real account data were intentionally not used.
+- Whether App campaign ad-group cost is always absent. Open MMP normalizes this dimension to null; the official documentation did not establish that as a platform guarantee.
 - Meta Insights rate limits and the row-count threshold above which the asynchronous flow becomes mandatory.
 - Whether any provider's Shadow Import Profile export contains activity/session events, which decides whether retention is computable in M1 (see H-11).
 - Actual row volumes for any target deployment. Every scale statement here is a threshold, not a measurement.

@@ -18,9 +18,12 @@
     "db:schema:dump": "npm run db:schema:dump --workspace @open-mmp/runtime",
     "db:schema:check": "npm run db:schema:check --workspace @open-mmp/runtime",
     "generate:types": "npm run generate:types --workspace @open-mmp/contracts",
+    "import": "npm run import --workspace @open-mmp/worker --",
     "seed": "npm run seed --workspace @open-mmp/worker",
     "test:db-invariants": "npm run test:db-invariants --workspace @open-mmp/runtime",
     "test:env-coverage": "node --import tsx apps/runtime/src/env-coverage.test.ts",
+    "test": "node --import tsx --test \"apps/**/*.unit.test.ts\"",
+    "test:integration": "node --env-file-if-exists=.env --import tsx --test \"apps/**/*.integration.test.ts\"",
     "validate": "npm run typecheck && npm run validate:test --workspace @open-mmp/contracts && npm run validate:summary --workspace @open-mmp/contracts",
     "verify:parity": "npm run verify:parity --workspace @open-mmp/worker",
     "typecheck": "npm run typecheck --workspace @open-mmp/contracts"

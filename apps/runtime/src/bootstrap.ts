@@ -59,7 +59,7 @@ const readerPassword = existing.OPENMMP_READER_DATABASE_PASSWORD ?? secret();
 const seedPassword = existing.OPENMMP_SEED_DATABASE_PASSWORD ?? secret();
 const adminKey = existing.OPENMMP_ADMIN_KEY ?? secret();
 const maxPathSecret = existing.OPENMMP_MAX_PATH_SECRET ?? secret(24);
-const maxEventToken = existing.OPENMMP_MAX_EVENT_TOKEN_ALL ?? secret();
+const maxEventKey = existing.OPENMMP_MAX_EVENT_KEY ?? secret();
 const migrationDatabaseUrl = url("postgres", postgresPassword, databaseHost, databasePort, databaseName);
 const appDatabaseUrl = url("openmmp_app", appPassword, databaseHost, databasePort, databaseName);
 const seedDatabaseUrl = url("openmmp_seed", seedPassword, databaseHost, databasePort, databaseName);
@@ -67,7 +67,7 @@ const hostMigrationDatabaseUrl = url("postgres", postgresPassword, "localhost", 
 const hostAppDatabaseUrl = url("openmmp_app", appPassword, "localhost", databasePort, databaseName);
 const hostReaderDatabaseUrl = url("openmmp_reader", readerPassword, "localhost", databasePort, databaseName);
 const hostSeedDatabaseUrl = url("openmmp_seed", seedPassword, "localhost", databasePort, databaseName);
-const maxTemplate = `${publicBaseUrl}/v1/ingest/max/${maxPathSecret}?event_token_all=${maxEventToken}&event_id={EVENT_ID}`;
+const maxTemplate = `${publicBaseUrl}/v1/ingest/max/${maxPathSecret}?event_token_all={EVENT_TOKEN_ALL}&event_id={EVENT_ID}&revenue={REVENUE}&ts={TS}`;
 
 const migrationEntries: Record<string, string> = {
   OPENMMP_MIGRATION_DATABASE_URL: migrationDatabaseUrl,
@@ -79,11 +79,15 @@ const appEntries: Record<string, string> = {
   OPENMMP_APP_DATABASE_URL: appDatabaseUrl,
   OPENMMP_ADMIN_KEY: adminKey,
   OPENMMP_MAX_PATH_SECRET: maxPathSecret,
-  OPENMMP_MAX_EVENT_TOKEN_ALL: maxEventToken,
+  OPENMMP_MAX_EVENT_KEY: maxEventKey,
   OPENMMP_PUBLIC_BASE_URL: publicBaseUrl,
   OPENMMP_API_PORT: "8080",
   OPENMMP_WORKER_POLL_MS: "5000",
   OPENMMP_SYNTHETIC_MODE: "0",
+  OPENMMP_MAX_TENANT_ID: "tenant-local",
+  OPENMMP_MAX_APP_ID: "app-local",
+  OPENMMP_MAX_TOKEN_MODE: "all_with_event_fallback",
+  OPENMMP_PAYLOAD_STORE_DIR: "/run/openmmp/payloads",
 };
 const seedEntries: Record<string, string> = {
   OPENMMP_APP_DATABASE_URL: appDatabaseUrl,
