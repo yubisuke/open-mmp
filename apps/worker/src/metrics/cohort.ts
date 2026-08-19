@@ -1,7 +1,7 @@
 import type { Pool, PoolClient } from "pg";
+import { createHash } from "node:crypto";
 import { M1B_METRIC_DEFINITIONS } from "@open-mmp/contracts";
-import { sha256 } from "@open-mmp/attribution-core";
-import { withTenant } from "@open-mmp/runtime";
+import { jcs, sha256 } from "@open-mmp/attribution-core";
 
 type Any = Record<string, any>;
 type Queryable = Pick<PoolClient, "query">;
@@ -13,6 +13,7 @@ type SnapshotRecord = {
   record_id: string;
   received_at: string;
   lifecycle_status: "available" | "redacted" | "purged";
+  privacy_request_id: string | null;
 };
 type CurrentCost = {
   tenant_id: string;
@@ -44,34 +45,79 @@ function scopeForInput(input: Any): Scope {
   return [...scopes.values()][0];
 }
 
-function policyDigests(input: Any): Map<string, string> {
-  return new Map(inputAttempts(input).map(({ server, record }) => [record.record_id, server.policy_digest]));
-}
-
 function compareText(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
-async function snapshotRecords(
+type SnapshotScan = {
+  records: SnapshotRecord[];
+  append: (row: unknown) => void;
+  finish: () => string;
+};
+
+async function scanSnapshotRecords(
   client: Queryable,
   scope: Scope,
   watermark: string,
   privacyState: "before" | "after",
-): Promise<SnapshotRecord[]> {
-  const result = await client.query<SnapshotRecord>(
-    `SELECT raw.tenant_id, raw.app_id, raw.record_id, raw.received_at,
+): Promise<SnapshotScan> {
+  const cursorName = "m1b_snapshot_records";
+  await client.query(
+    `DECLARE ${cursorName} NO SCROLL CURSOR FOR
+     SELECT raw.tenant_id, raw.app_id, raw.record_id, raw.received_at, raw.policy_digest,
             CASE WHEN $4='before' THEN 'available'
-                 ELSE raw.payload_lifecycle_status END AS lifecycle_status
-     FROM ledger.raw_records_current AS raw
+                 ELSE state.lifecycle_status END AS lifecycle_status,
+            CASE WHEN $4='before' THEN NULL
+                 ELSE state.privacy_request_id END AS privacy_request_id
+     FROM ledger.raw_records AS raw
      JOIN ledger.logical_events AS logical
        ON logical.record_id=raw.record_id
       AND logical.tenant_id=raw.tenant_id
       AND logical.app_id=raw.app_id
+     JOIN LATERAL (
+       SELECT payload.lifecycle_status, payload.privacy_request_id
+       FROM ledger.raw_payload_states AS payload
+       WHERE payload.record_id=raw.record_id
+         AND payload.tenant_id=raw.tenant_id
+         AND payload.app_id=raw.app_id
+       ORDER BY payload.state_seq DESC
+       LIMIT 1
+     ) AS state ON true
      WHERE raw.tenant_id=$1 AND raw.app_id=$2 AND raw.received_at <= $3
      ORDER BY raw.received_at, raw.record_id`,
     [scope.tenant_id, scope.app_id, watermark, privacyState],
   );
-  return result.rows;
+  const records: SnapshotRecord[] = [];
+  const hasher = createHash("sha256");
+  let first = true;
+  hasher.update("[");
+  const append = (row: unknown): void => {
+    if (!first) hasher.update(",");
+    hasher.update(jcs(row));
+    first = false;
+  };
+  try {
+    while (true) {
+      const page = await client.query<SnapshotRecord>(`FETCH FORWARD 1000 FROM ${cursorName}`);
+      if (page.rows.length === 0) break;
+      for (const record of page.rows) {
+        const policyDigest = (record as SnapshotRecord & { policy_digest?: string }).policy_digest;
+        if (!policyDigest) throw new Error(`missing policy digest for ${record.record_id}`);
+        append([record.received_at, record.record_id, record.lifecycle_status, policyDigest]);
+        records.push(record);
+      }
+    }
+  } finally {
+    await client.query(`CLOSE ${cursorName}`).catch(() => undefined);
+  }
+  return {
+    records,
+    append,
+    finish: () => {
+      hasher.update("]");
+      return hasher.digest("hex");
+    },
+  };
 }
 
 async function currentCosts(
@@ -320,27 +366,25 @@ export async function computeSqlMetricRunsWithClient(
   for (const definition of input.metric_definitions ?? []) {
     definitions.set(definition.metric_name, definition);
   }
-  const policies = policyDigests(input);
   const output: Any[] = [];
 
   for (const evaluation of input.metric_evaluations ?? []) {
-    const records = await snapshotRecords(
+    const snapshot = await scanSnapshotRecords(
       client,
       scope,
       evaluation.input_received_at_watermark,
       evaluation.privacy_state,
     );
+    const records = snapshot.records;
     const grouping = evaluation.grouping;
     const costs = await currentCosts(client, scope, evaluation.input_received_at_watermark, grouping);
-    const snapshotRows = records.map((record) => {
-      const policyDigest = policies.get(record.record_id);
-      if (!policyDigest) throw new Error(`missing policy digest for ${record.record_id}`);
-      return [record.received_at, record.record_id, record.lifecycle_status, policyDigest];
-    });
-    snapshotRows.push(...costs.map((cost) => [
-      "cost", cost.as_of, cost.cost_record_id,
-      cost.report_snapshot_digest, cost.dimension_digest,
-    ]));
+    for (const cost of costs) {
+      snapshot.append([
+        "cost", cost.as_of, cost.cost_record_id,
+        cost.report_snapshot_digest, cost.dimension_digest,
+      ]);
+    }
+    const inputSnapshotId = snapshot.finish();
     const evidenceRefs = [
       ...records.map((record) => ({
         tenant_id: record.tenant_id,
@@ -359,8 +403,10 @@ export async function computeSqlMetricRunsWithClient(
     ].sort((left, right) => compareText(left.ref, right.ref)
       || compareText(left.tenant_id, right.tenant_id)
       || compareText(left.app_id, right.app_id));
+    const privacyAffected = records.some((record) =>
+      record.lifecycle_status !== "available" && record.privacy_request_id !== null);
     const states = records.map((record) => record.lifecycle_status);
-    const reproducibilityStatus = states.includes("redacted")
+    const reproducibilityStatus = privacyAffected || states.includes("redacted")
       ? "redaction_affected"
       : states.includes("purged") ? "retention_affected" : "fully_reproducible";
     const ledger = records.at(-1);
@@ -392,7 +438,7 @@ export async function computeSqlMetricRunsWithClient(
         metric_run_id: `${evaluation.metric_run_id_prefix}:${metricName}`,
         metric_name: metricName,
         metric_definition_version: definition.metric_definition_version,
-        input_snapshot_id: sha256(snapshotRows),
+        input_snapshot_id: inputSnapshotId,
         input_received_at_watermark: evaluation.input_received_at_watermark,
         input_ledger_position: ledger ? `${ledger.received_at}|${ledger.record_id}` : "empty",
         computed_at: evaluation.computed_at,
@@ -424,5 +470,17 @@ export async function computeSqlMetricRunsWithClient(
 
 export async function computeSqlMetricRuns(pool: Pool, input: Any, persist = true): Promise<Any[]> {
   const scope = scopeForInput(input);
-  return withTenant(pool, scope.tenant_id, (client) => computeSqlMetricRunsWithClient(client, input, persist));
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ");
+    await client.query("SELECT set_config('open_mmp.tenant_id', $1, true)", [scope.tenant_id]);
+    const output = await computeSqlMetricRunsWithClient(client, input, persist);
+    await client.query("COMMIT");
+    return output;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
 }

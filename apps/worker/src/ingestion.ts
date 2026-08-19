@@ -162,7 +162,7 @@ async function storedArtifact(
   return artifact;
 }
 
-async function persistRaw(appPool: Pool, artifact: Any): Promise<Any> {
+async function persistRaw(appPool: Pool, artifact: Any, policyDigest: string): Promise<Any> {
   return withTenant(appPool, artifact.tenant_id, (client) => storedArtifact(
     client,
     `INSERT INTO ledger.raw_records (
@@ -171,9 +171,9 @@ async function persistRaw(appPool: Pool, artifact: Any): Promise<Any> {
       received_at, raw_payload_ref, processing_purpose_id,
       consent_evaluation_policy_version, consent_decision_reason_code,
       withdrawal_recognized_at, alternative_legal_basis_id,
-      alternative_legal_basis_policy_version, artifact
+      alternative_legal_basis_policy_version, policy_digest, artifact
     ) VALUES (
-      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21::jsonb
+      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22::jsonb
     ) ON CONFLICT (record_id) DO NOTHING RETURNING artifact`,
     [
       artifact.record_id, artifact.tenant_id, artifact.app_id, artifact.producer,
@@ -183,11 +183,18 @@ async function persistRaw(appPool: Pool, artifact: Any): Promise<Any> {
       artifact.processing_purpose_id, artifact.consent_evaluation_policy_version,
       artifact.consent_decision_reason_code, artifact.withdrawal_recognized_at ?? null,
       artifact.alternative_legal_basis_id ?? null,
-      artifact.alternative_legal_basis_policy_version ?? null, JSON.stringify(artifact),
+      artifact.alternative_legal_basis_policy_version ?? null, policyDigest, JSON.stringify(artifact),
     ],
     "SELECT artifact FROM ledger.raw_records WHERE record_id = $1",
     [artifact.record_id],
   ));
+}
+
+function policyDigestForRecord(input: Any, recordId: string): string {
+  const attempt = inputAttempts(input).find(({ record }) => record.record_id === recordId);
+  const digest = attempt?.server.policy_digest;
+  if (typeof digest !== "string") throw new Error(`missing server policy digest for ${recordId}`);
+  return digest;
 }
 
 async function persistDelivery(appPool: Pool, artifact: Any): Promise<Any> {
@@ -578,7 +585,7 @@ export async function ingestFixture(
   );
 
   for (const raw of baseOutput.raw_records) {
-    const stored = await persistRaw(appPool, raw);
+    const stored = await persistRaw(appPool, raw, policyDigestForRecord(input, raw.record_id));
     assertRoundTrip(raw, stored, `${fixtureName}/base raw/${raw.record_id}`);
     await withTenant(appPool, raw.tenant_id, async (client) => {
       await client.query(
@@ -606,7 +613,7 @@ export async function ingestFixture(
     for (const [ordinal, artifact] of values.entries()) {
       const scope = scopeForDerived(artifact, baseOutput, input);
       let stored: Any;
-      if (kind === "raw_records") stored = await persistRaw(appPool, artifact);
+      if (kind === "raw_records") stored = await persistRaw(appPool, artifact, policyDigestForRecord(input, (artifact as Any).record_id));
       else if (kind === "deliveries") stored = await persistDelivery(appPool, artifact);
       else if (kind === "logical_events") stored = await persistLogical(appPool, artifact);
       else if (kind === "corrections") stored = await persistCorrection(appPool, artifact);
@@ -687,7 +694,7 @@ export async function ingestRuntimeBatch(
     attributions: output.attributions.filter(belongsToCurrent),
   };
   for (const raw of selected.raw_records) {
-    await persistRaw(appPool, raw);
+    await persistRaw(appPool, raw, policyDigestForRecord(input, raw.record_id));
     await withTenant(appPool, raw.tenant_id, (client) => client.query(
       `INSERT INTO ledger.raw_payload_states (
         tenant_id, app_id, record_id, lifecycle_status, changed_at

@@ -193,4 +193,137 @@ describe("M1b SQL metric parity", { concurrency: false }, () => {
     const actual = await computeSqlMetricRuns(appPool, mutation, false);
     assert.equal(jcs(actual), jcs(expected));
   });
+
+  it("B1 fixes snapshots by watermark and supersedes immutable runs when late input arrives", async () => {
+    const mutation = structuredClone(input);
+    const lateRevenue = structuredClone(
+      mutation.records.find((record: Any) => record.record_id === "revenue-33-c"),
+    );
+    Object.assign(lateRevenue, {
+      record_id: "revenue-33-late",
+      delivery_id: "delivery:revenue-33-late",
+      event_id: "event:revenue-33-late",
+      received_at: "2026-08-09T00:00:00.001Z",
+      processing_sequence: 12,
+    });
+    lateRevenue.payload.impression_id = "impression:revenue-33-late";
+    mutation.records.push(lateRevenue);
+    const baseEvaluation = {
+      ...mutation.metric_evaluations[0],
+      metric_run_id_prefix: "run-33-snapshot-before",
+      metric_names: ["d7_roas"],
+    };
+    mutation.metric_evaluations = [
+      baseEvaluation,
+      { ...baseEvaluation, metric_run_id_prefix: "run-33-snapshot-repeat" },
+      {
+        ...baseEvaluation,
+        metric_run_id_prefix: "run-33-snapshot-after",
+        input_received_at_watermark: "2026-08-09T00:00:01.000Z",
+        computed_at: "2026-08-09T00:02:00.000Z",
+        supersedes_metric_run_id_prefix: "run-33-snapshot-before",
+      },
+    ];
+
+    await ingestFixture(fixtureName, mutation, appPool, seedPool);
+    const expected = evaluate(mutation).metric_runs;
+    const actual = await computeSqlMetricRuns(appPool, mutation, false);
+    assert.equal(jcs(actual), jcs(expected));
+    const before = actual.find((run) => run.metric_run_id.startsWith("run-33-snapshot-before:"));
+    const repeat = actual.find((run) => run.metric_run_id.startsWith("run-33-snapshot-repeat:"));
+    const afterLate = actual.find((run) => run.metric_run_id.startsWith("run-33-snapshot-after:"));
+    if (!before || !repeat || !afterLate) throw new Error("snapshot test metric runs are incomplete");
+    assert.equal(repeat.input_snapshot_id, before.input_snapshot_id);
+    assert.equal(repeat.value_unscaled, before.value_unscaled);
+    assert.notEqual(afterLate.input_snapshot_id, before.input_snapshot_id);
+    assert.notEqual(afterLate.value_unscaled, before.value_unscaled);
+    assert.equal(afterLate.supersedes_metric_run_id, before.metric_run_id);
+
+    const persistedInput = structuredClone(mutation);
+    persistedInput.metric_evaluations = [
+      persistedInput.metric_evaluations[0],
+      persistedInput.metric_evaluations[2],
+    ];
+    const persisted = await computeSqlMetricRuns(appPool, persistedInput, true);
+    const persistedBefore = persisted.find((run) => run.metric_run_id === before.metric_run_id);
+    assert.ok(persistedBefore);
+
+    const storedBefore = await withTenant(appPool, input.server_context.tenant_id, async (client) => {
+      const result = await client.query<{ artifact: Any }>(
+        "SELECT artifact FROM ledger.metric_runs WHERE metric_run_id=$1",
+        [before.metric_run_id],
+      );
+      return result.rows[0].artifact;
+    });
+    assert.equal(sha256(storedBefore), sha256(persistedBefore), "supersession must not rewrite the old run");
+
+    const firstSequence = await withTenant(appPool, input.server_context.tenant_id, async (client) =>
+      (await client.query<{ value: string }>("SELECT max(ledger_seq)::text AS value FROM ledger.raw_records")).rows[0].value);
+    const firstSnapshot = (await computeSqlMetricRuns(appPool, mutation, false))[0].input_snapshot_id;
+    await ingestFixture(fixtureName, mutation, appPool, seedPool);
+    const secondSequence = await withTenant(appPool, input.server_context.tenant_id, async (client) =>
+      (await client.query<{ value: string }>("SELECT max(ledger_seq)::text AS value FROM ledger.raw_records")).rows[0].value);
+    const secondSnapshot = (await computeSqlMetricRuns(appPool, mutation, false))[0].input_snapshot_id;
+    assert.notEqual(firstSequence, secondSequence, "fixture reload must exercise different ledger sequence values");
+    assert.equal(secondSnapshot, firstSnapshot, "ledger_seq must not participate in snapshot identity");
+  });
+
+  it("B6 recalculates after privacy redaction and preserves the superseded run", async () => {
+    const mutation = structuredClone(input);
+    const baseEvaluation = {
+      ...mutation.metric_evaluations[0],
+      metric_run_id_prefix: "run-33-redaction-before",
+      metric_names: ["d7_roas", "cohort_ltv_d7_usd"],
+      privacy_state: "before",
+    };
+    mutation.metric_evaluations = [
+      baseEvaluation,
+      {
+        ...baseEvaluation,
+        metric_run_id_prefix: "run-33-redaction-after",
+        computed_at: "2026-08-09T00:03:00.000Z",
+        data_freshness: "recalculated",
+        privacy_state: "after",
+        supersedes_metric_run_id_prefix: "run-33-redaction-before",
+      },
+    ];
+    mutation.privacy_requests = [{
+      contract_version: "0.2.1",
+      tenant_id: input.server_context.tenant_id,
+      app_id: input.server_context.app_id,
+      privacy_request_id: "privacy:redaction-33",
+      deletion_subject_digest: "3".repeat(64),
+      deletion_scope: "installation",
+      requested_via: "tenant_admin_api",
+      requester_auth_ref: "admin_key:synthetic-redaction-33",
+      requested_at: "2026-08-09T00:01:00.000Z",
+      completed_at: "2026-08-09T00:02:00.000Z",
+      status: "completed",
+      reason_code: "privacy_deletion",
+      policy_version: "privacy-v0.2.1",
+      affected_records: [{ record_id: "revenue-33-c", lifecycle_status: "redacted" }],
+    }];
+
+    await ingestFixture(fixtureName, mutation, appPool, seedPool);
+    const expected = evaluate(mutation).metric_runs;
+    const actual = await computeSqlMetricRuns(appPool, mutation, true);
+    assert.equal(jcs(actual), jcs(expected));
+    const before = actual.filter((run) => run.metric_run_id.startsWith("run-33-redaction-before:"));
+    const afterRedaction = actual.filter((run) => run.metric_run_id.startsWith("run-33-redaction-after:"));
+    assert.equal(afterRedaction.length, before.length);
+    for (const replacement of afterRedaction) {
+      const prior = before.find((run) => run.metric_name === replacement.metric_name);
+      assert.ok(prior);
+      assert.equal(replacement.reproducibility_status, "redaction_affected");
+      assert.equal(replacement.supersedes_metric_run_id, prior.metric_run_id);
+      assert.notEqual(replacement.input_snapshot_id, prior.input_snapshot_id);
+      assert.notEqual(replacement.value_unscaled, prior.value_unscaled);
+      const stored = await withTenant(appPool, input.server_context.tenant_id, async (client) =>
+        (await client.query<{ artifact: Any }>(
+          "SELECT artifact FROM ledger.metric_runs WHERE metric_run_id=$1",
+          [prior.metric_run_id],
+        )).rows[0].artifact);
+      assert.equal(sha256(stored), sha256(prior), "redaction recalculation must not rewrite the prior run");
+    }
+  });
 });
