@@ -14,7 +14,7 @@
     "reason_code_version": { "const": "0.2.0" },
     "evidence": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["type", "captured_at", "digest", "access_class"], "properties": { "type": { "type": "string" }, "captured_at": { "$ref": "common.schema.json#/$defs/dateTime" }, "digest": { "type": "string", "pattern": "^[a-f0-9]{64}$" }, "access_class": { "enum": ["public", "protected", "private"] } } } },
     "rule_bundle_id": { "$ref": "common.schema.json#/$defs/id" },
-    "rule_bundle_version": { "type": "string" },
+    "rule_bundle_version": { "type": "string", "minLength": 1 },
     "rule_bundle_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
     "evaluated_at": { "$ref": "common.schema.json#/$defs/dateTime" },
     "supersedes_fraud_decision_id": { "$ref": "common.schema.json#/$defs/id" }

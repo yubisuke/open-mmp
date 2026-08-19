@@ -22,7 +22,7 @@
     "input_cutoff_at": { "$ref": "common.schema.json#/$defs/dateTime" },
     "finality": { "enum": ["pending", "provisional", "final", "superseded", "retracted"] },
     "rule_bundle_id": { "$ref": "common.schema.json#/$defs/id" },
-    "rule_bundle_version": { "type": "string" },
+    "rule_bundle_version": { "type": "string", "minLength": 1 },
     "rule_bundle_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
     "supersedes_attribution_id": { "$ref": "common.schema.json#/$defs/id" }
   },

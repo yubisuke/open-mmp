@@ -1379,6 +1379,17 @@ const validRevenue = {
 };
 if (!summaryOnly) {
   describe("semantic mutations", () => {
+    it("rejects empty rule bundle versions across derived artifacts", () => {
+      const artifacts: Array<[keyof typeof outputSchemaIds, Any]> = [
+        ["attributions", fixture("01-valid-install-referrer").output.attributions[0]],
+        ["metric_runs", fixture("08-late-ad-revenue").output.metric_runs[0]],
+        ["fraud_decisions", fixture("19-bot-prefetch").output.fraud_decisions[0]],
+      ];
+      for (const [kind, source] of artifacts) {
+        const invalid = { ...source, rule_bundle_version: "" };
+        check(!validatorFor(outputSchemaIds[kind])(invalid), `mutation accepted empty rule_bundle_version: ${kind}`);
+      }
+    });
     it("accepts the baseline revenue event", () => {
       const adValidator = validatorFor("urn:open-mmp:schema:event-ad-revenue:v0.2");
       check(adValidator(validRevenue), "mutation baseline event invalid");
