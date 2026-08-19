@@ -11,6 +11,7 @@ import { createAppPool, createSeedPool } from "@open-mmp/runtime";
 import type { Pool } from "pg";
 import { ingestFixture } from "./ingestion.js";
 import { computeSqlMetricRuns } from "./metrics/cohort.js";
+import { sha256 } from "@open-mmp/attribution-core";
 
 type Any = Record<string, any>;
 const adminKey = "synthetic-report-admin-key-000000000000000000000001";
@@ -43,17 +44,28 @@ function csvRow(text: string): Record<string, string> {
   return Object.fromEntries(parse(lines[0]).map((header, index) => [header, parse(lines[1])[index]]));
 }
 
-describe("M1b reporting and difference audit", { concurrency: false, timeout: 60_000 }, () => {
+describe("M1b reporting and difference audit", { concurrency: false }, () => {
   let appPool: Pool;
   let seedPool: Pool;
   let server: Server;
   let baseUrl: string;
 
+  async function registerAndIngest(name: string, input: Any): Promise<void> {
+    await seedPool.query(
+      `INSERT INTO testing.fixture_inputs (fixture_name, input_digest, input)
+       VALUES ($1,$2,$3::jsonb)
+       ON CONFLICT (fixture_name) DO UPDATE
+       SET input_digest=EXCLUDED.input_digest, input=EXCLUDED.input, loaded_at=clock_timestamp()`,
+      [name, sha256(input), JSON.stringify(input)],
+    );
+    await ingestFixture(name, input, appPool, seedPool);
+  }
+
   before(async () => {
     appPool = createAppPool();
     seedPool = createSeedPool();
     const input = fixture("33-stage-b-cohort-metrics");
-    await ingestFixture("33-stage-b-cohort-metrics", input, appPool, seedPool);
+    await registerAndIngest("33-stage-b-cohort-metrics", input);
     await computeSqlMetricRuns(appPool, input, true);
     await ensureAdminKeys(appPool, { tenantId: "tenant-a", appId: "app-a" }, [adminKey]);
     const config: MaxReceiverConfig = {
@@ -71,13 +83,13 @@ describe("M1b reporting and difference audit", { concurrency: false, timeout: 60
     const address = server.address();
     assert.ok(address && typeof address === "object");
     baseUrl = `http://127.0.0.1:${address.port}`;
-  }, { timeout: 60_000 });
+  });
 
   after(async () => {
     await new Promise<void>((resolve, reject) => server?.close((error) => error ? reject(error) : resolve()));
     await appPool?.end();
     await seedPool?.end();
-  }, { timeout: 60_000 });
+  });
 
   it("B7 protects reporting with the admin key and preserves JSON/CSV values and metadata", async () => {
     const unauthorized = await fetch(`${baseUrl}/v1/reports/metrics?format=json`);
@@ -106,7 +118,7 @@ describe("M1b reporting and difference audit", { concurrency: false, timeout: 60
 
   it("B8 exports undefined ROAS as absent value plus reason", async () => {
     const input = fixture("37-undefined-organic-roas");
-    await ingestFixture("33-stage-b-cohort-metrics", input, appPool, seedPool);
+    await registerAndIngest("37-undefined-organic-roas", input);
     await computeSqlMetricRuns(appPool, input, true);
     const response = await fetch(`${baseUrl}/v1/reports/metrics?format=json`, {
       headers: { authorization: `Bearer ${adminKey}` },
@@ -125,7 +137,7 @@ describe("M1b reporting and difference audit", { concurrency: false, timeout: 60
   ] as const) {
     it(`B5/B10 returns complete automatically-derived ${reason} evidence`, async () => {
       const input = fixture(name);
-      await ingestFixture("33-stage-b-cohort-metrics", input, appPool, seedPool);
+      await registerAndIngest(name, input);
       const response = await fetch(`${baseUrl}/v1/audit/differences?format=json`, {
         headers: { authorization: `Bearer ${adminKey}` },
       });
