@@ -5,6 +5,7 @@
   "description": "Open MMP HTTP API",
   "type": "module",
   "dependencies": {
+    "@open-mmp/redirector-core": "0.1.0",
     "@open-mmp/runtime": "0.1.0",
     "pg": "8.23.0"
   },

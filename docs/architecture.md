@@ -19,7 +19,7 @@ Proposed stack:
 
 M1 through M3 use one portable deployment path: Docker Compose, Node.js services, and PostgreSQL. They do not adopt Cloudflare Queues, R2, or D1. M2 may offer a Cloudflare Workers redirector as an optional edge adapter, but the same redirector behavior must remain available through the portable Node.js interface. The ingestion API, worker, authoritative ledger, protected evidence, and dashboard do not require Cloudflare. No public contract depends on a Cloudflare-specific API.
 
-The decided M1 implementation baseline is documented in [M1 Design Baseline](design/m1-baseline.md). R-22 resolves every option set in that document to its recorded recommendation.
+The decided M1 implementation baseline is documented in [M1 Design Baseline](design/m1-baseline.md). R-22 resolves every option set in that document to its recorded recommendation. The Android, Unity, redirector, and SDK-ingestion design is fixed by R-24 in [M2 Design Baseline](design/m2-baseline.md).
 
 ## Android M2 flow
 
@@ -62,6 +62,19 @@ The following six component identifiers are mechanically matched to the M1a thre
 - `postgres-ledger`: authoritative RLS, append-only raw evidence, deliveries, corrections, tombstones, decisions, costs, and metric runs.
 <!-- m1-component:runtime-ci -->
 - `runtime-ci`: Linux/PostgreSQL migration, unit/integration, golden parity, Compose smoke, threat coverage, and per-workspace SBOM gate.
+
+### M2 component inventory
+
+The following four identifiers are covered mechanically. The two device components remain implementation-pending until M2b; listing their boundary here does not claim that the SDKs exist yet.
+
+<!-- m1-component:redirector -->
+- `redirector`: portable Node HTTP shell and shared deterministic core for stored measurement links, Play referrers, click evidence, safe fallback, and memory-only source-IP rate limiting.
+<!-- m1-component:sdk-ingestion -->
+- `sdk-ingestion`: app-key enrollment, per-installation credentials, HMAC request integrity, ephemeral nonce replay defence, durable batch inbox, ordered worker drain, and on-device deletion authorization.
+<!-- m1-component:sdk-android -->
+- `sdk-android`: planned M2b Kotlin client boundary for Install Referrer, Meta evidence, durable delivery, consent, and collection lifecycle.
+<!-- m1-component:unity-bridge -->
+- `unity-bridge`: planned M2b C# to Kotlin boundary for Unity lifecycle and MAX impression-revenue callbacks.
 
 ### Redirector
 

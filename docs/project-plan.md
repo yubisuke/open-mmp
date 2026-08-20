@@ -75,6 +75,8 @@ There is no code deliverable. The owner uses the M1a/M1b evidence, operator-run 
 
 ### Phase 2: Android, Unity, and redirector
 
+M2a and M2b are complete on synthetic evidence: the portable redirector, HMAC app and installation authentication, durable batch processing, Kotlin SDK, Install Referrer/Meta/MAX modules, Unity UPM bridge, native and Unity samples, emulator evidence, Android SBOM, and operator checklist are present without changing contract v0.3. Real-device, real-Play, live Meta/MAX, and Unity-export validation remains an external operator responsibility and is not a code-completion claim.
+
 - Unity C# SDK and Android Kotlin bridge
 - Google Play Install Referrer and versioned deterministic attribution
 - Portable Node.js redirector, with an optional Cloudflare Workers adapter only for that redirector

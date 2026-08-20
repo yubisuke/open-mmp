@@ -12,6 +12,9 @@ import {
   type ReportFormat,
 } from "./reporting.js";
 import type { TokenBucket } from "./rate-limit.js";
+import type { SdkRouteDependencies } from "./sdk-routes.js";
+import { handleDevicePrivacy, handleSdkBatch, handleSdkEnrollment } from "./sdk-routes.js";
+import { createTrackingLink } from "./tracking-links.js";
 
 async function jsonBody(request: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
@@ -31,6 +34,8 @@ export function createRequestHandler(dependencies: {
   maxConfig: MaxReceiverConfig;
   maxBucket?: TokenBucket;
   adminBucket?: TokenBucket;
+  sdk?: SdkRouteDependencies;
+  trackingDestinationAllowlist?: readonly string[];
 }): RequestListener {
   return (request, response) => {
     void (async () => {
@@ -86,6 +91,50 @@ export function createRequestHandler(dependencies: {
           response.end(encoded.body);
           return;
         }
+      }
+      if (request.method === "POST" && request.url === "/v1/installations" && dependencies.sdk) {
+        await handleSdkEnrollment(request, response, dependencies.sdk);
+        return;
+      }
+      if (request.method === "POST" && request.url === "/v1/events/batch" && dependencies.sdk) {
+        await handleSdkBatch(request, response, dependencies.sdk);
+        return;
+      }
+      if (request.method === "POST" && request.url === "/v1/privacy/on-device" && dependencies.sdk) {
+        await handleDevicePrivacy(request, response, dependencies.sdk);
+        return;
+      }
+      if (request.method === "POST" && request.url === "/v1/admin/tracking-links") {
+        if (dependencies.adminBucket && !dependencies.adminBucket.allow()) {
+          response.writeHead(429, { "retry-after": "1" });
+          response.end();
+          return;
+        }
+        const identity = await verifyAdminKey(
+          dependencies.pool,
+          { tenantId: dependencies.maxConfig.tenantId, appId: dependencies.maxConfig.appId },
+          typeof request.headers.authorization === "string" ? request.headers.authorization : undefined,
+        );
+        if (!identity) {
+          response.writeHead(401, { "content-type": "application/json", "cache-control": "no-store" });
+          response.end('{"error":"unauthorized"}\n');
+          return;
+        }
+        try {
+          const result = await createTrackingLink({
+            pool: dependencies.pool,
+            tenantId: identity.tenantId,
+            appId: identity.appId,
+            allowedOrigins: dependencies.trackingDestinationAllowlist ?? [],
+            body: await jsonBody(request) as Record<string, unknown>,
+          });
+          response.writeHead(201, { "content-type": "application/json", "cache-control": "no-store" });
+          response.end(`${JSON.stringify(result)}\n`);
+        } catch (error) {
+          response.writeHead(400, { "content-type": "application/json", "cache-control": "no-store" });
+          response.end(`${JSON.stringify({ error: error instanceof Error ? error.message : "tracking_link_invalid" })}\n`);
+        }
+        return;
       }
       if (request.method === "POST" && request.url === "/v1/admin/privacy-requests") {
         if (dependencies.adminBucket && !dependencies.adminBucket.allow()) {

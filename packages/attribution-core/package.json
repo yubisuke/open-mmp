@@ -8,6 +8,10 @@
     ".": {
       "types": "./src/evaluator.ts",
       "default": "./src/evaluator.ts"
+    },
+    "./install-referrer-mapping": {
+      "types": "./src/install-referrer-mapping.ts",
+      "default": "./src/install-referrer-mapping.ts"
     }
   },
   "dependencies": {

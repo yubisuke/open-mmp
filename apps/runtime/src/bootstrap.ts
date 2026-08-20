@@ -34,6 +34,7 @@ const seedEnvPath = join(runtimeSecretRoot, "seed", "runtime.env");
 const postgresPasswordPath = join(runtimeSecretRoot, "postgres", "password");
 const repositoryEnvPath = join(repositoryRoot, ".env");
 const publicBaseUrl = process.env.OPENMMP_PUBLIC_BASE_URL ?? "http://localhost:8080";
+const redirectorBaseUrl = process.env.OPENMMP_REDIRECTOR_BASE_URL ?? "http://localhost:8090";
 const databaseHost = process.env.OPENMMP_DATABASE_HOST ?? "localhost";
 const databasePort = process.env.OPENMMP_DATABASE_PORT ?? "5432";
 const databaseName = process.env.OPENMMP_DATABASE_NAME ?? "openmmp";
@@ -61,6 +62,9 @@ const adminKey = existing.OPENMMP_ADMIN_KEY ?? secret();
 const maxPathSecret = existing.OPENMMP_MAX_PATH_SECRET ?? secret(24);
 const maxEventKey = existing.OPENMMP_MAX_EVENT_KEY ?? secret();
 const payloadMasterKey = existing.OPENMMP_PAYLOAD_MASTER_KEY ?? secret();
+const sdkKey = existing.OPENMMP_SDK_KEY ?? secret();
+const installationDigestKey = existing.OPENMMP_INSTALLATION_DIGEST_KEY ?? secret();
+const metaReferrerKey = existing.OPENMMP_META_IR_DECRYPTION_KEY ?? randomBytes(32).toString("hex");
 const migrationDatabaseUrl = url("postgres", postgresPassword, databaseHost, databasePort, databaseName);
 const appDatabaseUrl = url("openmmp_app", appPassword, databaseHost, databasePort, databaseName);
 const seedDatabaseUrl = url("openmmp_seed", seedPassword, databaseHost, databasePort, databaseName);
@@ -82,6 +86,10 @@ const appEntries: Record<string, string> = {
   OPENMMP_MAX_PATH_SECRET: maxPathSecret,
   OPENMMP_MAX_EVENT_KEY: maxEventKey,
   OPENMMP_PAYLOAD_MASTER_KEY: payloadMasterKey,
+  OPENMMP_SDK_KEY_ID: "sdk-key-current",
+  OPENMMP_SDK_KEY: sdkKey,
+  OPENMMP_INSTALLATION_DIGEST_KEY: installationDigestKey,
+  OPENMMP_META_IR_DECRYPTION_KEY: metaReferrerKey,
   OPENMMP_PUBLIC_BASE_URL: publicBaseUrl,
   OPENMMP_API_PORT: "8080",
   OPENMMP_WORKER_POLL_MS: "5000",
@@ -90,6 +98,27 @@ const appEntries: Record<string, string> = {
   OPENMMP_MAX_APP_ID: "app-local",
   OPENMMP_MAX_TOKEN_MODE: "all_with_event_fallback",
   OPENMMP_PAYLOAD_STORE_DIR: "/run/openmmp/payloads",
+  OPENMMP_SDK_TENANT_ID: "tenant-local",
+  OPENMMP_INGEST_SKEW_MS: "300000",
+  OPENMMP_NONCE_TTL_MS: "900000",
+  OPENMMP_INGEST_MAX_BYTES: "262144",
+  OPENMMP_INGEST_MAX_EVENTS: "100",
+  OPENMMP_ENROLL_RATE_RPS: "50",
+  OPENMMP_ENROLL_RATE_BURST: "100",
+  OPENMMP_INGEST_RATE_RPS: "1",
+  OPENMMP_INGEST_RATE_BURST: "20",
+  OPENMMP_INGEST_APP_RATE_RPS: "500",
+  OPENMMP_INGEST_APP_RATE_BURST: "1000",
+  OPENMMP_DEVICE_PRIVACY_RATE_RPM: "1",
+  OPENMMP_DEVICE_PRIVACY_RATE_BURST: "3",
+  OPENMMP_REDIRECTOR_PORT: "8090",
+  OPENMMP_REDIRECTOR_BASE_URL: "http://redirector:8090",
+  OPENMMP_REDIRECTOR_TENANT_ID: "tenant-local",
+  OPENMMP_REDIRECTOR_FALLBACK_URL: "https://play.google.com/store",
+  OPENMMP_REDIRECTOR_DESTINATION_ALLOWLIST: "",
+  OPENMMP_REDIRECTOR_GEO: "off",
+  OPENMMP_REDIRECTOR_RATE_RPS: "20",
+  OPENMMP_REDIRECTOR_RATE_BURST: "50",
 };
 const seedEntries: Record<string, string> = {
   OPENMMP_APP_DATABASE_URL: appDatabaseUrl,
@@ -125,3 +154,4 @@ if (!existsSync(repositoryEnvPath)) {
 
 console.log(`Open MMP admin key: ${adminKey}`);
 console.log(`Open MMP MAX postback URL template: ${maxTemplate}`);
+console.log(`Open MMP redirector base URL: ${redirectorBaseUrl}`);

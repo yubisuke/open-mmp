@@ -148,8 +148,10 @@ Gate ownership follows the canonical [roadmap](roadmap.md):
 | Aggregate-postback signature, replay, and series-separation evidence | M4b Apple aggregate attribution |
 | Final threat-model review, production SBOM, tenant-isolation/replay/deletion exercises, and backup/restore evidence | M5 Production and limited adapter boundary |
 
-The M1a runtime gates continue to apply to every later runtime milestone.
+The M1a runtime gates continue to apply to every later runtime milestone. M2a adds only synthetic server evidence; real Play, Meta, MAX, device-transfer, and Unity-export validation remains outside the public repository and does not become true because CI is green.
 
 ## M1a deletion implementation status
 
-The implemented management path accepts `tenant_admin_api` deletion requests only after scrypt-verifier bearer authentication. It resolves affected records inside the authenticated tenant/app scope, appends payload lifecycle state, tombstone and correction artifacts, purges matching protected object/key entries, appends replacement D0 runs marked `redaction_affected`, and records the admin key ID in the runtime audit ledger. `on_device_sdk` remains fail-closed with HTTP 501 `on_device_path_not_implemented`. Backup erasure and large asynchronous deletion jobs remain deployment and later-milestone work.
+The management path accepts `tenant_admin_api` deletion requests only after scrypt-verifier bearer authentication. M2a also opens the separate `on_device_sdk` route only after HMAC authentication with the per-installation credential, and authorizes deletion against the tenant/app keyed digest bound to that credential. Both paths append lifecycle state, tombstone and correction artifacts, purge matching protected object/key entries, append replacement D0 runs when prior runs exist, and record an opaque authentication reference in the runtime audit ledger. The completed privacy artifact never retains `deletion_subject_ref`. Backup erasure and large asynchronous deletion jobs remain deployment and later-milestone work.
+
+Redirector source IP is used ephemerally for an in-process token bucket and is never written to the application database, payload store, or application logs. With `OPENMMP_REDIRECTOR_GEO=off` (the default), the redirector does not derive `click.country`. Operators enabling country derivation must update their Google Play Data safety declaration. The current Google Play guidance was checked on 2026-08-19: https://support.google.com/googleplay/android-developer/answer/10787469?hl=en.

@@ -3,7 +3,8 @@ import { createAppPool, EncryptedFilePayloadStore, EnvironmentSecretStore } from
 import { assertSafeMaxTemplate, receiveMax, type MaxReceiverConfig } from "./max-receiver.js";
 import { ensureAdminKeys } from "./admin-auth.js";
 import { createRequestHandler } from "./router.js";
-import { TokenBucket } from "./rate-limit.js";
+import { KeyedTokenBucket, TokenBucket } from "./rate-limit.js";
+import { ensureSdkKeys } from "./sdk-auth.js";
 
 const port = Number(process.env.OPENMMP_API_PORT ?? "8080");
 const baseUrl = process.env.OPENMMP_PUBLIC_BASE_URL ?? `http://localhost:${port}`;
@@ -13,6 +14,9 @@ const secrets = new EnvironmentSecretStore({
   OPENMMP_MAX_PATH_SECRET: { value: process.env.OPENMMP_MAX_PATH_SECRET, file: process.env.OPENMMP_MAX_PATH_SECRET_FILE },
   OPENMMP_MAX_EVENT_KEY: { value: process.env.OPENMMP_MAX_EVENT_KEY, file: process.env.OPENMMP_MAX_EVENT_KEY_FILE },
   OPENMMP_PAYLOAD_MASTER_KEY: { value: process.env.OPENMMP_PAYLOAD_MASTER_KEY, file: process.env.OPENMMP_PAYLOAD_MASTER_KEY_FILE },
+  OPENMMP_SDK_KEY: { value: process.env.OPENMMP_SDK_KEY, file: process.env.OPENMMP_SDK_KEY_FILE },
+  OPENMMP_SDK_KEY_PREVIOUS: { value: process.env.OPENMMP_SDK_KEY_PREVIOUS, file: process.env.OPENMMP_SDK_KEY_PREVIOUS_FILE },
+  OPENMMP_INSTALLATION_DIGEST_KEY: { value: process.env.OPENMMP_INSTALLATION_DIGEST_KEY, file: process.env.OPENMMP_INSTALLATION_DIGEST_KEY_FILE },
 });
 const adminKey = secrets.require("OPENMMP_ADMIN_KEY");
 const maxPathSecret = secrets.require("OPENMMP_MAX_PATH_SECRET");
@@ -38,6 +42,12 @@ await ensureAdminKeys(
   { tenantId: maxConfig.tenantId, appId: maxConfig.appId },
   [adminKey, secrets.read("OPENMMP_ADMIN_KEY_PREVIOUS")].filter((value): value is string => !!value),
 );
+const sdkKeyId = process.env.OPENMMP_SDK_KEY_ID ?? "sdk-key-current";
+const previousSdkKey = secrets.read("OPENMMP_SDK_KEY_PREVIOUS");
+await ensureSdkKeys(pool, payloadStore, { tenantId: maxConfig.tenantId, appId: maxConfig.appId }, [
+  { keyId: sdkKeyId, secret: secrets.require("OPENMMP_SDK_KEY") },
+  ...(previousSdkKey ? [{ keyId: process.env.OPENMMP_SDK_KEY_PREVIOUS_ID ?? "sdk-key-previous", secret: previousSdkKey }] : []),
+]);
 
 const server = createServer(createRequestHandler({
   pool,
@@ -51,10 +61,40 @@ const server = createServer(createRequestHandler({
     Number(process.env.OPENMMP_ADMIN_RATE_RPS ?? "10"),
     Number(process.env.OPENMMP_ADMIN_RATE_BURST ?? "30"),
   ),
+  trackingDestinationAllowlist: (process.env.OPENMMP_REDIRECTOR_DESTINATION_ALLOWLIST ?? "")
+    .split(",").map((value) => value.trim()).filter(Boolean),
+  sdk: {
+    pool,
+    payloadStore,
+    config: {
+      tenantId: maxConfig.tenantId,
+      appId: maxConfig.appId,
+      timestampSkewMs: Number(process.env.OPENMMP_INGEST_SKEW_MS ?? "300000"),
+      nonceTtlMs: Number(process.env.OPENMMP_NONCE_TTL_MS ?? "900000"),
+      installationDigestKey: secrets.require("OPENMMP_INSTALLATION_DIGEST_KEY"),
+    },
+    maximumBytes: Number(process.env.OPENMMP_INGEST_MAX_BYTES ?? String(256 * 1024)),
+    maximumEvents: Number(process.env.OPENMMP_INGEST_MAX_EVENTS ?? "100"),
+    enrollmentBucket: new KeyedTokenBucket(
+      Number(process.env.OPENMMP_ENROLL_RATE_RPS ?? "50"),
+      Number(process.env.OPENMMP_ENROLL_RATE_BURST ?? "100"),
+    ),
+    installationBucket: new KeyedTokenBucket(
+      Number(process.env.OPENMMP_INGEST_RATE_RPS ?? "1"),
+      Number(process.env.OPENMMP_INGEST_RATE_BURST ?? "20"),
+    ),
+    appBucket: new KeyedTokenBucket(
+      Number(process.env.OPENMMP_INGEST_APP_RATE_RPS ?? "500"),
+      Number(process.env.OPENMMP_INGEST_APP_RATE_BURST ?? "1000"),
+    ),
+    privacyBucket: new KeyedTokenBucket(
+      Number(process.env.OPENMMP_DEVICE_PRIVACY_RATE_RPM ?? "1") / 60,
+      Number(process.env.OPENMMP_DEVICE_PRIVACY_RATE_BURST ?? "3"),
+    ),
+  },
 }));
 
 server.listen(port, "0.0.0.0", () => {
   console.log(`Open MMP API listening on ${port}`);
-  console.log(`Open MMP admin key: ${adminKey}`);
-  console.log(`Open MMP MAX postback URL template: ${maxTemplate}`);
+  console.log("Open MMP runtime credentials loaded from encrypted configuration.");
 });
