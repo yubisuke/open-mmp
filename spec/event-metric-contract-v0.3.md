@@ -48,6 +48,8 @@ The logical idempotency key is:
 - A later delivery with the same key and a different digest is `event_id_conflict`; the conflicting payload is rejected.
 - The same producer and event ID in different authenticated tenants are independent identities and cannot join across tenants.
 
+`event_name` is deliberately absent from the logical idempotency key. A producer therefore owns one event-ID namespace across every event type in an authenticated tenant/app scope. Reusing an ID for a different event type is still `duplicate_delivery` when the payload digest is identical and `event_id_conflict` when it differs. The first accepted event name remains canonical; a later cross-type delivery creates no second logical event or fact projection. Conflict payload digests remain protected evidence under the rule above, but they are never eligible for attribution or metrics. Import mappings that route one source ID column into multiple event types should add stable, event-type-specific prefixes or provide an equivalent disjoint namespace.
+
 For `duplicate_delivery` and `event_id_conflict`, `canonical_record_id` is the `record_id` of the first accepted delivery for that logical idempotency key. It identifies the accepted canonical record without replacing later delivery evidence. A `record_id_collision` has no canonical record and therefore must not emit `canonical_record_id`.
 
 ## Install anchors and click matching

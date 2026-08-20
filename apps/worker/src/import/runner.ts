@@ -1,11 +1,11 @@
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { basename, join, resolve } from "node:path";
+import { readFileSync, readdirSync } from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
 import type { Pool } from "pg";
 import { sha256, type CandidateAttempt } from "@open-mmp/attribution-core";
 import { createAppPool, uuidV7, withTenant } from "@open-mmp/runtime";
 import { ingestRuntimeBatch } from "../ingestion.js";
-import { loadMapping, mapRow, MappingError, rowMatches, type ImportMapping } from "./mapping.js";
+import { lintMappings, loadMapping, mapRow, MappingError, rowMatches, type ImportMapping } from "./mapping.js";
 import { ImportLimitError, readRows, type ImportLimits } from "./source.js";
 
 type Any = Record<string, any>;
@@ -107,9 +107,9 @@ async function historicalAttempts(pool: Pool, mapping: ImportMapping): Promise<C
     const result = await client.query<{ server_context: Any; record: Any; import_run_id: string }>(
       `SELECT server_context, record, import_run_id::text
        FROM control.import_attempts
-       WHERE tenant_id=$1 AND app_id=$2 AND source_id=$3
+       WHERE tenant_id=$1 AND app_id=$2 AND record->>'producer'=$3
        ORDER BY created_at, row_ordinal, import_attempt_id`,
-      [mapping.tenant_id, mapping.app_id, mapping.source_id],
+      [mapping.tenant_id, mapping.app_id, `import:${mapping.provider}`],
     );
     return result.rows.map((row) => ({ server: row.server_context, record: row.record, batch_id: row.import_run_id }));
   });
@@ -243,6 +243,10 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(import.meta.filename
   const mappingPath = source.endsWith(".json") && (source.includes("/") || source.includes("\\"))
     ? resolve(source)
     : join(resolve(process.env.OPENMMP_MAPPINGS_DIR ?? "examples/mappings"), source.endsWith(".json") ? source : `${source}.json`);
+  const mappings = readdirSync(dirname(mappingPath), { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+    .map((entry) => loadMapping(join(dirname(mappingPath), entry.name)));
+  for (const warning of lintMappings(mappings)) console.warn(JSON.stringify({ level: "warning", ...warning }));
   const pool = createAppPool();
   try {
     const summary = await runMmpImport({ pool, mappingPath, filePath: resolve(file) });

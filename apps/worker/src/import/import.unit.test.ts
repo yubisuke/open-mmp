@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { loadMapping, mapRow } from "./mapping.js";
+import { lintMappings, loadMapping, mapRow } from "./mapping.js";
 import { readRows } from "./source.js";
 import { normalizeGoogleAds, normalizeMaxBackfill, normalizeMetaInsights } from "./adapters.js";
 
@@ -29,6 +29,25 @@ describe("runtime import mapping", () => {
       assert.equal(loaded.rows[0].network, "network, one");
       assert.throws(() => readRows(file, mapping, { maxBytes: 4096, maxRows: 2, maxRowBytes: 2 }), /exceeds 2 bytes/);
     } finally { rmSync(directory, { recursive: true, force: true }); }
+  });
+
+  it("WO11 warns when event routes reuse one producer-scoped ID source without namespaces", () => {
+    const click = loadMapping("examples/mappings/synthetic-shared-id-click.json");
+    const install = loadMapping("examples/mappings/synthetic-shared-id-install.json");
+    assert.deepEqual(lintMappings([click, install]), []);
+    const unprefixed = [click, install].map((mapping) => ({
+      ...mapping,
+      rules: mapping.rules.map((rule) => rule.target === "event_id"
+        ? { ...rule, expression: { source: "shared_id" } }
+        : rule),
+    }));
+    assert.deepEqual(lintMappings(unprefixed), [{
+      code: "event_id_source_reused_across_routes",
+      provider: "synthetic-shared-provider",
+      source: "shared_id",
+      source_ids: ["synthetic-shared-clicks", "synthetic-shared-installs"],
+      message: "event_id is producer-scoped across event names; add distinct prefixes or otherwise namespace the shared source column",
+    }]);
   });
 });
 

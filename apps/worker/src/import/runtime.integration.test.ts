@@ -126,6 +126,63 @@ describe("M1a import integration", () => {
       await ownerPool.query("DROP FUNCTION IF EXISTS testing.reject_synthetic_click()");
     }
   });
+
+  it("WO11 rejects a producer event ID reused by a different event type across mappings", async () => {
+    const sharedId = "synthetic-cross-type-event-11";
+    const clickMapping = {
+      version: "1.0.0", kind: "mmp_raw", source_id: "synthetic-cross-type-clicks",
+      tenant_id: "tenant-local", app_id: "app-local", provider: "synthetic-cross-type-provider", format: "json",
+      rules: [
+        { target: "event_name", expression: { const: "click" } },
+        { target: "event_id", expression: { source: "shared_id" } },
+        { target: "occurred_at", expression: { source: "occurred_at", timestamp: { default_timezone: "UTC", truncate_to_milliseconds: true } } },
+        { target: "payload", expression: { object: {
+          click_id: { source: "click_id" }, redirector_time_status: { const: "missing" },
+        } } },
+      ],
+    };
+    const installMapping = {
+      ...clickMapping,
+      source_id: "synthetic-cross-type-installs",
+      rules: [
+        { target: "event_name", expression: { const: "install" } },
+        { target: "event_id", expression: { source: "shared_id" } },
+        { target: "occurred_at", expression: { source: "occurred_at", timestamp: { default_timezone: "UTC", truncate_to_milliseconds: true } } },
+        { target: "payload", expression: { object: {
+          installation_id: { source: "installation_id" }, referrer_status: { const: "none" }, install_type: { const: "first_install" },
+        } } },
+      ],
+    };
+    const clickMappingPath = join(temporary, "cross-type-click.json");
+    const installMappingPath = join(temporary, "cross-type-install.json");
+    const clickFile = join(temporary, "cross-type-click-rows.json");
+    const installFile = join(temporary, "cross-type-install-rows.json");
+    writeFileSync(clickMappingPath, JSON.stringify(clickMapping));
+    writeFileSync(installMappingPath, JSON.stringify(installMapping));
+    writeFileSync(clickFile, JSON.stringify([{
+      shared_id: sharedId, occurred_at: "2026-08-20T10:00:00", click_id: "synthetic-cross-type-click-11",
+    }]));
+    const installText = JSON.stringify([{
+      shared_id: sharedId, occurred_at: "2026-08-20T10:01:00", installation_id: "synthetic-cross-type-installation-11",
+    }]);
+    writeFileSync(installFile, installText);
+    await runMmpImport({ pool: appPool, mappingPath: clickMappingPath, filePath: clickFile, now: new Date("2026-08-20T11:00:00.000Z") });
+    await runMmpImport({ pool: appPool, mappingPath: installMappingPath, filePath: installFile, now: new Date("2026-08-20T11:01:00.000Z") });
+    const installRecordId = `record:${sha256([installMapping.source_id, createHash("sha256").update(installText).digest("hex"), 0]).slice(0, 48)}`;
+    await withTenant(appPool, "tenant-local", async (client) => {
+      const result = await client.query(`SELECT
+        (SELECT count(*) FROM ledger.logical_events WHERE producer='import:synthetic-cross-type-provider' AND event_id=$1 AND event_name='click')::int AS click_logical,
+        (SELECT count(*) FROM ledger.logical_events WHERE producer='import:synthetic-cross-type-provider' AND event_id=$1 AND event_name='install')::int AS install_logical,
+        (SELECT count(*) FROM ledger.click_facts WHERE click_id='synthetic-cross-type-click-11')::int AS click_facts,
+        (SELECT count(*) FROM ledger.install_facts WHERE installation_id='synthetic-cross-type-installation-11')::int AS install_facts,
+        (SELECT count(*) FROM ledger.event_deliveries WHERE record_id=$2 AND duplicate_resolution='event_id_conflict')::int AS conflicts,
+        (SELECT count(*) FROM ledger.rejections WHERE record_id=$2 AND reason_code='event_id_conflict')::int AS rejections`,
+      [sharedId, installRecordId]);
+      assert.deepEqual(result.rows[0], {
+        click_logical: 1, install_logical: 0, click_facts: 1, install_facts: 0, conflicts: 1, rejections: 1,
+      });
+    });
+  });
 });
 
 describe("MAX receiver integration", () => {

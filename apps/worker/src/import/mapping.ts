@@ -7,6 +7,7 @@ type Any = Record<string, any>;
 
 export type MappingExpression = {
   source?: string;
+  prefix?: string;
   const?: unknown;
   default?: unknown;
   map?: Record<string, unknown>;
@@ -28,6 +29,14 @@ export type ImportMapping = {
   format: "csv" | "json" | "jsonl";
   row_filter?: { source: string; equals: string | number | boolean };
   rules: Array<{ target: string; expression: MappingExpression }>;
+};
+
+export type MappingLintWarning = {
+  code: "event_id_source_reused_across_routes";
+  provider: string;
+  source: string;
+  source_ids: string[];
+  message: string;
 };
 
 export class MappingError extends Error {
@@ -58,6 +67,38 @@ export function loadMapping(path: string): ImportMapping {
     throw new MappingError("mmp_raw mappings require provider", ["provider"]);
   }
   return mapping;
+}
+
+function eventIdExpression(mapping: ImportMapping): MappingExpression | undefined {
+  return mapping.rules.find((rule) => rule.target === "event_id")?.expression;
+}
+
+export function lintMappings(mappings: readonly ImportMapping[]): MappingLintWarning[] {
+  const groups = new Map<string, Array<{ mapping: ImportMapping; expression: MappingExpression }>>();
+  for (const mapping of mappings) {
+    if (mapping.kind !== "mmp_raw" || !mapping.provider) continue;
+    const expression = eventIdExpression(mapping);
+    if (!expression?.source) continue;
+    const key = [mapping.tenant_id, mapping.app_id, mapping.provider, expression.source].join("\u0000");
+    const group = groups.get(key) ?? [];
+    group.push({ mapping, expression });
+    groups.set(key, group);
+  }
+  const warnings: MappingLintWarning[] = [];
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    const prefixes = group.map(({ expression }) => expression.prefix ?? "");
+    if (prefixes.every((prefix, index) => prefix.length > 0 && prefixes.indexOf(prefix) === index)) continue;
+    const { mapping, expression } = group[0];
+    warnings.push({
+      code: "event_id_source_reused_across_routes",
+      provider: mapping.provider!,
+      source: expression.source!,
+      source_ids: group.map(({ mapping: value }) => value.source_id).sort(),
+      message: "event_id is producer-scoped across event names; add distinct prefixes or otherwise namespace the shared source column",
+    });
+  }
+  return warnings.sort((left, right) => left.provider.localeCompare(right.provider) || left.source.localeCompare(right.source));
 }
 
 function sourceValue(row: Any, name: string | undefined): unknown {
@@ -123,6 +164,12 @@ export function evaluateExpression(expression: MappingExpression, row: Any): unk
   if (expression.timestamp) value = normalizeTimestamp(value, expression, row);
   if (expression.money) value = moneyValue(value, expression.money, row);
   if (value === undefined) throw new MappingError("required mapping source is missing", expression.source ? [expression.source] : []);
+  if (expression.prefix !== undefined) {
+    if (typeof value !== "string" && typeof value !== "number") {
+      throw new MappingError("prefix requires a string or number source", expression.source ? [expression.source] : []);
+    }
+    value = `${expression.prefix}${value}`;
+  }
   return value;
 }
 
