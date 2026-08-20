@@ -18,6 +18,8 @@ import {
 import { processSdkInbox } from "../../worker/src/sdk-worker.js";
 import { createRequestHandler } from "./router.js";
 import { KeyedTokenBucket } from "./rate-limit.js";
+import { parseMetricQuery } from "./report-query.js";
+import { encodeMetricReport, metricReport } from "./reporting.js";
 import { ensureSdkKeys, signSdkRequest } from "./sdk-auth.js";
 
 const run = randomBytes(6).toString("hex");
@@ -424,6 +426,28 @@ describe("M2a signed SDK ingestion", () => {
       `SELECT metric_run_id FROM ledger.metric_runs
        WHERE tenant_id=$1 AND app_id=$2 AND supersedes_metric_run_id=$3`, [tenantId, appId, priorMetricId],
     )).rowCount), 1);
+    const parsed = parseMetricQuery({
+      tenantId,
+      appId,
+      searchParams: new URLSearchParams({ metric_name: priorMetric.metric_name, limit: "20" }),
+    });
+    const page = await metricReport(pool, {
+      keyId: "key:synthetic-m2a",
+      tenantId,
+      appId,
+      role: "admin",
+    }, parsed.query);
+    assert.equal(page.data.length, 1);
+    assert.equal(page.data[0].reproducibility_status, "redaction_affected");
+    assert.notEqual(page.data[0].metric_run_id, priorMetricId);
+    for (const body of [
+      encodeMetricReport(page, "json").body,
+      encodeMetricReport(page, "csv").body,
+    ]) {
+      assert.equal(body.includes(installationId), false);
+      assert.equal(body.includes("record_id"), false);
+      assert.equal(body.includes("evidence_refs"), false);
+    }
     await assert.rejects(payloadStore.read(secretRef));
     assert.equal((await signed("/v1/events/batch", { records: [sourceEvent(`event:after-delete:${run}`, "session_start", { installation_id: installationId, session_id: `session:after-delete:${run}` })] }, { secret: installationSecret, installationKeyId })).status, 401);
   });

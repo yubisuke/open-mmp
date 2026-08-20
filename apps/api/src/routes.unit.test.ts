@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { matchRoute, routes } from "./routes.js";
 
@@ -12,6 +13,15 @@ describe("declarative API route security", () => {
         assert.notEqual(route.auth, "dashboard_session");
       }
     }
+  });
+
+  it("C04 keeps the dashboard handler group independent of authorization headers", () => {
+    const routerSource = readFileSync(new URL("./router.ts", import.meta.url), "utf8");
+    const start = routerSource.indexOf('if (route.handler === "dashboard_css")');
+    const end = routerSource.indexOf("const identity = await adminIdentity", start);
+    assert.ok(start >= 0 && end > start, "dashboard handler group must remain identifiable");
+    const dashboardHandlers = routerSource.slice(start, end);
+    assert.doesNotMatch(dashboardHandlers, /authorization\s*\(\s*request\s*\)|headers\.authorization/);
   });
 
   it("C03 declares every read-only route without mutation authority", () => {

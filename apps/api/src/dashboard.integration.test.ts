@@ -201,8 +201,10 @@ describe("M3 dashboard identity and control plane", { concurrency: false }, () =
   });
 
   it("C04 never accepts the other namespace credential", async () => {
+    const anonymous = await fetch(`${baseUrl}/dashboard`);
     const bearerOnly = await fetch(`${baseUrl}/dashboard`, { headers: { authorization: `Bearer ${adminKeyA}` } });
-    assert.equal(bearerOnly.status, 401);
+    assert.equal(bearerOnly.status, anonymous.status);
+    assert.equal(await bearerOnly.text(), await anonymous.text());
     const sessionResponse = await login(adminKeyA);
     const cookieOnly = await fetch(`${baseUrl}/v1/admin/apps`, { headers: { cookie: cookie(sessionResponse) } });
     assert.equal(cookieOnly.status, 401);

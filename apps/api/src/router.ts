@@ -271,10 +271,6 @@ export function createRequestHandler(dependencies: RequestHandlerDependencies): 
       }
       if (route.handler === "dashboard_root") {
         const session = await dashboardSessionFor(dependencies, request);
-        if (!session && authorization(request)) {
-          dashboardHtml(response, 401, loginPage("Authentication required."));
-          return;
-        }
         if (!session) {
           dashboardHtml(response, 200, loginPage());
           return;
