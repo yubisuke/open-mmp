@@ -7,6 +7,8 @@
   "scripts": {
     "benchmark:metric-floor": "cd ../.. && node --env-file-if-exists=.env --import tsx apps/worker/src/metrics/benchmark.ts",
     "import": "cd ../.. && node --env-file-if-exists=.env --import tsx apps/worker/src/import/runner.ts",
+    "import:cost": "cd ../.. && node --env-file-if-exists=.env --import tsx apps/worker/src/import/cost-cli.ts",
+    "metrics:run": "cd ../.. && node --env-file-if-exists=.env --import tsx apps/worker/src/metrics/run.ts",
     "demo:metrics": "cd ../.. && node --env-file-if-exists=.env --import tsx apps/worker/src/demo-metrics.ts",
     "db:reapply-privacy": "cd ../.. && node --env-file-if-exists=.env --import tsx apps/worker/src/reapply-privacy.ts --",
     "seed": "cd ../.. && node --env-file-if-exists=.env --import tsx apps/worker/src/seed.ts",

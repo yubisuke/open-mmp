@@ -35,7 +35,7 @@ Evidence gate: Independently implemented evaluators reproduce the same reviewed 
 
 Contract v0.3 is complete and locally validated. It preserves the M0.2 audit model while adding only the vocabulary and closed evidence shapes required by M2: third-party referrer classification, typed Meta Install Referrer evidence and precedence, imported click evidence, attribution-status metric grouping, a closed custom event, public click-injection classification, revenue precision, and wrapper provenance. The immutable v0.2.1 baseline is the `contract-v0.2.1` Git tag.
 
-Evidence gate: 27 schemas, 8 registries, 46 reviewed synthetic fixtures, both independent evaluators, registry/schema equality, CTIT boundary mutations, and the optional integrity-evidence reservation pass without real data or credentials.
+Evidence gate: 27 schemas, 8 registries, 47 reviewed synthetic fixtures, both independent evaluators, registry/schema equality, CTIT boundary mutations, optional integrity evidence, and runtime payload-schema rejection pass without real data or credentials.
 
 ## M1a Shadow ledger and import foundation
 

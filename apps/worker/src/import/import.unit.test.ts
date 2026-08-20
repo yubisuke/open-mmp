@@ -72,6 +72,7 @@ describe("runtime import mapping", () => {
     const base = {
       network: "synthetic-network", campaign_id: "synthetic-campaign", country: "jp",
       date: "2026-08-20", cost_micros: "123456789012345678", currency: "USD",
+      as_of: "2026-08-20T12:00:00.000Z",
     };
     assert.deepEqual(mapRow(mapping, base).money, {
       amount_unscaled: "123456789012345678", amount_scale: 6, currency: "USD",

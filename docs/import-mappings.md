@@ -41,6 +41,8 @@ An integer source stays a base-10 string and is paired with the declared scale. 
 
 See `examples/mappings/synthetic-integer-cost.json`.
 
+The operator entry points are `npm run import:cost -- --file=<csv> --mapping=<json>` and `npm run metrics:run -- --date=<YYYY-MM-DD> --definitions=<json>`. The definitions document supplies tenant/app scope, one fixed FX policy, and one or more metric-name/grouping requests; the CLI supplies the cohort date and next-day UTC watermark. Both commands use the same persistence and cohort-engine functions as the integration tests.
+
 ## Producer-wide event IDs
 
 The contract idempotency key excludes `event_name`. If multiple mappings for the same tenant, app, and provider reuse one source ID column, give each route a stable, distinct `prefix`. The CLI emits `event_id_source_reused_across_routes` when sibling mappings overlap without disjoint prefixes. See `synthetic-shared-id-click.json` and `synthetic-shared-id-install.json` for the safe pattern.

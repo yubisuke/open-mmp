@@ -10,6 +10,8 @@ import { createAppPool, createMigrationPool, EncryptedFilePayloadStore, withTena
 import { sha256 } from "@open-mmp/attribution-core";
 import { runMmpImport } from "./runner.js";
 import { persistCostImport } from "./cost.js";
+import { runCostImportFile } from "./cost-cli.js";
+import { runMetricDefinitionsFile } from "../metrics/run.js";
 import { expectedMaxTokenAll, receiveMax, type MaxReceiverConfig } from "../../../api/src/max-receiver.js";
 import { processMaxInbox } from "./max-worker.js";
 import { ensureAdminKeys } from "../../../api/src/admin-auth.js";
@@ -91,6 +93,37 @@ describe("M1a import integration", () => {
     );
     const afterCount = await ownerPool.query("SELECT count(*)::int AS count FROM control.import_runs");
     assert.equal(afterCount.rows[0].count, beforeCount.rows[0].count);
+  });
+
+  it("WO11 wires a synthetic cost CSV through cost_records to a present D0 ROAS run", async () => {
+    const file = join(temporary, "synthetic-cli-cost.csv");
+    writeFileSync(file, [
+      "network,campaign_id,country,date,cost_micros,currency,as_of",
+      "synthetic-cli-network,synthetic-cli-campaign,us,2026-08-20,2500000,USD,2026-08-20T12:00:00.000Z",
+      "",
+    ].join("\n"));
+    const imported = await runCostImportFile({
+      pool: appPool,
+      mappingPath: "examples/mappings/synthetic-manual-cost.json",
+      filePath: file,
+    });
+    const runs = await runMetricDefinitionsFile({
+      pool: appPool,
+      date: "2026-08-20",
+      definitionsPath: "examples/metrics/synthetic-d0-roas.json",
+    });
+    assert.equal(imported.inserted, 1);
+    assert.equal(imported.rows, 1);
+    assert.equal(runs.length, 1);
+    assert.equal(runs[0].metric_name, "d0_roas");
+    assert.equal(runs[0].value_state ?? "present", "present");
+    assert.equal(runs[0].value_unscaled, "0");
+    await withTenant(appPool, "tenant-local", async (client) => {
+      const result = await client.query(`SELECT
+        (SELECT count(*) FROM ledger.cost_records_current WHERE campaign_id='synthetic-cli-campaign' AND spend_unscaled='2500000')::int AS costs,
+        (SELECT count(*) FROM ledger.metric_runs WHERE metric_name='d0_roas' AND value_state='present' AND grouping->>'campaign_id'='synthetic-cli-campaign')::int AS runs`);
+      assert.deepEqual(result.rows[0], { costs: 1, runs: 1 });
+    });
   });
 
   it("WO11 rolls back raw, delivery, logical event, and facts as one record unit", async () => {
