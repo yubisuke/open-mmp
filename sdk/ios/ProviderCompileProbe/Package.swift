@@ -8,7 +8,6 @@ let package = Package(
   dependencies: [
     .package(name: "OpenMmpIOS", path: ".."),
     .package(
-      name: "AppLovinMAX",
       url: "https://github.com/AppLovin/AppLovin-MAX-Swift-Package.git",
       exact: "13.6.4"
     ),
@@ -18,7 +17,7 @@ let package = Package(
       name: "OpenMmpProviderCompileProbe",
       dependencies: [
         .product(name: "OpenMmpMax", package: "OpenMmpIOS"),
-        .product(name: "AppLovinSDK", package: "AppLovinMAX"),
+        .product(name: "AppLovinSDK", package: "applovin-max-swift-package"),
       ]
     ),
   ]
