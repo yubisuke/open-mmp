@@ -184,6 +184,7 @@ const dimensionSql: Readonly<Record<GroupingDimension, string>> = {
   cohort_date: "event.metric_date",
   metric_date: "event.metric_date",
   attribution_status: "event.attribution_status",
+  apple_conversion_bucket: "event.apple_conversion_bucket",
 };
 
 function bind(values: unknown[], value: unknown): string {
@@ -233,7 +234,8 @@ export async function recordCounts(
       CASE WHEN logical.event_name='click' THEN click.campaign_id ELSE install.campaign_id END AS campaign_id,
       CASE WHEN logical.event_name='click' THEN click.network ELSE install.network END AS network,
       CASE WHEN logical.event_name='click' THEN click.country ELSE install.country END AS country,
-      CASE WHEN logical.event_name='install' THEN coalesce(attribution.status, 'unattributed') END AS attribution_status
+      CASE WHEN logical.event_name='install' THEN coalesce(attribution.status, 'unattributed') END AS attribution_status,
+      NULL::text AS apple_conversion_bucket
     FROM ledger.logical_events AS logical
     JOIN ledger.raw_records_current AS raw
       ON raw.tenant_id=logical.tenant_id AND raw.app_id=logical.app_id AND raw.record_id=logical.record_id

@@ -898,19 +898,65 @@ function metricRuns(
         value = cohortSize;
       } else if (definition.definition.calculation === "event_count") {
         const eventNames = new Set<string>(definition.event_names ?? []);
+        const eventName = [...eventNames][0];
         const metricDate = evaluation.grouping?.metric_date;
         if (metricDate === undefined) throw new Error(`event_count requires metric_date grouping: ${metricName}`);
-        if (eventNames.size !== 1 || !["click", "install"].some((name) => eventNames.has(name))) {
+        if (eventNames.size !== 1 || !["click", "install", "skan_postback", "adattributionkit_postback"].includes(eventName)) {
           throw new Error(`event_count requires exactly one supported event name: ${metricName}`);
         }
-        if (evaluation.grouping?.attribution_status !== undefined && !eventNames.has("install")) {
-          throw new Error(`attribution_status event_count requires install events: ${metricName}`);
+        const aggregatePostback = eventName === "skan_postback" || eventName === "adattributionkit_postback";
+        if (aggregatePostback) {
+          if (definition.aggregation_time_zone !== "UTC") {
+            throw new Error(`aggregate event_count requires UTC aggregation: ${metricName}`);
+          }
+          if (evaluation.grouping?.attribution_status !== undefined) {
+            throw new Error(`aggregate event_count forbids attribution_status: ${metricName}`);
+          }
+          const expectedEventName = metricName === "aak_attributed_installs"
+            ? "adattributionkit_postback"
+            : "skan_postback";
+          if (!["skan_attributed_installs", "skan_conversion_value_distribution", "aak_attributed_installs"].includes(metricName) || eventName !== expectedEventName) {
+            throw new Error(`aggregate event_count metric and event mismatch: ${metricName}`);
+          }
+          const conversionBucket = evaluation.grouping?.apple_conversion_bucket;
+          if (metricName === "skan_conversion_value_distribution" && conversionBucket === undefined) {
+            throw new Error(`SKAN conversion distribution requires apple_conversion_bucket: ${metricName}`);
+          }
+          if (metricName !== "skan_conversion_value_distribution" && conversionBucket !== undefined) {
+            throw new Error(`apple_conversion_bucket is reserved for SKAN conversion distribution: ${metricName}`);
+          }
+          value = BigInt(visible.filter((attempt) => {
+            if (attempt.record.event_name !== eventName ||
+                dateAt(attempt.record.received_at, "UTC", "received_at") !== metricDate) return false;
+            const attribution = attributions.find((candidate) =>
+              candidate.tenant_id === attempt.server.tenant_id &&
+              candidate.app_id === attempt.server.app_id &&
+              candidate.subject_scope === "aggregate" &&
+              candidate.status === "non_organic" &&
+              candidate.evidence_refs.some((reference) => reference.ref === attempt.record.record_id));
+            if (!attribution) return false;
+            if (conversionBucket === undefined) return true;
+            const payload = attempt.record.payload;
+            const actualBucket = payload.conversion_value !== undefined
+              ? `fine:${payload.conversion_value}`
+              : payload.coarse_conversion_value !== undefined
+                ? `coarse:${payload.coarse_conversion_value}`
+                : undefined;
+            return actualBucket === conversionBucket;
+          }).length);
+        } else {
+          if (evaluation.grouping?.apple_conversion_bucket !== undefined) {
+            throw new Error(`apple_conversion_bucket requires aggregate SKAN events: ${metricName}`);
+          }
+          if (evaluation.grouping?.attribution_status !== undefined && eventName !== "install") {
+            throw new Error(`attribution_status event_count requires install events: ${metricName}`);
+          }
+          value = BigInt(visible.filter((attempt) =>
+            eventNames.has(attempt.record.event_name) &&
+            matchesGrouping(attempt, evaluation.grouping, attributionStatuses) &&
+            dateAt(attempt.record.occurred_at, definition.aggregation_time_zone, "occurred_at") === metricDate,
+          ).length);
         }
-        value = BigInt(visible.filter((attempt) =>
-          eventNames.has(attempt.record.event_name) &&
-          matchesGrouping(attempt, evaluation.grouping, attributionStatuses) &&
-          dateAt(attempt.record.occurred_at, definition.aggregation_time_zone, "occurred_at") === metricDate,
-        ).length);
       } else {
         throw new Error(`unsupported metric calculation: ${definition.definition.calculation}`);
       }

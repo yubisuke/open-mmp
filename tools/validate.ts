@@ -317,7 +317,12 @@ function validateRegistryReferences(output: Any, label: string): void {
     check(cost.dimension_digest === sha256(dimensions), `cost dimension digest mismatch in ${label}`);
   }
   for (const definition of output.metric_definitions) {
-    const expectedVersion = definition.definition.calculation === "event_count" ? "0.3.1" : "0.3.0";
+    const aggregateMetricNames = new Set([
+      "skan_attributed_installs", "skan_conversion_value_distribution", "aak_attributed_installs",
+    ]);
+    const expectedVersion = aggregateMetricNames.has(definition.metric_name)
+      ? "0.3.3"
+      : definition.definition.calculation === "event_count" ? "0.3.1" : "0.3.0";
     check(definition.metric_definition_version === expectedVersion, `wrong metric definition version in ${label}`);
     check(["UTC", "Asia/Tokyo"].includes(definition.aggregation_time_zone), `unknown metric definition time zone in ${label}`);
   }
@@ -554,8 +559,8 @@ if (!summaryOnly) {
         }
       });
     }
-    it("contains 43 fixture directories", () => {
-      check(fixtureDirs.length === 43, `expected 43 fixture directories, found ${fixtureDirs.length}`);
+    it("contains 44 fixture directories", () => {
+      check(fixtureDirs.length === 44, `expected 44 fixture directories, found ${fixtureDirs.length}`);
     });
   });
 
@@ -855,12 +860,21 @@ const scenarios: Array<[string, () => void]> = [
     check(value.input.records.some((record: Any) => record.event_name === "adattributionkit_postback" && record.payload.signing_key_environment === "development"), "scenario 43 AAK signing environment");
     check(value.input.records.some((record: Any) => record.event_name === "skan_postback" && record.payload.version === "4.1"), "scenario 43 SKAN minor version");
   }],
+  ["44 Apple aggregate metrics", () => {
+    const value = fixture("44-apple-aggregate-metrics").output;
+    const runs = Object.fromEntries(value.metric_runs.map((run: Any) => [run.metric_run_id, run]));
+    check(runs["run-44-skan-count:skan_attributed_installs"].value_unscaled === "2", "scenario 44 SKAN qualified count");
+    check(runs["run-44-aak-count:aak_attributed_installs"].value_unscaled === "1", "scenario 44 AAK qualified count");
+    check(runs["run-44-skan-fine-21:skan_conversion_value_distribution"].value_unscaled === "1", "scenario 44 fine bucket");
+    check(runs["run-44-skan-coarse-low:skan_conversion_value_distribution"].value_unscaled === "1", "scenario 44 coarse bucket");
+    check(value.metric_runs.every((run: Any) => run.aggregation_time_zone === "UTC" && run.grouping.dimensions.metric_date === "2026-08-20"), "scenario 44 UTC receipt date");
+  }],
 ];
 if (!summaryOnly) {
   describe("reviewed scenarios", () => {
     for (const [name, assertion] of scenarios) it(name, assertion);
-    it("contains 43 scenario assertions", () => {
-      check(scenarios.length === 43, "scenario assertion inventory must contain 43 entries");
+    it("contains 44 scenario assertions", () => {
+      check(scenarios.length === 44, "scenario assertion inventory must contain 44 entries");
     });
   });
 
@@ -1421,7 +1435,7 @@ const acceptance: Array<[string, () => void]> = [
     check(corrections.some((item: Any) => item.correction_type === "retraction"), "AC15 retraction");
     check(fixture("17-redaction-recalculation").output.metric_runs.some((item: Any) => item.supersedes_metric_run_id), "AC15 redaction");
   }],
-  ["AC16 clock referrer prefetch and withdrawal fixtures pass", () => check(scenarios.length === 43 && fixture("11-clock-skew").output.deliveries.some((item: Any) => item.clock_skew_suspected) && fixture("13-referrer-unsupported").output.attributions.length === 2 && fixture("19-bot-prefetch").output.fraud_decisions.length === 1 && fixture("41-click-injection-suspected").output.fraud_decisions.length === 1 && fixture("20-timestamp-invalid").output.rejections.some((item: Any) => item.reason_code === "timestamp_invalid"), "AC16")],
+  ["AC16 clock referrer prefetch and withdrawal fixtures pass", () => check(scenarios.length === 44 && fixture("11-clock-skew").output.deliveries.some((item: Any) => item.clock_skew_suspected) && fixture("13-referrer-unsupported").output.attributions.length === 2 && fixture("19-bot-prefetch").output.fraud_decisions.length === 1 && fixture("41-click-injection-suspected").output.fraud_decisions.length === 1 && fixture("20-timestamp-invalid").output.rejections.some((item: Any) => item.reason_code === "timestamp_invalid"), "AC16")],
   ["AC17 server-recognized withdrawal rejects and redacts payload", () => {
     for (const name of ["14-withdrawal-after-occurrence", "15-event-after-withdrawal"]) {
       const value = fixture(name).output;
@@ -1461,7 +1475,7 @@ const acceptance: Array<[string, () => void]> = [
     for (const forbidden of ["threshold", "model_weight", "watchlist", "ip_address", "user_agent", "response_timing"]) check(!schemaText.includes(forbidden), `AC20 ${forbidden}`);
     check(specText.includes("remain private"), "AC20 private boundary");
   }],
-  ["AC21 one command validates every schema registry fixture and golden", () => check(schemaPaths.length === 27 && Object.keys(registries).length === 8 && fixtureDirs.length === 43 && outputArtifactCount === 43 * 13, "AC21")],
+  ["AC21 one command validates every schema registry fixture and golden", () => check(schemaPaths.length === 27 && Object.keys(registries).length === 8 && fixtureDirs.length === 44 && outputArtifactCount === 44 * 13, "AC21")],
   ["AC22 repeated and independent evaluators produce identical JCS", () => {
     for (const { output, python } of results.values()) check(equal(output, python), "AC22 evaluator mismatch");
     const vector = { numbers: [333333333.33333329, 1e30, 4.50, 2e-3, 1e-27, -0], string: "€$\u000f\nA'B\"\\\"/" };
@@ -1573,6 +1587,78 @@ if (!summaryOnly) {
       reservedDate.metric_evaluations[0].grouping.metric_date = "2026-08-01";
       check(!capture(() => evaluate(reservedDate)).ok, "TypeScript non-event calculation accepted metric_date");
       check(!capture(() => pythonOutputs([reservedDate])).ok, "Python non-event calculation accepted metric_date");
+    });
+    it("keeps Apple aggregate metrics qualified bucketed and receipt-date based", () => {
+      const definitionValidator = validatorFor("urn:open-mmp:schema:metric-definition:v0.3");
+      const baseline = structuredClone(fixture("44-apple-aggregate-metrics").input);
+      const skanCount = baseline.metric_definitions.find((definition: Any) => definition.metric_name === "skan_attributed_installs");
+      const distribution = baseline.metric_definitions.find((definition: Any) => definition.metric_name === "skan_conversion_value_distribution");
+      check(definitionValidator(skanCount) && definitionValidator(distribution), "Apple aggregate metric definition baseline invalid");
+      const wrongCalculation = structuredClone(skanCount);
+      wrongCalculation.definition.calculation = "cohort_size";
+      check(!definitionValidator(wrongCalculation), "aggregate metric name accepted a non-event calculation");
+      check(!definitionValidator({ ...skanCount, metric_definition_version: "0.3.2" }), "aggregate metric accepted the wrong definition version");
+      check(!definitionValidator({ ...skanCount, aggregation_time_zone: "Asia/Tokyo" }), "aggregate event_count accepted non-UTC aggregation");
+      check(!definitionValidator({ ...skanCount, grouping_dimensions: ["metric_date", "attribution_status"] }), "aggregate event_count accepted attribution_status");
+      check(!definitionValidator({ ...skanCount, grouping_dimensions: ["metric_date", "country"] }), "aggregate event_count accepted an undeclared grouping dimension");
+      check(!definitionValidator({ ...skanCount, grouping_dimensions: ["metric_date", "apple_conversion_bucket"] }), "SKAN count accepted a conversion bucket");
+      check(!definitionValidator({ ...distribution, grouping_dimensions: ["metric_date"] }), "SKAN distribution accepted a missing conversion bucket");
+      check(!definitionValidator({ ...distribution, event_names: ["adattributionkit_postback"] }), "SKAN distribution accepted an AAK event");
+
+      const metricRunValidator = validatorFor(outputSchemaIds.metric_runs);
+      const skanCountRun = baseline.metric_evaluations.length > 0
+        ? fixture("44-apple-aggregate-metrics").output.metric_runs.find((run: Any) => run.metric_name === "skan_attributed_installs")
+        : undefined;
+      const distributionRun = fixture("44-apple-aggregate-metrics").output.metric_runs.find(
+        (run: Any) => run.metric_name === "skan_conversion_value_distribution",
+      );
+      check(metricRunValidator(skanCountRun) && metricRunValidator(distributionRun), "Apple aggregate metric run baseline invalid");
+
+      const countWithStatus = structuredClone(skanCountRun);
+      countWithStatus.grouping.dimensions.attribution_status = "non_organic";
+      check(!metricRunValidator(countWithStatus), "aggregate count run accepted attribution_status");
+
+      const countWithBucket = structuredClone(skanCountRun);
+      countWithBucket.grouping.dimensions.apple_conversion_bucket = "fine:21";
+      check(!metricRunValidator(countWithBucket), "aggregate count run accepted a conversion bucket");
+
+      const distributionWithoutBucket = structuredClone(distributionRun);
+      delete distributionWithoutBucket.grouping.dimensions.apple_conversion_bucket;
+      check(!metricRunValidator(distributionWithoutBucket), "distribution run accepted a missing conversion bucket");
+
+      const distributionOutsideUtc = structuredClone(distributionRun);
+      distributionOutsideUtc.aggregation_time_zone = "Asia/Tokyo";
+      check(!metricRunValidator(distributionOutsideUtc), "aggregate metric run accepted non-UTC aggregation");
+
+      const missingBucket = structuredClone(baseline);
+      delete missingBucket.metric_evaluations.find((evaluation: Any) =>
+        evaluation.metric_run_id_prefix === "run-44-skan-fine-21").grouping.apple_conversion_bucket;
+      check(!capture(() => evaluate(missingBucket)).ok, "TypeScript SKAN distribution accepted a missing bucket");
+      check(!capture(() => pythonOutputs([missingBucket])).ok, "Python SKAN distribution accepted a missing bucket");
+
+      const signatureInvalid = structuredClone(baseline);
+      signatureInvalid.records.find((record: Any) => record.record_id === "skan-fine-44").payload.signature_verified = false;
+      const signatureOutput = evaluate(signatureInvalid);
+      check(signatureOutput.metric_runs.find((run: Any) => run.metric_name === "skan_attributed_installs")?.value_unscaled === "1", "invalid signature contributed to SKAN count");
+
+      for (const [label, mutate] of [
+        ["losing postback", (record: Any) => { record.payload.did_win = false; }],
+        ["missing source identifier", (record: Any) => { delete record.payload.source_identifier; }],
+        ["missing conversion value", (record: Any) => { delete record.payload.conversion_value; }],
+      ] as const) {
+        const disqualified = structuredClone(baseline);
+        mutate(disqualified.records.find((record: Any) => record.record_id === "skan-fine-44"));
+        const output = evaluate(disqualified);
+        check(
+          output.metric_runs.find((run: Any) => run.metric_name === "skan_attributed_installs")?.value_unscaled === "1",
+          `${label} contributed to SKAN count`,
+        );
+      }
+
+      const receiptAuthority = structuredClone(baseline);
+      receiptAuthority.records.find((record: Any) => record.record_id === "skan-fine-44").occurred_at = "2026-08-19T01:00:00.000Z";
+      const receiptOutput = evaluate(receiptAuthority);
+      check(receiptOutput.metric_runs.find((run: Any) => run.metric_name === "skan_attributed_installs")?.value_unscaled === "2", "occurred_at changed receipt-date aggregate count");
     });
     it("enforces present and undefined metric value shapes", () => {
       const validator = validatorFor(outputSchemaIds.metric_runs);

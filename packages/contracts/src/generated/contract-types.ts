@@ -174,12 +174,18 @@ export type OpenMMPMetricDefinitionV03 = {
   /**
    * @minItems 1
    */
-  event_names?: string[];
+  event_names?: ("click" | "install" | "skan_postback" | "adattributionkit_postback")[];
   /**
    * @minItems 1
    */
   grouping_dimensions?: (
-    "campaign_id" | "network" | "country" | "cohort_date" | "metric_date" | "attribution_status"
+    | "campaign_id"
+    | "network"
+    | "country"
+    | "cohort_date"
+    | "metric_date"
+    | "attribution_status"
+    | "apple_conversion_bucket"
   )[];
   rule_bundle_id: string;
   rule_bundle_version: string;
@@ -226,6 +232,7 @@ export type OpenMMPMetricRunV03 = {
       cohort_date?: string;
       metric_date?: string;
       attribution_status?: "organic" | "non_organic" | "unattributed";
+      apple_conversion_bucket?: string;
     };
     dimension_digest: string;
   };

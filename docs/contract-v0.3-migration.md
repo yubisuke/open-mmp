@@ -150,6 +150,34 @@ Fixture 43 adds one synthetic input plus the following 13 human-reviewed golden 
 | `43-m4-ios-contract-handoffs/expected_rejections.json` | Empty; every synthetic record conforms. |
 | `43-m4-ios-contract-handoffs/expected_reconciliation.json` | Empty; no external import row exists. |
 
+## v0.3.3 patch ledger (R-27)
+
+The active package advances from `0.3.2` to `0.3.3`. Schema `$id` values, registry filenames, and event `contract_version` / `schema_version` constants retain the `v0.3` identity. All 559 pre-existing golden files remain byte-for-byte unchanged.
+
+| Surface | v0.3.3 change | Compatibility |
+| --- | --- | --- |
+| Metric definition | Extends `event_count.event_names` with `skan_postback` and `adattributionkit_postback`; binds the three new aggregate metric names to their event, UTC receipt date, and closed grouping shape | Additive definitions only; existing click/install definitions retain their `occurred_at` semantics. |
+| Metric definition, metric run, fixture evaluation | Adds optional `apple_conversion_bucket=fine:0..63 | coarse:low | coarse:medium | coarse:high` | Additive grouping field required only by `skan_conversion_value_distribution`; it is forbidden for deterministic and aggregate-count definitions. |
+| Reference evaluators | Counts only accepted, deduplicated postbacks whose aggregate attribution is `non_organic`; uses server `received_at` as `metric_date` | New metrics only; existing evaluator outputs are unchanged. |
+
+Fixture 44 adds one synthetic input plus the following 13 human-reviewed golden artifacts. It changes no existing golden:
+
+| Golden artifact | Derivation |
+| --- | --- |
+| `44-apple-aggregate-metrics/expected_raw_records.json` | Three accepted postbacks with independently checked RFC 8785 payload digests. |
+| `44-apple-aggregate-metrics/expected_deliveries.json` | Three unique, on-time protected deliveries. |
+| `44-apple-aggregate-metrics/expected_logical_events.json` | Two SKAN events and one AAK event, each retaining aggregate-event separation. |
+| `44-apple-aggregate-metrics/expected_corrections.json` | Empty; no correction input exists. |
+| `44-apple-aggregate-metrics/expected_privacy_requests.json` | Empty; no privacy request exists. |
+| `44-apple-aggregate-metrics/expected_privacy_tombstones.json` | Empty; no lifecycle transition exists. |
+| `44-apple-aggregate-metrics/expected_attributions.json` | Three verified, winning, source-bearing aggregate results with conversion evidence. |
+| `44-apple-aggregate-metrics/expected_cost_records.json` | Empty; aggregate postback counts do not use advertiser cost. |
+| `44-apple-aggregate-metrics/expected_metric_definitions.json` | Three unchanged base definitions plus the three v0.3.3 aggregate definitions. |
+| `44-apple-aggregate-metrics/expected_metric_runs.json` | SKAN count `2`, AAK count `1`, fine-21 count `1`, and coarse-low count `1`; grouping and input-snapshot digests are independently checked from RFC 8785 inputs. |
+| `44-apple-aggregate-metrics/expected_fraud_decisions.json` | Empty; no public fraud category applies. |
+| `44-apple-aggregate-metrics/expected_rejections.json` | Empty; all three synthetic postbacks conform. |
+| `44-apple-aggregate-metrics/expected_reconciliation.json` | Empty; no external import row exists. |
+
 ## Inventory reconciliation
 
 The final migration must reconcile this ledger against:
@@ -159,7 +187,7 @@ git diff --name-status --find-renames contract-v0.2.1..HEAD -- fixtures/
 git diff --stat contract-v0.2.1..HEAD -- fixtures/
 ```
 
-The expected new-side inventory is 43 `input.json` files, `43 * 13 = 559` golden files, and one README. The first 38 fixture directories correspond to the v0.2.1 set; fixtures 39-41 add the v0.3 minor-line inputs and 39 goldens, fixture 42 adds the v0.3.1 patch input and 13 goldens, and fixture 43 adds the v0.3.2 M4 handoff input and 13 goldens. Git rename detection may pair identical metric-definition files across fixture numbers, so reconciliation uses the destination inventory plus the semantic ledger rather than rename similarity alone.
+The expected new-side inventory is 44 `input.json` files, `44 * 13 = 572` golden files, and one README. The first 38 fixture directories correspond to the v0.2.1 set; fixtures 39-41 add the v0.3 minor-line inputs and 39 goldens, fixture 42 adds the v0.3.1 patch input and 13 goldens, fixture 43 adds the v0.3.2 M4 handoff input and 13 goldens, and fixture 44 adds the v0.3.3 aggregate-metric input and 13 goldens. Git rename detection may pair identical metric-definition files across fixture numbers, so reconciliation uses the destination inventory plus the semantic ledger rather than rename similarity alone.
 
 ## Consumer migration
 

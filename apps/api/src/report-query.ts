@@ -10,6 +10,7 @@ export const groupingDimensionAllowlist: Readonly<Record<GroupingDimension, true
   cohort_date: true,
   metric_date: true,
   attribution_status: true,
+  apple_conversion_bucket: true,
 };
 
 export type MetricCursor = {
@@ -122,6 +123,8 @@ function validateGrouping(dimension: GroupingDimension, value: string): void {
       ? canonicalDate(value)
       : dimension === "attribution_status"
         ? new Set(["organic", "non_organic", "unattributed"]).has(value)
+        : dimension === "apple_conversion_bucket"
+          ? /^(fine:([0-9]|[1-5][0-9]|6[0-3])|coarse:(low|medium|high))$/.test(value)
         : identifierPattern.test(value);
   if (!valid) throw new ReportQueryError("grouping_value_invalid");
 }
