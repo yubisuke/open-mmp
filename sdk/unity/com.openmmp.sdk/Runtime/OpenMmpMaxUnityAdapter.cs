@@ -23,6 +23,17 @@ namespace OpenMmp.Unity
 
         private static void OnAdRevenuePaid(string adUnitId, MaxSdk.AdInfo adInfo)
         {
+#if UNITY_IOS && !UNITY_EDITOR
+            OpenMmpiOSPlatform.TrackMaxRevenue(
+                adInfo.Revenue,
+                adInfo.RevenuePrecision,
+                adInfo.NetworkName,
+                adInfo.AdUnitIdentifier,
+                "unknown",
+                adInfo.Placement,
+                adInfo.NetworkPlacement,
+                _ => { });
+#elif UNITY_ANDROID && !UNITY_EDITOR
             using (var bridge = new AndroidJavaClass("dev.openmmp.unity.OpenMmpUnityBridge"))
             {
                 bridge.CallStatic<bool>(
@@ -34,6 +45,7 @@ namespace OpenMmp.Unity
                     adInfo.Placement,
                     adInfo.NetworkPlacement);
             }
+#endif
         }
     }
 }

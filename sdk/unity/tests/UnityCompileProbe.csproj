@@ -8,5 +8,6 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="..\com.openmmp.sdk\Runtime\*.cs" Link="Runtime\%(Filename)%(Extension)" />
+    <Compile Include="..\com.openmmp.sdk\Editor\OpenMmpIOSPostprocessor.cs" Link="Editor\OpenMmpIOSPostprocessor.cs" />
   </ItemGroup>
 </Project>

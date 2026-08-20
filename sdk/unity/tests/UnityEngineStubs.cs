@@ -1,5 +1,14 @@
 using System;
 
+namespace AOT
+{
+    [AttributeUsage(AttributeTargets.Method)]
+    public sealed class MonoPInvokeCallbackAttribute : Attribute
+    {
+        public MonoPInvokeCallbackAttribute(Type delegateType) { }
+    }
+}
+
 namespace UnityEngine
 {
     public class AndroidJavaObject : IDisposable

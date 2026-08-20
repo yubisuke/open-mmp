@@ -3,11 +3,8 @@ package dev.openmmp.sdk
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
-import java.security.MessageDigest
 import java.util.Base64
 import java.util.UUID
-import javax.crypto.Mac
-import javax.crypto.spec.SecretKeySpec
 
 class HmacHttpTransport(private val configuration: OpenMmpConfiguration) : OpenMmpTransport {
   override fun enroll(installationId: String): InstallationCredential {
@@ -27,11 +24,13 @@ class HmacHttpTransport(private val configuration: OpenMmpConfiguration) : OpenM
     val bytes = body.toByteArray(Charsets.UTF_8)
     val timestamp = System.currentTimeMillis().toString()
     val nonce = Base64.getUrlEncoder().withoutPadding().encodeToString(ByteArray(18).also { java.security.SecureRandom().nextBytes(it) })
-    val bodyDigest = sha256(bytes)
     val installationKeyId = credential?.keyId ?: "-"
-    val signing = listOf("open-mmp-sdk-v1", "POST", path, configuration.sdkKeyId, installationKeyId, timestamp, nonce, bodyDigest).joinToString("\n")
+    val signing = SdkRequestSigner.canonical(
+      "POST", path, configuration.sdkKeyId, installationKeyId.takeUnless { it == "-" },
+      timestamp.toLong(), nonce, bytes,
+    )
     val secret = credential?.secret ?: configuration.sdkSecret
-    val signature = hmac(secret, signing)
+    val signature = SdkRequestSigner.sign(secret, signing)
     val connection = URL(configuration.endpoint.trimEnd('/') + path).openConnection() as HttpURLConnection
     connection.requestMethod = "POST"
     connection.doOutput = true
@@ -49,11 +48,5 @@ class HmacHttpTransport(private val configuration: OpenMmpConfiguration) : OpenM
     return Response(status, stream?.bufferedReader()?.use { it.readText() }.orEmpty())
   }
 
-  private fun sha256(value: ByteArray): String = MessageDigest.getInstance("SHA-256").digest(value).joinToString("") { "%02x".format(it) }
-  private fun hmac(secret: String, value: String): String {
-    val mac = Mac.getInstance("HmacSHA256")
-    mac.init(SecretKeySpec(secret.toByteArray(Charsets.UTF_8), "HmacSHA256"))
-    return mac.doFinal(value.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
-  }
   private data class Response(val status: Int, val body: String)
 }
