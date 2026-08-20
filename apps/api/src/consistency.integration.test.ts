@@ -19,7 +19,7 @@ type ConsistencyRow = {
 };
 
 const watermark = "2026-08-21T00:00:00.000Z";
-const identity = { keyId: "key:synthetic-consistency", tenantId: "tenant-a", appId: "app-a" } as const;
+const identity = { keyId: "key:synthetic-consistency", tenantId: "tenant-a", appId: "app-a", role: "admin" } as const;
 
 function fixture(): Any {
   const input = JSON.parse(readFileSync(

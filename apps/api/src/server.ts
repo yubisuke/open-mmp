@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { createAppPool, createReaderPool, EncryptedFilePayloadStore, EnvironmentSecretStore } from "@open-mmp/runtime";
 import { assertSafeMaxTemplate, receiveMax, type MaxReceiverConfig } from "./max-receiver.js";
-import { ensureAdminKeys } from "./admin-auth.js";
+import { ensureAdminKeys, parseAdminRole } from "./admin-auth.js";
 import { HourlyLedgerQuota } from "./apple-postback-receiver.js";
 import { createRequestHandler } from "./router.js";
 import { KeyedTokenBucket, TokenBucket } from "./rate-limit.js";
@@ -42,7 +42,15 @@ assertSafeMaxTemplate(maxTemplate);
 await ensureAdminKeys(
   pool,
   { tenantId: maxConfig.tenantId, appId: maxConfig.appId },
-  [adminKey, secrets.read("OPENMMP_ADMIN_KEY_PREVIOUS")].filter((value): value is string => !!value),
+  [
+    { key: adminKey, role: parseAdminRole(process.env.OPENMMP_ADMIN_ROLE) },
+    ...(secrets.read("OPENMMP_ADMIN_KEY_PREVIOUS")
+      ? [{
+          key: secrets.read("OPENMMP_ADMIN_KEY_PREVIOUS")!,
+          role: parseAdminRole(process.env.OPENMMP_ADMIN_KEY_PREVIOUS_ROLE),
+        }]
+      : []),
+  ],
 );
 const sdkKeyId = process.env.OPENMMP_SDK_KEY_ID ?? "sdk-key-current";
 const previousSdkKey = secrets.read("OPENMMP_SDK_KEY_PREVIOUS");

@@ -1,6 +1,7 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import type { Pool } from "pg";
+import type { Pool, PoolClient } from "pg";
 import { uuidV7, withTenant } from "@open-mmp/runtime";
+import type { AdminRole } from "./admin-auth.js";
 
 const csrfPurpose = "open-mmp-dashboard-csrf-v1";
 const tokenPattern = /^[A-Za-z0-9_-]{43}$/;
@@ -9,6 +10,7 @@ export type DashboardSession = {
   readonly sessionId: string;
   readonly tenantId: string;
   readonly adminKeyId: string;
+  readonly role: AdminRole;
   readonly token: string;
   readonly expiresAt: string;
 };
@@ -71,7 +73,7 @@ export async function issueDashboardSession(
   ttlSeconds: number,
   now = new Date(),
   token = randomBytes(32).toString("base64url"),
-): Promise<DashboardSession> {
+): Promise<Omit<DashboardSession, "role">> {
   if (!Number.isInteger(ttlSeconds) || ttlSeconds < 60) throw new Error("dashboard session TTL is invalid");
   if (!tokenPattern.test(token)) throw new Error("dashboard session token is invalid");
   const sessionId = `session:${uuidV7(now.getTime())}`;
@@ -98,10 +100,14 @@ export async function verifyDashboardSession(
     session_id: string;
     admin_key_id: string;
     expires_at: Date | string;
+    role: AdminRole;
   }>(
-    `SELECT session_id, admin_key_id, expires_at
-       FROM ephemeral.dashboard_sessions
-      WHERE tenant_id=$1 AND token_digest=$2 AND expires_at > $3::timestamptz`,
+    `SELECT session.session_id, session.admin_key_id, session.expires_at, key.role
+       FROM ephemeral.dashboard_sessions AS session
+       JOIN control.admin_key_roles_current AS key
+         ON key.tenant_id=session.tenant_id AND key.key_id=session.admin_key_id
+      WHERE session.tenant_id=$1 AND session.token_digest=$2
+        AND session.expires_at > $3::timestamptz AND key.status='active'`,
     [tenantId, digest(token), now.toISOString()],
   ));
   const row = result.rows[0];
@@ -110,6 +116,7 @@ export async function verifyDashboardSession(
     sessionId: row.session_id,
     tenantId,
     adminKeyId: row.admin_key_id,
+    role: row.role,
     token,
     expiresAt: new Date(row.expires_at).toISOString(),
   };
@@ -138,19 +145,21 @@ export async function sweepExpiredDashboardSessions(
   return result.rowCount ?? 0;
 }
 
-export async function recordDashboardAudit(
-  pool: Pool,
-  input: {
+export type DashboardAuditInput = {
     readonly tenantId: string;
     readonly appId?: string;
     readonly actorRef: string;
     readonly action: string;
-    readonly targetScope: "tenant" | "app" | "session" | "tracking_link" | "sdk_key";
+    readonly targetScope: "tenant" | "app" | "session" | "tracking_link" | "sdk_key" | "rule_bundle";
     readonly targetRef: string;
     readonly outcome: "succeeded" | "failed";
     readonly reasonCode?: string;
     readonly now?: Date;
-  },
+};
+
+export async function recordDashboardAuditWithClient(
+  client: PoolClient,
+  input: DashboardAuditInput,
 ): Promise<void> {
   const now = input.now ?? new Date();
   const requestDigest = digest([
@@ -160,7 +169,7 @@ export async function recordDashboardAudit(
     input.outcome,
     input.reasonCode ?? "",
   ].join("\u0000"));
-  await withTenant(pool, input.tenantId, (client) => client.query(
+  await client.query(
     `INSERT INTO ledger.audit_logs (
       audit_log_id, tenant_id, app_id, occurred_at, actor_type, actor_ref,
       action, target_scope, target_ref, policy_version, request_digest,
@@ -171,5 +180,12 @@ export async function recordDashboardAudit(
       input.actorRef, input.action, input.targetScope, input.targetRef,
       requestDigest, input.outcome, input.reasonCode ?? null,
     ],
-  ).then(() => undefined));
+  );
+}
+
+export async function recordDashboardAudit(
+  pool: Pool,
+  input: DashboardAuditInput,
+): Promise<void> {
+  await withTenant(pool, input.tenantId, (client) => recordDashboardAuditWithClient(client, input));
 }

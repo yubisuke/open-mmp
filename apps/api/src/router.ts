@@ -9,6 +9,7 @@ import {
 } from "./apple-postback-receiver.js";
 import { AppNotFoundError, listApps, registerApp, requireRegisteredApp } from "./apps-admin.js";
 import { verifyAdminKey, type AdminIdentity } from "./admin-auth.js";
+import { roleAllows } from "./authorization.js";
 import { dashboardCss } from "./dashboard/css.js";
 import { escapeHtml, renderDashboard } from "./dashboard/render.js";
 import { buildDashboardView } from "./dashboard/view.js";
@@ -26,6 +27,7 @@ import {
 import { parseMetricQuery, ReportQueryError } from "./report-query.js";
 import type { KeyedTokenBucket, TokenBucket } from "./rate-limit.js";
 import { matchRoute, type RouteDefinition } from "./routes.js";
+import { activateRuleBundle } from "./rule-bundles.js";
 import type { SdkRouteDependencies } from "./sdk-routes.js";
 import { handleDevicePrivacy, handleSdkBatch, handleSdkEnrollment } from "./sdk-routes.js";
 import {
@@ -167,7 +169,7 @@ function dashboardAppId(pathname: string): string | undefined {
 }
 
 function adminAppId(pathname: string): string | undefined {
-  const match = /^\/v1\/admin\/apps\/([^/]+)\/(?:apple-registration|conversion-schemas)$/.exec(pathname);
+  const match = /^\/v1\/admin\/apps\/([^/]+)\/(?:apple-registration|conversion-schemas|rule-bundles)$/.exec(pathname);
   if (!match) return undefined;
   try {
     return decodeURIComponent(match[1]);
@@ -272,6 +274,7 @@ export function createRequestHandler(dependencies: RequestHandlerDependencies): 
         const apps = await listApps(dependencies.readerPool, {
           keyId: session.adminKeyId,
           tenantId: session.tenantId,
+          role: session.role,
         });
         dashboardHtml(response, 200, renderDashboard(buildDashboardView({
           apps,
@@ -371,7 +374,11 @@ export function createRequestHandler(dependencies: RequestHandlerDependencies): 
           dashboardHtml(response, 401, loginPage("Authentication required."));
           return;
         }
-        const sessionIdentity: AdminIdentity = { keyId: session.adminKeyId, tenantId: session.tenantId };
+        if (!roleAllows(session.role, route.capability)) {
+          dashboardHtml(response, 403, "<!doctype html><html lang=\"en\"><body><h1>Forbidden</h1></body></html>");
+          return;
+        }
+        const sessionIdentity: AdminIdentity = { keyId: session.adminKeyId, tenantId: session.tenantId, role: session.role };
         if (route.handler === "dashboard_apps_create") {
           const body = await formBody(request);
           const appId = body.get("app_id") ?? "";
@@ -499,6 +506,10 @@ export function createRequestHandler(dependencies: RequestHandlerDependencies): 
           json(response, 401, { error: "unauthorized" });
           return;
         }
+        if (!roleAllows(identity.role, route.capability)) {
+          json(response, 403, { error: "forbidden" });
+          return;
+        }
         if (route.handler === "admin_apps_list") {
           json(response, 200, { data: await listApps(pool, identity) });
           return;
@@ -525,7 +536,7 @@ export function createRequestHandler(dependencies: RequestHandlerDependencies): 
           }
           return;
         }
-        if (route.handler === "admin_apple_registration" || route.handler === "admin_conversion_schema") {
+        if (route.handler === "admin_apple_registration" || route.handler === "admin_conversion_schema" || route.handler === "admin_rule_bundle") {
           try {
             const appIdentity = await requireRegisteredApp(dependencies.pool, identity, adminAppId(target.pathname) ?? "");
             const body = await jsonBody(request);
@@ -536,19 +547,23 @@ export function createRequestHandler(dependencies: RequestHandlerDependencies): 
                   appleAppAdamId: body.apple_app_adam_id,
                   appleBundleId: body.apple_bundle_id,
                 })
-              : await registerConversionSchema({
+              : route.handler === "admin_conversion_schema" ? await registerConversionSchema({
                   pool: dependencies.pool,
                   identity: appIdentity,
                   schemaVersion: body.schema_version,
                   definition: body.definition,
+                }) : await activateRuleBundle({
+                  pool: dependencies.pool,
+                  identity: appIdentity,
+                  body,
                 });
             json(response, 201, result);
           } catch (error) {
             if (error instanceof AppNotFoundError) {
               json(response, 404, { error: "app_not_found" });
             } else {
-              const message = error instanceof Error ? error.message : "apple_configuration_invalid";
-              const status = message.endsWith("_already_registered") ? 409 : 400;
+              const message = error instanceof Error ? error.message : "admin_configuration_invalid";
+              const status = message.endsWith("_already_registered") || message === "rule_bundle_predecessor_mismatch" ? 409 : 400;
               json(response, status, { error: message });
             }
           }

@@ -87,6 +87,7 @@ const appEntries: Record<string, string> = {
   OPENMMP_APP_DATABASE_URL: appDatabaseUrl,
   OPENMMP_READER_DATABASE_URL: readerDatabaseUrl,
   OPENMMP_ADMIN_KEY: adminKey,
+  OPENMMP_ADMIN_ROLE: "admin",
   OPENMMP_MAX_PATH_SECRET: maxPathSecret,
   OPENMMP_MAX_EVENT_KEY: maxEventKey,
   OPENMMP_PAYLOAD_MASTER_KEY: payloadMasterKey,

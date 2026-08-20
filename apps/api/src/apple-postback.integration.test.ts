@@ -201,7 +201,7 @@ describe("M4 Apple aggregate postback receiver", () => {
     await assert.rejects(
       () => registerAppleApp({
         pool,
-        identity: { keyId: "synthetic-admin-b", tenantId: tenantB, appId: appB },
+        identity: { keyId: "synthetic-admin-b", tenantId: tenantB, appId: appB, role: "admin" },
         appleAppAdamId: adamA,
         now: fixedNow,
       }),
