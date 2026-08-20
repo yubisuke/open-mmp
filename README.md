@@ -91,6 +91,7 @@ Implemented runtime code lives in `apps/api`, `apps/redirector`, `apps/worker`, 
 - [M4 device and Apple-provider validation checklist](docs/validation/m4-device-checklist.md)
 - [M5 integrity-service checklist](docs/validation/m5-integrity-checklist.md)
 - [M5 production-operator checklist](docs/validation/m5-operator-checklist.md)
+- [M5 synthetic load record](docs/validation/m5-load-results.md)
 - [Backup and restore runbook](docs/operations/backup-restore.md)
 - [Release runbook](docs/operations/release.md)
 - [Current milestone status](docs/STATUS.md)

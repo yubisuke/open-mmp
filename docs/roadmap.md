@@ -135,7 +135,7 @@ reservation. It does not claim a production deployment or live integrity
 integration.
 
 - Tenant isolation and minimum `admin | operator | read_only` RBAC
-- Existing rate controls plus an informational 100,000-event and 10,000-postback synthetic load record
+- Existing rate controls plus an informational [100,000-event and 10,000-postback synthetic load record](validation/m5-load-results.md)
 - PostgreSQL custom-format backup/restore procedure and completed-privacy-request reapplication
 - Authenticated dependency-free operational metrics; full OpenTelemetry is deferred until operational cardinality or tracing needs justify it
 - Play Integrity and App Attest evidence fields and operator procedures only; no live project configuration

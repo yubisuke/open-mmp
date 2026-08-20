@@ -21,7 +21,7 @@ packages, or npm packages to a public registry.
    the iOS SDK workflow. Confirm every expected workspace and SDK artifact is
    present and the API runtime component baseline is unchanged unless an
    approved dependency change explains it.
-7. Review the informational synthetic load artifact. Do not convert its p95
+7. Review the [informational synthetic load record](../validation/m5-load-results.md). Do not convert its p95
    record into a production service-level objective without a representative
    environment and operator approval.
 8. Confirm all GitHub Actions are green at the exact release commit. Action
