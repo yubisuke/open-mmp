@@ -327,7 +327,7 @@ Environment setup is `npm ci` and `python -m pip install --require-hashes --requ
 
 ### v0.3.4 patch release
 
-- R-27 adds optional install provenance for the bundled iOS conversion schema as an all-or-nothing `conversion_schema_version` / `conversion_schema_sha256` pair.
+- M4-D-20 makes no typed install-schema change. The bundled iOS conversion schema version and SHA-256 digest remain deployment-private evidence in the existing `install.extensions` surface.
 - The closed custom-event vocabulary admits the exact reserved `openmmp.conversion_value_updated` key. The iOS SDK emits it only when conversion-value logging is explicitly enabled; it does not alter attribution or metric semantics.
 - Fixture 45 supplies the two synthetic events and thirteen independently reviewed golden classes. Schema `$id` values and event-version constants remain on the v0.3 line, and all earlier goldens remain unchanged.
 

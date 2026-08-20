@@ -27,8 +27,6 @@
     "app_version": { "type": "string", "minLength": 1, "maxLength": 128 },
     "os_version": { "type": "string", "minLength": 1, "maxLength": 128 },
     "sdk_version": { "type": "string", "minLength": 1, "maxLength": 128 },
-    "conversion_schema_version": { "type": "string", "minLength": 1, "maxLength": 128 },
-    "conversion_schema_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
     "ad_tracking_limited": { "type": "boolean" },
     "attribution_confirmed_at": { "$ref": "../common.schema.json#/$defs/dateTime" },
     "meta_referrer_status": { "enum": ["provider_unavailable", "app_version_unsupported", "no_campaign_data", "decrypt_failed", "auth_failed", "decrypted"] },
@@ -89,13 +87,6 @@
     "extensions": { "type": "object", "propertyNames": { "not": { "pattern": "^(import($|_)|imported($|_)|provider($|_))" } }, "additionalProperties": true }
   },
   "allOf": [
-    {
-      "if": { "properties": { "conversion_schema_version": {} }, "required": ["conversion_schema_version"] },
-      "then": { "properties": { "conversion_schema_sha256": {} }, "required": ["conversion_schema_sha256"] },
-      "else": {
-        "not": { "properties": { "conversion_schema_sha256": {} }, "required": ["conversion_schema_sha256"] }
-      }
-    },
     {
       "if": { "properties": { "install_type": { "enum": ["reinstall", "redownload"] } }, "required": ["install_type"] },
       "then": {

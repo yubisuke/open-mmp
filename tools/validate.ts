@@ -873,8 +873,8 @@ const scenarios: Array<[string, () => void]> = [
     const value = fixture("45-ios-conversion-schema");
     const install = value.input.records.find((record: Any) => record.event_name === "install").payload;
     const update = value.input.records.find((record: Any) => record.event_name === "custom_event").payload;
-    check(install.conversion_schema_version === "openmmp-default-v1" && /^[0-9a-f]{64}$/.test(install.conversion_schema_sha256), "scenario 45 conversion schema provenance");
-    check(update.event_key === "openmmp.conversion_value_updated" && update.attributes.schema_version === install.conversion_schema_version, "scenario 45 conversion update event");
+    check(install.extensions.conversion_schema_version === "openmmp-default-v1" && /^[0-9a-f]{64}$/.test(install.extensions.conversion_schema_sha256), "scenario 45 conversion schema provenance");
+    check(update.event_key === "openmmp.conversion_value_updated" && update.attributes.schema_version === install.extensions.conversion_schema_version, "scenario 45 conversion update event");
     check(value.output.attributions[0].reason_code === "platform_referrer_not_available" && value.output.metric_runs.length === 0, "scenario 45 attribution and metric boundary");
   }],
 ];

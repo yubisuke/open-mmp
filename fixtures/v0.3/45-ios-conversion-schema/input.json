@@ -56,8 +56,10 @@
         "install_origin": "ios_first_launch",
         "referrer_status": "not_applicable",
         "sdk_version": "0.1.0",
-        "conversion_schema_version": "openmmp-default-v1",
-        "conversion_schema_sha256": "905cc3a69e7b7e0a2da55439444aed7e67087c1e96c5e958c5650f04606197b5"
+        "extensions": {
+          "conversion_schema_version": "openmmp-default-v1",
+          "conversion_schema_sha256": "905cc3a69e7b7e0a2da55439444aed7e67087c1e96c5e958c5650f04606197b5"
+        }
       }
     },
     {

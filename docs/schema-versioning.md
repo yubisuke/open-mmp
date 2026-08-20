@@ -41,7 +41,7 @@ R-27 also authorizes the additive M4 handoff in `0.3.2`. The install event adds 
 
 The same R-27 patch authority covers `0.3.3`, which adds only new Apple aggregate metric definitions and an optional `apple_conversion_bucket` grouping dimension. Existing event-count definitions retain their click/install and `occurred_at` semantics. The new SKAN/AdAttributionKit definitions use UTC server `received_at`, the new bucket is required only for the SKAN distribution definition, and synthetic fixture 44 exercises every added value. Existing schema `$id` values remain on the `v0.3` minor line and no earlier golden changes.
 
-R-27 also covers the additive iOS conversion-schema handoff in `0.3.4`. Install events may carry an optional conversion-schema version and SHA-256 digest as an all-or-nothing pair, and the closed custom-event vocabulary admits the reserved `openmmp.conversion_value_updated` lifecycle event. Synthetic fixture 45 exercises both additions. Existing schema `$id` values remain on the `v0.3` minor line, existing event-version constants retain `0.3.0`, and no earlier golden changes.
+R-27 also covers the additive iOS conversion-schema handoff in `0.3.4`. The closed custom-event vocabulary admits the reserved `openmmp.conversion_value_updated` lifecycle event. M4-D-20 deliberately makes no typed install-schema change: synthetic fixture 45 carries the deployment-private conversion-schema version and SHA-256 digest in the existing `install.extensions` evidence surface. Existing schema `$id` values remain on the `v0.3` minor line, existing event-version constants retain `0.3.0`, and no earlier golden changes.
 
 ## Compatibility registry
 

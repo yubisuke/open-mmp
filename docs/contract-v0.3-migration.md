@@ -184,14 +184,14 @@ The active package advances from `0.3.3` to `0.3.4`. Schema `$id` values, regist
 
 | Surface | v0.3.4 change | Compatibility |
 | --- | --- | --- |
-| Install event | Adds optional `conversion_schema_version` and `conversion_schema_sha256`, structurally requiring both or neither | Additive evidence for iOS conversion-policy provenance; existing installs omit both and retain their meaning. |
+| Install event | Makes no schema change; fixture 45 uses the existing `extensions` evidence surface for the deployment-private conversion-schema version and SHA-256 digest | M4-D-20 keeps deployment-private policy metadata out of the typed public event vocabulary. |
 | Custom event | Admits the exact reserved key `openmmp.conversion_value_updated` in addition to the existing public-key pattern | Additive lifecycle event used only when conversion-value logging is explicitly enabled; existing custom events retain their meaning. |
 
 Fixture 45 adds one synthetic input plus the following 13 human-reviewed golden artifacts. It changes no existing golden:
 
 | Golden artifact | Derivation |
 | --- | --- |
-| `45-ios-conversion-schema/expected_raw_records.json` | One iOS first-launch install and one reserved conversion-update event with independently checked RFC 8785 payload digests. |
+| `45-ios-conversion-schema/expected_raw_records.json` | One iOS first-launch install carrying conversion-policy evidence in `extensions` and one reserved conversion-update event, each with an independently checked RFC 8785 payload digest. |
 | `45-ios-conversion-schema/expected_deliveries.json` | Two unique, on-time protected deliveries. |
 | `45-ios-conversion-schema/expected_logical_events.json` | One install and one custom event, each retaining SDK-iOS producer provenance. |
 | `45-ios-conversion-schema/expected_corrections.json` | Empty; no correction input exists. |
