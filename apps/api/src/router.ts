@@ -14,6 +14,8 @@ import { dashboardCss } from "./dashboard/css.js";
 import { escapeHtml, renderDashboard } from "./dashboard/render.js";
 import { buildDashboardView } from "./dashboard/view.js";
 import { receiveMax, type MaxReceiverConfig } from "./max-receiver.js";
+import { OperationalMetrics, renderOperationalMetrics } from "./operational-metrics.js";
+import { boundedMethod, writeOperationalLog, type OperationalLogWriter } from "./observability.js";
 import { executePrivacyRequest, type PrivacyRequestBody } from "./privacy.js";
 import {
   differenceAudit,
@@ -75,6 +77,8 @@ export type RequestHandlerDependencies = {
   readonly reportMaximumRows?: number;
   readonly reportMaximumExportRows?: number;
   readonly applePostback?: ApplePostbackReceiverDependencies;
+  readonly operationalMetrics?: OperationalMetrics;
+  readonly operationalLogWriter?: OperationalLogWriter;
 };
 
 function loginPage(error?: string): string {
@@ -201,9 +205,13 @@ async function rejectDashboardCsrf(
 export function createRequestHandler(dependencies: RequestHandlerDependencies): RequestListener {
   assertDashboardBaseUrl(dependencies.dashboard.enabled, dependencies.dashboard.publicBaseUrl);
   return (request, response) => {
+    const startedAt = performance.now();
+    let routeLabel: RouteDefinition["handler"] | "unmatched" = "unmatched";
+    let internalError = false;
     void (async () => {
       const target = new URL(request.url ?? "/", "http://open-mmp.local");
       const route = matchRoute(request.method, target.pathname);
+      routeLabel = route?.handler ?? "unmatched";
       if (!route || (!dependencies.dashboard.enabled && route.handler.startsWith("dashboard_"))) {
         json(response, 404, { error: "not_found" });
         return;
@@ -510,6 +518,24 @@ export function createRequestHandler(dependencies: RequestHandlerDependencies): 
           json(response, 403, { error: "forbidden" });
           return;
         }
+        if (route.handler === "operational_metrics") {
+          if (!dependencies.operationalMetrics) {
+            json(response, 503, { error: "operational_metrics_unavailable" });
+            return;
+          }
+          const body = await renderOperationalMetrics(
+            dependencies.readerPool,
+            identity.tenantId,
+            dependencies.operationalMetrics,
+          );
+          response.writeHead(200, {
+            "content-type": "text/plain; version=0.0.4; charset=utf-8",
+            "cache-control": "no-store",
+            "x-content-type-options": "nosniff",
+          });
+          response.end(body);
+          return;
+        }
         if (route.handler === "admin_apps_list") {
           json(response, 200, { data: await listApps(pool, identity) });
           return;
@@ -668,10 +694,26 @@ export function createRequestHandler(dependencies: RequestHandlerDependencies): 
       }
 
       json(response, 404, { error: "not_found" });
-    })().catch((error) => {
-      console.error(`Request failed: ${error instanceof Error ? error.message : "unknown error"}`);
+    })().catch(() => {
+      internalError = true;
       if (!response.headersSent) json(response, 500, { error: "internal_error" });
       else response.end();
+    }).finally(() => {
+      const durationMs = Math.max(0, performance.now() - startedAt);
+      if (routeLabel !== "operational_metrics") {
+        dependencies.operationalMetrics?.observe(routeLabel, request.method, response.statusCode, durationMs);
+      }
+      if (dependencies.operationalLogWriter) {
+        writeOperationalLog({
+          event: "http_request",
+          component: "api",
+          route: routeLabel,
+          method: boundedMethod(request.method),
+          status: response.statusCode,
+          duration_ms: Number(durationMs.toFixed(3)),
+          ...(internalError ? { error_code: "internal_error" as const } : {}),
+        }, dependencies.operationalLogWriter);
+      }
     });
   };
 }

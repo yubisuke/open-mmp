@@ -5,6 +5,8 @@ import { ensureAdminKeys, parseAdminRole } from "./admin-auth.js";
 import { HourlyLedgerQuota } from "./apple-postback-receiver.js";
 import { createRequestHandler } from "./router.js";
 import { KeyedTokenBucket, TokenBucket } from "./rate-limit.js";
+import { OperationalMetrics } from "./operational-metrics.js";
+import { writeOperationalLog } from "./observability.js";
 import { ensureSdkKeys } from "./sdk-auth.js";
 
 const port = Number(process.env.OPENMMP_API_PORT ?? "8080");
@@ -58,6 +60,8 @@ await ensureSdkKeys(pool, payloadStore, { tenantId: maxConfig.tenantId, appId: m
   { keyId: sdkKeyId, secret: secrets.require("OPENMMP_SDK_KEY") },
   ...(previousSdkKey ? [{ keyId: process.env.OPENMMP_SDK_KEY_PREVIOUS_ID ?? "sdk-key-previous", secret: previousSdkKey }] : []),
 ]);
+const operationalMetrics = new OperationalMetrics();
+const operationalLogWriter = (line: string) => process.stdout.write(line);
 
 const server = createServer(createRequestHandler({
   pool,
@@ -106,6 +110,8 @@ const server = createServer(createRequestHandler({
       Number(process.env.OPENMMP_POSTBACK_INVALID_LEDGER_QUOTA_PER_HOUR ?? "100"),
     ),
   },
+  operationalMetrics,
+  operationalLogWriter,
   sdk: {
     pool,
     payloadStore,
@@ -138,7 +144,5 @@ const server = createServer(createRequestHandler({
 }));
 
 server.listen(port, "0.0.0.0", () => {
-  console.log(`Open MMP API listening on ${port}`);
-  console.log(`Open MMP dashboard URL: ${baseUrl}/dashboard`);
-  console.log("Open MMP runtime credentials loaded from encrypted configuration.");
+  writeOperationalLog({ event: "service_started", component: "api" }, operationalLogWriter);
 });

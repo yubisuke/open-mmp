@@ -41,4 +41,6 @@ const server = createServer(createRedirectorHandler({
   ),
 }));
 
-server.listen(port, "0.0.0.0", () => console.log(`Open MMP redirector listening on ${port}`));
+server.listen(port, "0.0.0.0", () => {
+  process.stdout.write('{"event":"service_started","component":"redirector"}\n');
+});
