@@ -70,7 +70,7 @@ Evidence gate: A dated owner decision identifies the selected path and the evide
 
 ## M2 Android, Unity, and redirector
 
-M2a server work is implemented and synthetically validated: the Node redirector, stored tracking links, HMAC SDK enrollment and ingestion, ephemeral replay state, encrypted durable batches, ordered worker drain, late-click supersession, and credential-bound on-device deletion are present. M2b remains open and owns the Kotlin SDK, Unity bridge, emulator workflow, Android artifact SBOM, and operator device checklist. M2 is not complete until those device deliverables and their synthetic gates exist; real-device and live-campaign evidence remains separately operator-verified.
+M2a and M2b are implemented and synthetically validated. The Node redirector, stored tracking links, HMAC SDK enrollment and ingestion, ephemeral replay state, encrypted durable batches, ordered worker drain, late-click supersession, credential-bound deletion, Kotlin SDK, Unity bridge, Android emulator workflow, Android SBOM, and operator checklist are present. Real-device, Play internal-track, live Meta/MAX, and Unity-export evidence remains explicitly operator-verified and outside the code gate.
 
 - Unity C# SDK and Android Kotlin bridge
 - Google Play Install Referrer client and deterministic first-party attribution
@@ -80,7 +80,7 @@ M2a server work is implemented and synthetically validated: the Node redirector,
 - Advertising-revenue callback, sample application, and device and Play internal-testing procedure
 - Complete Android SDK field inventory, Google Play Data safety mapping, consent-queue tests, and backup/restore exclusion for `installation_id`
 
-Evidence gate: A Google Play first launch retrieves synthetic click evidence through the portable runtime and produces one non-conflicting install record; device validation remains separately labeled until performed.
+Evidence gate: An API 36 emulator first launch reads synthetic referrer evidence, sends one signed non-conflicting install through a local ingestion shell, and proves committed queue survival across process death. The runtime integration gate separately validates durable ingestion and attribution. Real-device and campaign validation remains separately labeled until performed.
 
 ## M3 Metrics dashboard
 
