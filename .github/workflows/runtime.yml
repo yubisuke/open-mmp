@@ -72,7 +72,7 @@ jobs:
           export OPENMMP_MAX_TENANT_ID=tenant-a
           export OPENMMP_MAX_APP_ID=app-a
           docker compose up -d --wait
-          docker compose --profile seed run --rm seed
+          docker compose --env-file /dev/null --profile seed run --rm seed
           docker compose --env-file /dev/null exec -T api sh -c 'set -a && . /run/openmmp/app/runtime.env && set +a && OPENMMP_API_HOST_PORT=8080 node --import tsx tools/runtime-smoke.ts'
       - name: Generate workspace SBOMs
         run: npm run sbom
