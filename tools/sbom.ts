@@ -33,4 +33,20 @@ for (const workspace of workspaces) {
   const name = workspace.replace("@open-mmp/", "");
   JSON.parse(readFileSync(join(root, `${name}.cdx.json`), "utf8"));
 }
-console.log(`Generated ${workspaces.length} CycloneDX workspace SBOMs.`);
+const iosRef = "pkg:swift/dev.openmmp/OpenMmpIOS@0.1.0";
+const ios = {
+  bomFormat: "CycloneDX",
+  specVersion: "1.5",
+  serialNumber: "urn:uuid:5dcfd18e-448e-4cec-aed0-67308abf4b33",
+  version: 1,
+  metadata: {
+    component: {
+      type: "library", "bom-ref": iosRef, group: "dev.openmmp", name: "OpenMmpIOS", version: "0.1.0",
+    },
+  },
+  components: [],
+  dependencies: [{ ref: iosRef, dependsOn: [] }],
+};
+writeFileSync(join(root, "sdk-ios.cdx.json"), `${JSON.stringify(ios, null, 2)}\n`);
+JSON.parse(readFileSync(join(root, "sdk-ios.cdx.json"), "utf8"));
+console.log(`Generated ${workspaces.length} CycloneDX workspace SBOMs and the dependency-empty iOS SDK SBOM.`);

@@ -24,6 +24,7 @@
     "seed": "npm run seed --workspace @open-mmp/worker",
     "sbom": "node --import tsx tools/sbom.ts",
     "check:api-runtime-sbom": "node --import tsx tools/check-api-runtime-sbom.ts",
+    "check:sdk-ios": "node tools/check-ios-sdk.mjs --source-only",
     "check:threat-model": "node --import tsx tools/check-threat-model.ts",
     "test:db-invariants": "npm run test:db-invariants --workspace @open-mmp/runtime",
     "test:dashboard-parity": "node --env-file-if-exists=.env --import tsx --test apps/api/src/consistency.integration.test.ts",
