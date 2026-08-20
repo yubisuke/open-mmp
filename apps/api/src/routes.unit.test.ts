@@ -23,5 +23,9 @@ describe("declarative API route security", () => {
     assert.equal(matchRoute("GET", "/v1/reports/metrics")?.handler, "report_metrics");
     assert.equal(matchRoute("POST", "/v1/reports/metrics"), undefined);
     assert.equal(matchRoute("GET", "/dashboard/app.css")?.handler, "dashboard_css");
+    assert.equal(matchRoute("GET", "/v1/admin/tracking-links")?.handler, "admin_tracking_links_list");
+    assert.equal(matchRoute("POST", "/v1/admin/tracking-links")?.handler, "admin_tracking_links");
+    assert.equal(matchRoute("GET", "/dashboard/apps/app-a/tracking-links")?.handler, "dashboard_tracking_links_list");
+    assert.equal(matchRoute("POST", "/dashboard/apps/app-a/tracking-links")?.handler, "dashboard_tracking_links_create");
   });
 });

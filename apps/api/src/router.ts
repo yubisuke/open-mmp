@@ -35,7 +35,7 @@ import {
   verifyDashboardSession,
   type DashboardSession,
 } from "./session.js";
-import { createTrackingLink } from "./tracking-links.js";
+import { createTrackingLink, listTrackingLinks, type TrackingLinkRecord } from "./tracking-links.js";
 
 export const dashboardHeaders = {
   "content-security-policy": "default-src 'none'; style-src 'self'; img-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
@@ -74,6 +74,14 @@ function loginPage(error?: string): string {
 }
 
 const dashboardCssEtag = `"${createHash("sha256").update(dashboardCss).digest("hex")}"`;
+
+function measurementLink(baseUrl: string, slug: string): string {
+  return `${baseUrl.replace(/\/$/, "")}/r/${encodeURIComponent(slug)}`;
+}
+
+function listedTrackingLink(baseUrl: string, link: TrackingLinkRecord): TrackingLinkRecord & { readonly measurement_url: string } {
+  return { ...link, measurement_url: measurementLink(baseUrl, link.slug) };
+}
 
 async function rawBody(request: IncomingMessage, maximumBytes = 32 * 1024): Promise<Buffer> {
   const chunks: Buffer[] = [];
@@ -328,7 +336,7 @@ export function createRequestHandler(dependencies: RequestHandlerDependencies): 
         return;
       }
 
-      if (["dashboard_app", "dashboard_export", "dashboard_differences", "dashboard_tracking_links_create", "dashboard_apps_create"].includes(route.handler)) {
+      if (["dashboard_app", "dashboard_export", "dashboard_differences", "dashboard_tracking_links_list", "dashboard_tracking_links_create", "dashboard_apps_create"].includes(route.handler)) {
         const session = await dashboardSessionFor(dependencies, request);
         if (!session) {
           dashboardHtml(response, 401, loginPage("Authentication required."));
@@ -379,7 +387,7 @@ export function createRequestHandler(dependencies: RequestHandlerDependencies): 
                 allowedOrigins: dependencies.trackingDestinationAllowlist ?? [],
                 body: Object.fromEntries(body),
               });
-              const link = `${dependencies.redirectorBaseUrl.replace(/\/$/, "")}/${result.slug}`;
+              const link = measurementLink(dependencies.redirectorBaseUrl, result.slug);
               dashboardHtml(response, 201, `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Tracking link created</title><link rel="stylesheet" href="/dashboard/app.css"></head><body><main><h1>Tracking link created</h1><dl><dt>App</dt><dd>${escapeHtml(appIdentity.appId)}</dd><dt>Tracking link</dt><dd><code>${escapeHtml(link)}</code></dd><dt>Destination</dt><dd>${escapeHtml(result.destination_url)}</dd></dl><p><a href="/dashboard/apps/${encodeURIComponent(appIdentity.appId)}">Return to the app dashboard</a></p></main></body></html>`);
             } catch (error) {
               dashboardHtml(response, 400, `<!doctype html><html lang="en"><body><h1>Tracking link creation failed</h1><p>${escapeHtml(error instanceof Error ? error.message : "tracking_link_invalid")}</p></body></html>`);
@@ -418,6 +426,8 @@ export function createRequestHandler(dependencies: RequestHandlerDependencies): 
           }
 
           const apps = await listApps(dependencies.readerPool, sessionIdentity);
+          const trackingLinks = (await listTrackingLinks(dependencies.readerPool, appIdentity.tenantId, appIdentity.appId))
+            .map((link) => listedTrackingLink(dependencies.redirectorBaseUrl, link));
           const metrics = await metricReport(dependencies.readerPool, appIdentity, parsed.query);
           const effectiveWatermark = parsed.query.watermarkAtMost
             ?? metrics.data.map((row) => row.input_received_at_watermark).sort().at(-1);
@@ -432,9 +442,10 @@ export function createRequestHandler(dependencies: RequestHandlerDependencies): 
             apps,
             selectedAppId: appIdentity.appId,
             query: effectiveQuery,
-            metrics: route.handler === "dashboard_differences" ? { data: [] } : metrics,
-            records: route.handler === "dashboard_differences" ? [] : records,
+            metrics: route.handler === "dashboard_differences" || route.handler === "dashboard_tracking_links_list" ? { data: [] } : metrics,
+            records: route.handler === "dashboard_differences" || route.handler === "dashboard_tracking_links_list" ? [] : records,
             differences: storedDifferences,
+            trackingLinks,
             csrfToken: csrfToken(session.token),
           })));
         } catch (error) {
@@ -551,6 +562,18 @@ export function createRequestHandler(dependencies: RequestHandlerDependencies): 
           } catch (error) {
             const status = error instanceof Error && error.message === "app_not_found" ? 404 : 400;
             json(response, status, { error: status === 404 ? "app_not_found" : error instanceof Error ? error.message : "tracking_link_invalid" });
+          }
+          return;
+        }
+        if (route.handler === "admin_tracking_links_list") {
+          try {
+            const appIdentity = await requireRegisteredApp(pool, identity, target.searchParams.get("app_id") ?? "");
+            const data = (await listTrackingLinks(pool, appIdentity.tenantId, appIdentity.appId))
+              .map((link) => listedTrackingLink(dependencies.redirectorBaseUrl, link));
+            json(response, 200, { data });
+          } catch (error) {
+            if (error instanceof AppNotFoundError) json(response, 404, { error: "app_not_found" });
+            else throw error;
           }
           return;
         }

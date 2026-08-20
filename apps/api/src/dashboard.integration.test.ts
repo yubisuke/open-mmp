@@ -314,13 +314,36 @@ describe("M3 dashboard identity and control plane", { concurrency: false }, () =
       }),
     });
     assert.equal(trackingLink.status, 201);
-    assert.match(await trackingLink.text(), /Tracking link created/);
+    const trackingLinkHtml = await trackingLink.text();
+    assert.match(trackingLinkHtml, /Tracking link created/);
+    assert.match(trackingLinkHtml, /http:\/\/localhost:8090\/r\/[A-Za-z0-9_-]+/);
     const trackingAudit = await withTenant(appPool, tenantId, (client) => client.query(
       `SELECT 1 FROM ledger.audit_logs
        WHERE tenant_id=$1 AND app_id=$2 AND action='tracking_link_created' AND outcome='succeeded'`,
       [tenantId, newAppId],
     ));
     assert.equal(trackingAudit.rowCount, 1);
+
+    const dashboardLinks = await fetch(`${baseUrl}/dashboard/apps/${newAppId}/tracking-links`, {
+      headers: { cookie: dashboardCookie },
+    });
+    assert.equal(dashboardLinks.status, 200);
+    const dashboardLinksHtml = await dashboardLinks.text();
+    assert.match(dashboardLinksHtml, /Measurement links/);
+    assert.match(dashboardLinksHtml, /http:\/\/localhost:8090\/r\/[A-Za-z0-9_-]+/);
+    assert.match(dashboardLinksHtml, /synthetic-campaign/);
+    assert.match(dashboardLinksHtml, /active/);
+
+    const apiLinks = await fetch(`${baseUrl}/v1/admin/tracking-links?app_id=${newAppId}`, { headers });
+    assert.equal(apiLinks.status, 200);
+    const apiLinksBody = await apiLinks.json() as { data: readonly Record<string, unknown>[] };
+    assert.equal(apiLinksBody.data.length, 1);
+    assert.match(String(apiLinksBody.data[0].measurement_url), /^http:\/\/localhost:8090\/r\/[A-Za-z0-9_-]+$/);
+    assert.equal(apiLinksBody.data[0].campaign_id, "synthetic-campaign");
+    assert.equal(apiLinksBody.data[0].status, "active");
+    assert.equal("tenant_id" in apiLinksBody.data[0], false);
+    assert.equal("app_id" in apiLinksBody.data[0], false);
+    assert.equal("artifact" in apiLinksBody.data[0], false);
 
     const emptyReport = await fetch(`${baseUrl}/v1/reports/metrics?app_id=${newAppId}&format=json`, { headers });
     assert.equal(emptyReport.status, 200);
@@ -337,5 +360,10 @@ describe("M3 dashboard identity and control plane", { concurrency: false }, () =
     assert.equal(unknown.status, 404);
     assert.equal(crossTenant.status, 404);
     assert.equal(await unknown.text(), await crossTenant.text());
+    const unknownLinks = await fetch(`${baseUrl}/v1/admin/tracking-links?app_id=missing-${suffix}`, { headers });
+    const crossTenantLinks = await fetch(`${baseUrl}/v1/admin/tracking-links?app_id=${otherApp}`, { headers });
+    assert.equal(unknownLinks.status, 404);
+    assert.equal(crossTenantLinks.status, 404);
+    assert.equal(await unknownLinks.text(), await crossTenantLinks.text());
   });
 });
