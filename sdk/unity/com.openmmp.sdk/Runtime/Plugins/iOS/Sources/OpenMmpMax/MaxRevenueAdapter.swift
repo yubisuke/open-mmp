@@ -59,7 +59,11 @@ public final class MaxRevenueMapper: @unchecked Sendable {
       lock.lock(); rejected += 1; lock.unlock()
       return nil
     }
-    var value = Decimal(observation.revenue) * Decimal(1_000_000)
+    guard let decimalRevenue = Decimal(string: String(observation.revenue), locale: Locale(identifier: "en_US_POSIX")) else {
+      lock.lock(); rejected += 1; lock.unlock()
+      return nil
+    }
+    var value = decimalRevenue * Decimal(1_000_000)
     var rounded = Decimal()
     NSDecimalRound(&rounded, &value, 0, .bankers)
     var extensions: [String: Any] = ["ad_format": observation.format]

@@ -232,7 +232,10 @@ final class OpenMmpCoreTests: XCTestCase {
     }
     try storage.setCredential(.init(keyId: "installation-key:synthetic-rewritten", secret: "synthetic-secret-rewritten"))
     XCTAssertEqual(try root.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup, true)
-    XCTAssertTrue(try storage.writtenFiles().allSatisfy { $0.path.hasPrefix(root.path + "/") })
+    let resolvedRoot = root.standardizedFileURL.resolvingSymlinksInPath().path + "/"
+    XCTAssertTrue(try storage.writtenFiles().allSatisfy {
+      $0.standardizedFileURL.resolvingSymlinksInPath().path.hasPrefix(resolvedRoot)
+    })
 
     let manifestURL = try XCTUnwrap(OpenMmpResources.privacyManifestURL)
     let manifest = try PropertyListSerialization.propertyList(from: Data(contentsOf: manifestURL), format: nil) as! [String: Any]
