@@ -1,7 +1,7 @@
 import type { Pool } from "pg";
 import { sha256 } from "@open-mmp/attribution-core";
 import { uuidV7, withTenant, type PayloadStore } from "@open-mmp/runtime";
-import type { AdminIdentity } from "./admin-auth.js";
+import type { AppAdminIdentity } from "./admin-auth.js";
 
 type Any = Record<string, any>;
 export type PrivacyRequestBody = {
@@ -52,7 +52,7 @@ async function affectedRecordIds(client: any, body: PrivacyRequestBody): Promise
 
 export async function executePrivacyRequest(
   pool: Pool,
-  identity: AdminIdentity | PrivacyIdentity,
+  identity: AppAdminIdentity | PrivacyIdentity,
   body: PrivacyRequestBody,
   payloadStore: PayloadStore,
   now?: Date,

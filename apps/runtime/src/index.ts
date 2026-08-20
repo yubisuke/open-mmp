@@ -18,6 +18,16 @@ export function createAppPool(): Pool {
   });
 }
 
+export function createReaderPool(): Pool {
+  return new Pool({
+    connectionString: requireEnvironment(
+      "OPENMMP_READER_DATABASE_URL",
+      process.env.OPENMMP_READER_DATABASE_URL,
+    ),
+    max: 10,
+  });
+}
+
 export function createMigrationPool(): Pool {
   return new Pool({
     connectionString: requireEnvironment(

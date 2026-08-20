@@ -163,7 +163,10 @@ describe("MAX receiver integration", () => {
 
   it("A10 returns 429 before a second postback is persisted", async () => {
     const server = createServer(createRequestHandler({
-      pool: appPool, payloadStore, maxConfig: config, maxBucket: new TokenBucket(0.0001, 1, performance.now()),
+      pool: appPool, readerPool: appPool, payloadStore, maxConfig: config,
+      publicBaseUrl: "http://localhost:8080", redirectorBaseUrl: "http://localhost:8090",
+      dashboard: { enabled: false, publicBaseUrl: "http://localhost:8080", tenantId: config.tenantId, sessionTtlSeconds: 43200 },
+      maxBucket: new TokenBucket(0.0001, 1, performance.now()),
     }));
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     const address = server.address();
@@ -219,7 +222,11 @@ describe("admin privacy integration", () => {
     );
     assert.equal(await payloadStore.scanFor("0.123456"), false);
     assert.match((await payloadStore.read(payloadReference)).toString("utf8"), /0\.123456/);
-    const server = createServer(createRequestHandler({ pool: appPool, payloadStore, maxConfig: config }));
+    const server = createServer(createRequestHandler({
+      pool: appPool, readerPool: appPool, payloadStore, maxConfig: config,
+      publicBaseUrl: "http://localhost:8080", redirectorBaseUrl: "http://localhost:8090",
+      dashboard: { enabled: false, publicBaseUrl: "http://localhost:8080", tenantId: config.tenantId, sessionTtlSeconds: 43200 },
+    }));
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     const address = server.address();
     assert.ok(address && typeof address === "object");

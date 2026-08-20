@@ -1,5 +1,6 @@
+import { createHash } from "node:crypto";
 import { Pool } from "pg";
-import { EncryptedFilePayloadStore, EnvironmentSecretStore } from "@open-mmp/runtime";
+import { EncryptedFilePayloadStore, EnvironmentSecretStore, uuidV7, withTenant } from "@open-mmp/runtime";
 import { processMaxInbox } from "./import/max-worker.js";
 import { processSdkInbox } from "./sdk-worker.js";
 
@@ -22,6 +23,29 @@ const payloadStore = new EncryptedFilePayloadStore(
   process.env.OPENMMP_PAYLOAD_STORE_DIR ?? ".openmmp/payloads",
   secrets.require("OPENMMP_PAYLOAD_MASTER_KEY"),
 );
+async function sweepDashboardSessions(): Promise<void> {
+  const now = new Date();
+  await withTenant(pool, maxTenantId, async (client) => {
+    const deleted = await client.query(
+      "DELETE FROM ephemeral.dashboard_sessions WHERE tenant_id=$1 AND expires_at <= $2::timestamptz RETURNING session_id",
+      [maxTenantId, now.toISOString()],
+    );
+    if ((deleted.rowCount ?? 0) === 0) return;
+    const requestDigest = createHash("sha256")
+      .update(`dashboard_session_expired_sweep\u0000${deleted.rowCount}`, "utf8")
+      .digest("hex");
+    await client.query(
+      `INSERT INTO ledger.audit_logs (
+        audit_log_id, tenant_id, app_id, occurred_at, actor_type, actor_ref,
+        action, target_scope, target_ref, policy_version, request_digest,
+        outcome, reason_code
+      ) VALUES ($1,$2,NULL,$3,'system_job','dashboard_session_sweeper',
+        'dashboard_session_expired_sweep','session','session:expired-sweep',
+        'dashboard-v1',$4,'succeeded',NULL)`,
+      [uuidV7(now.getTime()), maxTenantId, now.toISOString(), requestDigest],
+    );
+  });
+}
 let busy = false;
 const tick = async (): Promise<void> => {
   if (busy) return;
@@ -34,6 +58,7 @@ const tick = async (): Promise<void> => {
         secrets.read("OPENMMP_META_IR_DECRYPTION_KEY_PREVIOUS") ? { key_id: "previous", key_hex: secrets.read("OPENMMP_META_IR_DECRYPTION_KEY_PREVIOUS")! } : undefined,
       ].filter((value): value is { key_id: string; key_hex: string } => value !== undefined),
     });
+    await sweepDashboardSessions();
   }
   finally { busy = false; }
 };

@@ -78,7 +78,11 @@ describe("M1b reporting and difference audit", { concurrency: false }, () => {
       purge: async () => { throw new Error("reporting must not purge payloads"); },
       scanFor: async () => false,
     };
-    server = createServer(createRequestHandler({ pool: appPool, payloadStore: unusedPayloadStore, maxConfig: config }));
+    server = createServer(createRequestHandler({
+      pool: appPool, readerPool: appPool, payloadStore: unusedPayloadStore, maxConfig: config,
+      publicBaseUrl: "http://localhost:8080", redirectorBaseUrl: "http://localhost:8090",
+      dashboard: { enabled: false, publicBaseUrl: "http://localhost:8080", tenantId: config.tenantId, sessionTtlSeconds: 43200 },
+    }));
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     const address = server.address();
     assert.ok(address && typeof address === "object");

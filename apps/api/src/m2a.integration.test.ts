@@ -120,8 +120,12 @@ describe("M2a signed SDK ingestion", () => {
     await ensureSdkKeys(pool, payloadStore, { tenantId, appId }, [{ keyId: sdkKeyId, secret: sdkSecret }]);
     server = createServer(createRequestHandler({
       pool,
+      readerPool: pool,
       payloadStore,
       maxConfig: { tenantId, appId, pathSecret: "synthetic-path", eventKey: "synthetic-event-key", tokenMode: "all_with_event_fallback", maxParameters: 40, maxQueryBytes: 8192 },
+      publicBaseUrl: "http://localhost:8080",
+      redirectorBaseUrl: "http://localhost:8090",
+      dashboard: { enabled: false, publicBaseUrl: "http://localhost:8080", tenantId, sessionTtlSeconds: 43200 },
       sdk: {
         pool, payloadStore, config: authConfig, maximumBytes: 64 * 1024, maximumEvents: 100,
         enrollmentBucket: new KeyedTokenBucket(100, 100),

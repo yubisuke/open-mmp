@@ -1,6 +1,6 @@
 import type { Pool } from "pg";
 import { withTenant } from "@open-mmp/runtime";
-import type { AdminIdentity } from "./admin-auth.js";
+import type { AppAdminIdentity } from "./admin-auth.js";
 
 type Any = Record<string, any>;
 export type ReportFormat = "json" | "csv";
@@ -56,7 +56,7 @@ function csv(rows: Any[], columns: readonly string[]): string {
   ].join("\n")}\n`;
 }
 
-export async function metricReport(pool: Pool, identity: AdminIdentity): Promise<Any[]> {
+export async function metricReport(pool: Pool, identity: AppAdminIdentity): Promise<Any[]> {
   return withTenant(pool, identity.tenantId, async (client) => {
     const result = await client.query<{ artifact: Any }>(
       `SELECT artifact FROM ledger.metric_runs
@@ -67,7 +67,7 @@ export async function metricReport(pool: Pool, identity: AdminIdentity): Promise
   });
 }
 
-export async function differenceAudit(pool: Pool, identity: AdminIdentity): Promise<Any[]> {
+export async function differenceAudit(pool: Pool, identity: AppAdminIdentity): Promise<Any[]> {
   return withTenant(pool, identity.tenantId, async (client) => {
     const result = await client.query<{ artifact: Any }>(
       `SELECT artifact FROM ledger.reconciliation_results

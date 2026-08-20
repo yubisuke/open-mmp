@@ -67,6 +67,7 @@ const installationDigestKey = existing.OPENMMP_INSTALLATION_DIGEST_KEY ?? secret
 const metaReferrerKey = existing.OPENMMP_META_IR_DECRYPTION_KEY ?? randomBytes(32).toString("hex");
 const migrationDatabaseUrl = url("postgres", postgresPassword, databaseHost, databasePort, databaseName);
 const appDatabaseUrl = url("openmmp_app", appPassword, databaseHost, databasePort, databaseName);
+const readerDatabaseUrl = url("openmmp_reader", readerPassword, databaseHost, databasePort, databaseName);
 const seedDatabaseUrl = url("openmmp_seed", seedPassword, databaseHost, databasePort, databaseName);
 const hostMigrationDatabaseUrl = url("postgres", postgresPassword, "localhost", databasePort, databaseName);
 const hostAppDatabaseUrl = url("openmmp_app", appPassword, "localhost", databasePort, databaseName);
@@ -82,6 +83,7 @@ const migrationEntries: Record<string, string> = {
 };
 const appEntries: Record<string, string> = {
   OPENMMP_APP_DATABASE_URL: appDatabaseUrl,
+  OPENMMP_READER_DATABASE_URL: readerDatabaseUrl,
   OPENMMP_ADMIN_KEY: adminKey,
   OPENMMP_MAX_PATH_SECRET: maxPathSecret,
   OPENMMP_MAX_EVENT_KEY: maxEventKey,
@@ -119,6 +121,12 @@ const appEntries: Record<string, string> = {
   OPENMMP_REDIRECTOR_GEO: "off",
   OPENMMP_REDIRECTOR_RATE_RPS: "20",
   OPENMMP_REDIRECTOR_RATE_BURST: "50",
+  OPENMMP_DASHBOARD_ENABLED: "true",
+  OPENMMP_DASHBOARD_SESSION_TTL_SECONDS: "43200",
+  OPENMMP_DASHBOARD_LOGIN_RATE_RPM: "5",
+  OPENMMP_DASHBOARD_LOGIN_RATE_BURST: "10",
+  OPENMMP_REPORT_MAX_ROWS: "1000",
+  OPENMMP_REPORT_EXPORT_MAX_ROWS: "200000",
 };
 const seedEntries: Record<string, string> = {
   OPENMMP_APP_DATABASE_URL: appDatabaseUrl,
@@ -155,3 +163,4 @@ if (!existsSync(repositoryEnvPath)) {
 console.log(`Open MMP admin key: ${adminKey}`);
 console.log(`Open MMP MAX postback URL template: ${maxTemplate}`);
 console.log(`Open MMP redirector base URL: ${redirectorBaseUrl}`);
+console.log(`Open MMP dashboard URL: ${publicBaseUrl}/dashboard`);
