@@ -60,7 +60,7 @@ export async function activateRuleBundle(input: {
   await withTenant(input.pool, input.identity.tenantId, async (client) => {
     await client.query(
       "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
-      [`${input.identity.tenantId}\u0000${input.identity.appId}\u0000${value.ruleBundleId}`],
+      [JSON.stringify([input.identity.tenantId, input.identity.appId, value.ruleBundleId])],
     );
     const current = await client.query<{ rule_bundle_revision_id: string }>(
       `SELECT rule_bundle_revision_id

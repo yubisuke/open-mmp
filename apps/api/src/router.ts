@@ -509,7 +509,10 @@ export function createRequestHandler(dependencies: RequestHandlerDependencies): 
           response.writeHead(429, { "retry-after": "1", "cache-control": "no-store" }).end();
           return;
         }
-        const identity = await adminIdentity(dependencies, request, pool);
+        // Authentication verifier hashes are intentionally unavailable to the
+        // reader role. Authenticate through the app pool, then execute the
+        // read-only route itself through the reader pool selected above.
+        const identity = await adminIdentity(dependencies, request, dependencies.pool);
         if (!identity) {
           json(response, 401, { error: "unauthorized" });
           return;

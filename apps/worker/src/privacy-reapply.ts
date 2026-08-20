@@ -47,22 +47,29 @@ async function encryptedReferences(
   if (!new Set(["installation", "app", "tenant"]).has(scope)) {
     throw new Error(`privacy_reapply_scope_invalid:${request.privacy_request_id}`);
   }
-  const values = [request.tenant_id, request.app_id, records];
+  const values = scope === "tenant"
+    ? [request.tenant_id]
+    : scope === "app"
+      ? [request.tenant_id, request.app_id]
+      : [request.tenant_id, request.app_id, records];
   const recordScope = scope === "tenant"
     ? "raw.tenant_id=$1"
     : scope === "app"
       ? "raw.tenant_id=$1 AND raw.app_id=$2"
       : "raw.tenant_id=$1 AND raw.app_id=$2 AND raw.record_id=ANY($3::text[])";
-  const raw = await client.query<{ reference: string }>(
-    `SELECT DISTINCT raw.raw_payload_ref AS reference
-       FROM ledger.raw_records AS raw
-      WHERE ${recordScope} AND raw.raw_payload_ref LIKE 'encrypted:%'
-        AND NOT EXISTS (
+  const rawSharedReferenceGuard = scope === "installation"
+    ? `AND NOT EXISTS (
           SELECT 1 FROM ledger.raw_records AS shared
            WHERE shared.tenant_id=raw.tenant_id
              AND shared.raw_payload_ref=raw.raw_payload_ref
              AND NOT (shared.record_id=ANY($3::text[]))
-        )`,
+        )`
+    : "";
+  const raw = await client.query<{ reference: string }>(
+    `SELECT DISTINCT raw.raw_payload_ref AS reference
+       FROM ledger.raw_records AS raw
+      WHERE ${recordScope} AND raw.raw_payload_ref LIKE 'encrypted:%'
+        ${rawSharedReferenceGuard}`,
     values,
   );
   const inboxScope = scope === "tenant"
