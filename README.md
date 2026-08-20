@@ -77,6 +77,7 @@ Implemented runtime code lives in `apps/api`, `apps/redirector`, `apps/worker`, 
 - [Product scope](docs/product-scope.md)
 - [Architecture](docs/architecture.md)
 - [Privacy and security](docs/privacy-security.md)
+- [Import mapping DSL](docs/import-mappings.md)
 - [Initial threat model](docs/threat-model.md)
 - [Roadmap](docs/roadmap.md)
 - [Project plan](docs/project-plan.md)

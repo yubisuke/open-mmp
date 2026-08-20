@@ -7,6 +7,7 @@ type Any = Record<string, any>;
 
 export type MappingExpression = {
   source?: string;
+  fallback_column?: string;
   prefix?: string;
   const?: unknown;
   default?: unknown;
@@ -15,7 +16,7 @@ export type MappingExpression = {
   boolean?: { true_values: unknown[]; false_values: unknown[]; default?: boolean };
   uppercase?: boolean;
   timestamp?: { default_timezone: "UTC"; timezone_source?: string; truncate_to_milliseconds: true };
-  money?: { scale: number; currency_source?: string; currency_default?: string };
+  money?: { input?: "integer"; scale: number; currency_source?: string; currency_default?: string };
   object?: Record<string, MappingExpression>;
 };
 
@@ -27,7 +28,7 @@ export type ImportMapping = {
   app_id: string;
   provider?: string;
   format: "csv" | "json" | "jsonl";
-  row_filter?: { source: string; equals: string | number | boolean };
+  row_filter?: { source: string; equals: string | number | boolean } | Array<{ source: string; equals: string | number | boolean }>;
   rules: Array<{ target: string; expression: MappingExpression }>;
 };
 
@@ -135,8 +136,12 @@ function booleanValue(value: unknown, config: NonNullable<MappingExpression["boo
 }
 
 function moneyValue(value: unknown, config: NonNullable<MappingExpression["money"]>, row: Any): Any {
-  const amount = String(value ?? "").trim();
-  if (!/^-?[0-9]+$/.test(amount)) throw new MappingError("money source must be a base-10 integer without exponent notation");
+  const amount = typeof value === "number"
+    ? (Number.isSafeInteger(value) && value >= 0 ? String(value) : "")
+    : String(value ?? "").trim();
+  if (!/^[0-9]+$/.test(amount)) {
+    throw new MappingError("money source must be a non-negative base-10 integer without exponent notation");
+  }
   const currencyValue = config.currency_source ? sourceValue(row, config.currency_source) : undefined;
   const currency = String(currencyValue || config.currency_default || "").toUpperCase();
   if (!/^[A-Z]{3}$/.test(currency)) throw new MappingError("money currency is missing or invalid");
@@ -150,6 +155,9 @@ export function evaluateExpression(expression: MappingExpression, row: Any): unk
   let value = Object.prototype.hasOwnProperty.call(expression, "const")
     ? expression.const
     : sourceValue(row, expression.source);
+  if ((value === undefined || value === null || value === "") && expression.fallback_column) {
+    value = sourceValue(row, expression.fallback_column);
+  }
   if ((value === undefined || value === null || value === "") && Object.prototype.hasOwnProperty.call(expression, "default")) {
     value = expression.default;
   }
@@ -199,7 +207,8 @@ function setTarget(target: Any, path: string, value: unknown): void {
 
 export function rowMatches(mapping: ImportMapping, row: Any): boolean {
   if (!mapping.row_filter) return true;
-  return sourceValue(row, mapping.row_filter.source) === mapping.row_filter.equals;
+  const clauses = Array.isArray(mapping.row_filter) ? mapping.row_filter : [mapping.row_filter];
+  return clauses.every((clause) => sourceValue(row, clause.source) === clause.equals);
 }
 
 export function mapRow(mapping: ImportMapping, row: Any): Any {
