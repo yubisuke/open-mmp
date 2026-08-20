@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { createAppPool, EncryptedFilePayloadStore, EnvironmentSecretStore } from "@open-mmp/runtime";
+import { createAppPool, createReaderPool, EncryptedFilePayloadStore, EnvironmentSecretStore } from "@open-mmp/runtime";
 import { assertSafeMaxTemplate, receiveMax, type MaxReceiverConfig } from "./max-receiver.js";
 import { ensureAdminKeys } from "./admin-auth.js";
 import { createRequestHandler } from "./router.js";
@@ -22,6 +22,7 @@ const adminKey = secrets.require("OPENMMP_ADMIN_KEY");
 const maxPathSecret = secrets.require("OPENMMP_MAX_PATH_SECRET");
 const maxEventKey = secrets.require("OPENMMP_MAX_EVENT_KEY");
 const pool = createAppPool();
+const readerPool = createReaderPool();
 const payloadStore = new EncryptedFilePayloadStore(
   process.env.OPENMMP_PAYLOAD_STORE_DIR ?? ".openmmp/payloads",
   secrets.require("OPENMMP_PAYLOAD_MASTER_KEY"),
@@ -51,8 +52,17 @@ await ensureSdkKeys(pool, payloadStore, { tenantId: maxConfig.tenantId, appId: m
 
 const server = createServer(createRequestHandler({
   pool,
+  readerPool,
   payloadStore,
   maxConfig,
+  publicBaseUrl: baseUrl,
+  redirectorBaseUrl: process.env.OPENMMP_REDIRECTOR_BASE_URL ?? "http://localhost:8090",
+  dashboard: {
+    enabled: process.env.OPENMMP_DASHBOARD_ENABLED !== "false",
+    publicBaseUrl: baseUrl,
+    tenantId: maxConfig.tenantId,
+    sessionTtlSeconds: Number(process.env.OPENMMP_DASHBOARD_SESSION_TTL_SECONDS ?? "43200"),
+  },
   maxBucket: new TokenBucket(
     Number(process.env.OPENMMP_MAX_RATE_RPS ?? "200"),
     Number(process.env.OPENMMP_MAX_RATE_BURST ?? "500"),
@@ -61,6 +71,13 @@ const server = createServer(createRequestHandler({
     Number(process.env.OPENMMP_ADMIN_RATE_RPS ?? "10"),
     Number(process.env.OPENMMP_ADMIN_RATE_BURST ?? "30"),
   ),
+  dashboardLoginBucket: new KeyedTokenBucket(
+    Number(process.env.OPENMMP_DASHBOARD_LOGIN_RATE_RPM ?? "5") / 60,
+    Number(process.env.OPENMMP_DASHBOARD_LOGIN_RATE_BURST ?? "10"),
+  ),
+  dashboardLoginGlobalBucket: new TokenBucket(1, 60),
+  reportMaximumRows: Number(process.env.OPENMMP_REPORT_MAX_ROWS ?? "1000"),
+  reportMaximumExportRows: Number(process.env.OPENMMP_REPORT_EXPORT_MAX_ROWS ?? "200000"),
   trackingDestinationAllowlist: (process.env.OPENMMP_REDIRECTOR_DESTINATION_ALLOWLIST ?? "")
     .split(",").map((value) => value.trim()).filter(Boolean),
   sdk: {
@@ -96,5 +113,6 @@ const server = createServer(createRequestHandler({
 
 server.listen(port, "0.0.0.0", () => {
   console.log(`Open MMP API listening on ${port}`);
+  console.log(`Open MMP dashboard URL: ${baseUrl}/dashboard`);
   console.log("Open MMP runtime credentials loaded from encrypted configuration.");
 });

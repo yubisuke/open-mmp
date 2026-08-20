@@ -150,12 +150,17 @@ export type OpenMMPMetricDefinitionV03 = {
   ratio_scale?: number;
   definition: {
     calculation:
-      "revenue_sum" | "revenue_over_cost" | "active_installations_over_cohort" | "revenue_over_cohort" | "cohort_size";
+      | "revenue_sum"
+      | "revenue_over_cost"
+      | "active_installations_over_cohort"
+      | "revenue_over_cohort"
+      | "cohort_size"
+      | "event_count";
     window: {
       type: "elapsed" | "calendar_day" | "activity_day";
       day: number;
     };
-    numerator: "revenue" | "active_installations" | "cohort_size";
+    numerator: "revenue" | "active_installations" | "cohort_size" | "events";
     denominator?: "cost" | "cohort_size";
     cost_basis?: "cohort_acquisition_day_current_snapshot";
   };
@@ -166,7 +171,13 @@ export type OpenMMPMetricDefinitionV03 = {
   /**
    * @minItems 1
    */
-  grouping_dimensions?: ("campaign_id" | "network" | "country" | "cohort_date" | "attribution_status")[];
+  event_names?: string[];
+  /**
+   * @minItems 1
+   */
+  grouping_dimensions?: (
+    "campaign_id" | "network" | "country" | "cohort_date" | "metric_date" | "attribution_status"
+  )[];
   rule_bundle_id: string;
   rule_bundle_version: string;
   rule_bundle_hash: string;
@@ -210,6 +221,7 @@ export type OpenMMPMetricRunV03 = {
       network?: string;
       country?: string;
       cohort_date?: string;
+      metric_date?: string;
       attribution_status?: "organic" | "non_organic" | "unattributed";
     };
     dimension_digest: string;

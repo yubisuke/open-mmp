@@ -156,6 +156,81 @@ async function currentCosts(
   return result.rows;
 }
 
+async function eventCountValue(
+  client: Queryable,
+  scope: Scope,
+  watermark: string,
+  grouping: Any,
+  definition: Any,
+  privacyState: "before" | "after",
+): Promise<{ value_state: "present"; value_unscaled: string }> {
+  const eventNames = definition.event_names ?? [];
+  if (eventNames.length !== 1 || !["click", "install"].includes(eventNames[0])) {
+    throw new Error("SQL event_count requires exactly one click or install event");
+  }
+  if (typeof grouping?.metric_date !== "string") {
+    throw new Error("SQL event_count requires grouping.metric_date");
+  }
+  if (grouping.attribution_status !== undefined && eventNames[0] !== "install") {
+    throw new Error("SQL event_count attribution_status applies only to install");
+  }
+  const result = await client.query<{ value_unscaled: string }>(
+    `WITH event AS (
+       SELECT
+         CASE WHEN logical.event_name='click' THEN click.campaign_id ELSE install.campaign_id END AS campaign_id,
+         CASE WHEN logical.event_name='click' THEN click.network ELSE install.network END AS network,
+         CASE WHEN logical.event_name='click' THEN click.country ELSE install.country END AS country,
+         CASE WHEN logical.event_name='install' THEN coalesce(attribution.status, 'unattributed') END AS attribution_status
+       FROM ledger.logical_events AS logical
+       JOIN ledger.raw_records_current AS raw
+         ON raw.tenant_id=logical.tenant_id
+        AND raw.app_id=logical.app_id
+        AND raw.record_id=logical.record_id
+       LEFT JOIN ledger.click_facts AS click ON click.logical_event_id=logical.logical_event_id
+       LEFT JOIN ledger.install_facts AS install ON install.logical_event_id=logical.logical_event_id
+       LEFT JOIN LATERAL (
+         SELECT candidate.status
+         FROM ledger.attribution_results AS candidate
+         WHERE candidate.tenant_id=logical.tenant_id
+           AND candidate.app_id=logical.app_id
+           AND candidate.subject_scope='installation_level'
+           AND candidate.subject_ref=install.installation_id
+           AND candidate.decided_at <= $3
+         ORDER BY candidate.decided_at DESC, candidate.attribution_id DESC
+         LIMIT 1
+       ) AS attribution ON logical.event_name='install'
+       WHERE logical.tenant_id=$1 AND logical.app_id=$2
+         AND raw.received_at <= $3
+         AND ($4='before' OR raw.payload_lifecycle_status='available')
+         AND logical.event_name=$5
+         AND control.canonical_timestamp_value(raw.occurred_at)
+           >= ($6::date::timestamp AT TIME ZONE $7)
+         AND control.canonical_timestamp_value(raw.occurred_at)
+           < (($6::date + 1)::timestamp AT TIME ZONE $7)
+     )
+     SELECT count(*)::text AS value_unscaled
+     FROM event
+     WHERE ($8::text IS NULL OR campaign_id=$8)
+       AND ($9::text IS NULL OR network=$9)
+       AND ($10::text IS NULL OR country=$10)
+       AND ($11::text IS NULL OR attribution_status=$11)`,
+    [
+      scope.tenant_id,
+      scope.app_id,
+      watermark,
+      privacyState,
+      eventNames[0],
+      grouping.metric_date,
+      definition.aggregation_time_zone,
+      grouping.campaign_id ?? null,
+      grouping.network ?? null,
+      grouping.country ?? null,
+      grouping.attribution_status ?? null,
+    ],
+  );
+  return { value_state: "present", value_unscaled: result.rows[0].value_unscaled };
+}
+
 async function metricValue(
   client: Queryable,
   scope: Scope,
@@ -169,6 +244,9 @@ async function metricValue(
   undefined_reason: "no_attributed_cost" | "empty_cohort";
 }> {
   const calculation = definition.definition.calculation;
+  if (calculation === "event_count") {
+    return eventCountValue(client, scope, watermark, grouping, definition, privacyState);
+  }
   const activityEvents = definition.activity_events ?? ["session_start"];
   if (calculation === "active_installations_over_cohort" &&
       activityEvents.some((eventName: string) => eventName !== "session_start")) {

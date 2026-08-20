@@ -368,4 +368,156 @@ describe("M1b SQL metric parity", { concurrency: false }, () => {
       value_unscaled: null,
     });
   });
+
+  it("C13 reproduces reviewed daily click and install runs without ledger sequence input", async () => {
+    const dailyFixture = "42-daily-metric-date";
+    const dailyDirectory = join(process.cwd(), "fixtures", "v0.3", dailyFixture);
+    const dailyInput: Any = JSON.parse(readFileSync(join(dailyDirectory, "input.json"), "utf8"));
+    const dailyGolden: Any[] = JSON.parse(readFileSync(
+      join(dailyDirectory, "expected_metric_runs.json"),
+      "utf8",
+    ));
+    await ingestFixture(dailyFixture, dailyInput, appPool, seedPool);
+    const expected = evaluate(dailyInput).metric_runs;
+    const first = await computeSqlMetricRuns(appPool, dailyInput, false);
+    const firstSequence = await withTenant(appPool, dailyInput.server_context.tenant_id, async (client) =>
+      (await client.query<{ value: string }>("SELECT max(ledger_seq)::text AS value FROM ledger.raw_records")).rows[0].value);
+    assert.equal(jcs(expected), jcs(dailyGolden));
+    assert.equal(jcs(first), jcs(expected));
+    assert.equal(first.find((run) => run.metric_name === "daily_click_count")?.value_unscaled, "1");
+    assert.equal(first.find((run) => run.metric_name === "daily_install_count")?.value_unscaled, "1");
+
+    await ingestFixture(dailyFixture, dailyInput, appPool, seedPool);
+    const secondSequence = await withTenant(appPool, dailyInput.server_context.tenant_id, async (client) =>
+      (await client.query<{ value: string }>("SELECT max(ledger_seq)::text AS value FROM ledger.raw_records")).rows[0].value);
+    const second = await computeSqlMetricRuns(appPool, dailyInput, false);
+    assert.notEqual(secondSequence, firstSequence);
+    assert.equal(jcs(second), jcs(first));
+    assert.deepEqual(
+      second.map((run) => [run.input_snapshot_id, run.grouping.dimension_digest]),
+      first.map((run) => [run.input_snapshot_id, run.grouping.dimension_digest]),
+    );
+  });
+
+  it("C13 applies the UTC calendar day as a lower-inclusive, upper-exclusive window", async () => {
+    const dailyFixture = "42-daily-metric-date-boundary";
+    const source: Any = JSON.parse(readFileSync(
+      join(process.cwd(), "fixtures", "v0.3", "42-daily-metric-date", "input.json"),
+      "utf8",
+    ));
+    const click = source.records.find((record: Any) => record.event_name === "click");
+    const variants = [
+      ["lower", "2026-08-20T00:00:00.000Z"],
+      ["last", "2026-08-20T23:59:59.999Z"],
+      ["upper", "2026-08-21T00:00:00.000Z"],
+    ].map(([label, timestamp], index) => ({
+      ...structuredClone(click),
+      record_id: `click-42-${label}`,
+      delivery_id: `delivery:click-42-${label}`,
+      event_id: `event:click-42-${label}`,
+      occurred_at: timestamp,
+      received_at: "2026-08-21T00:00:00.000Z",
+      processing_sequence: 10 + index,
+      payload: {
+        ...structuredClone(click.payload),
+        click_id: `click-42-${label}_0000000000000000`,
+        redirector_click_at: timestamp,
+      },
+    }));
+    source.records.push(...variants);
+    source.metric_evaluations = [{
+      ...source.metric_evaluations[0],
+      metric_run_id_prefix: "run-42-boundary",
+    }];
+    await ingestFixture(dailyFixture, source, appPool, seedPool);
+    const expected = evaluate(source).metric_runs;
+    const actual = await computeSqlMetricRuns(appPool, source, false);
+    assert.equal(jcs(actual), jcs(expected));
+    assert.equal(actual[0].value_unscaled, "3");
+  });
+
+  it("C13 separates and sums organic, non-organic, and unattributed installs", async () => {
+    const fixture = "42-daily-attribution-status";
+    const daily: Any = JSON.parse(readFileSync(
+      join(process.cwd(), "fixtures", "v0.3", "42-daily-metric-date", "input.json"),
+      "utf8",
+    ));
+    const paid: Any = JSON.parse(readFileSync(
+      join(process.cwd(), "fixtures", "v0.3", "01-valid-install-referrer", "input.json"),
+      "utf8",
+    ));
+    const unknown: Any = JSON.parse(readFileSync(
+      join(process.cwd(), "fixtures", "v0.3", "03-unknown-click", "input.json"),
+      "utf8",
+    ));
+    const paidClick = structuredClone(paid.records.find((record: Any) => record.event_name === "click"));
+    Object.assign(paidClick, {
+      record_id: "click-42-paid",
+      delivery_id: "delivery:click-42-paid",
+      event_id: "event:click-42-paid",
+      occurred_at: "2026-08-20T01:00:00.000Z",
+      received_at: "2026-08-20T01:00:01.000Z",
+      processing_sequence: 20,
+    });
+    Object.assign(paidClick.payload, {
+      click_id: "click-42-paid_0000000000000000",
+      redirector_click_at: "2026-08-20T01:00:00.000Z",
+    });
+    const paidInstall = structuredClone(paid.records.find((record: Any) => record.event_name === "install"));
+    Object.assign(paidInstall, {
+      record_id: "install-42-paid",
+      delivery_id: "delivery:install-42-paid",
+      event_id: "event:install-42-paid",
+      occurred_at: "2026-08-20T02:00:00.000Z",
+      received_at: "2026-08-20T02:00:01.000Z",
+      processing_sequence: 21,
+    });
+    Object.assign(paidInstall.payload, {
+      installation_id: "installation:install-42-paid",
+      click_id: "click-42-paid_0000000000000000",
+      install_begin_at_server: "2026-08-20T02:00:00.000Z",
+      protected_referrer_evidence_ref: "protected:referrer:install-42-paid",
+    });
+    const unknownInstall = structuredClone(unknown.records[0]);
+    Object.assign(unknownInstall, {
+      record_id: "install-42-unknown",
+      delivery_id: "delivery:install-42-unknown",
+      event_id: "event:install-42-unknown",
+      occurred_at: "2026-08-20T03:00:00.000Z",
+      received_at: "2026-08-20T03:00:01.000Z",
+      processing_sequence: 22,
+    });
+    Object.assign(unknownInstall.payload, {
+      installation_id: "installation:install-42-unknown",
+      click_id: "unknown-click-42_0000000000000000",
+      install_begin_at_server: "2026-08-20T03:00:00.000Z",
+      protected_referrer_evidence_ref: "protected:referrer:install-42-unknown",
+    });
+    daily.records.push(paidClick, paidInstall, unknownInstall);
+    const baseEvaluation = {
+      ...daily.metric_evaluations[1],
+      metric_run_id_prefix: "run-42-install-all",
+      grouping: { metric_date: "2026-08-20" },
+    };
+    daily.metric_evaluations = [
+      baseEvaluation,
+      ...(["organic", "non_organic", "unattributed"] as const).map((status) => ({
+        ...baseEvaluation,
+        metric_run_id_prefix: `run-42-install-${status}`,
+        grouping: { metric_date: "2026-08-20", attribution_status: status },
+      })),
+    ];
+    await ingestFixture(fixture, daily, appPool, seedPool);
+    const expected = evaluate(daily).metric_runs;
+    const actual = await computeSqlMetricRuns(appPool, daily, false);
+    assert.equal(jcs(actual), jcs(expected));
+    const value = (prefix: string): bigint => BigInt(actual.find((run) =>
+      run.metric_run_id === `${prefix}:daily_install_count`)?.value_unscaled ?? "-1");
+    const total = value("run-42-install-all");
+    const parts = value("run-42-install-organic")
+      + value("run-42-install-non_organic")
+      + value("run-42-install-unattributed");
+    assert.equal(total, 3n);
+    assert.equal(parts, total);
+  });
 });

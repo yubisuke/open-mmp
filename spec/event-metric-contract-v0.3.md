@@ -1,6 +1,6 @@
 # Open MMP Event & Metric Contract v0.3
 
-Contract release: `0.3.0`.
+Contract release: `0.3.1`.
 
 This document is normative for the v0.3 schemas, registries, fixtures, and reference evaluators. It defines synthetic, vendor-neutral measurement behavior; it does not define a production ingestion service.
 
@@ -299,7 +299,7 @@ Production signals, IP or User-Agent values, live thresholds, model weights, wat
 
 ## Reviewed fixture and validation gate
 
-The reviewed gate compiles 27 schemas and validates 8 registries. The 41 fixture directories contain synthetic input plus 13 reviewed golden output classes: raw records, deliveries, logical events, corrections, privacy requests, privacy tombstones, attributions, metric definitions, metric runs, cost records, public fraud decisions, rejections, and reconciliation. Fixture 10 demonstrates both paid reinstall attribution and no-referrer redownload attribution. Fixtures 28 through 32 exercise imported attribution, automatically derived reconciliation, every registered producer form, and stale-evidence rejection. Fixture 33 exercises reporting dimensions, advertiser-side ad views, installation and aggregate revenue, default-currency provenance, append-only cost revisions, per-event half-even FX, attribution-status-separated ROAS, retention, and cohort LTV/count. Fixture 34 exercises every Stage C method/model row, both Apple aggregate event names, every Stage C reason, synthetic postback producers, and typed Meta evidence. Fixture 35 exercises authenticated tenant-admin and on-device privacy-request provenance plus same-installation scope enforcement. Fixture 36 exercises the child-directed audience boundary without adding an advertising identifier to the canonical event vocabulary. Fixture 37 proves that an organic cohort without attributed cost emits an undefined ROAS rather than zero or infinity. Fixture 38 classifies a modeled external row without an internal candidate as `provider_modeled_conversion`. Fixture 39 classifies a foreign third-party referrer. Fixture 40 validates the closed custom-event envelope plus wrapper provenance. Fixture 41 derives the public click-injection category from server CTIT. Fixtures 25, 33, and 34 collectively exercise every registered processing purpose. Validation also exercises invalid calendar timestamps, reconciliation reasons, attribution supersession, replay suspicion, retention expiry, impression-to-revenue evidence, reorder invariance, install-type evidence dominance, record-ID collision, click ambiguity, millisecond normalization boundaries, scoped-reference mutations, child-directed advertising-identifier rejection, CTIT boundaries, custom-event bounds, and unknown-purpose rejection; golden files remain committed review artifacts.
+The reviewed gate compiles 27 schemas and validates 8 registries. The 42 fixture directories contain synthetic input plus 13 reviewed golden output classes: raw records, deliveries, logical events, corrections, privacy requests, privacy tombstones, attributions, metric definitions, metric runs, cost records, public fraud decisions, rejections, and reconciliation. Fixture 10 demonstrates both paid reinstall attribution and no-referrer redownload attribution. Fixtures 28 through 32 exercise imported attribution, automatically derived reconciliation, every registered producer form, and stale-evidence rejection. Fixture 33 exercises reporting dimensions, advertiser-side ad views, installation and aggregate revenue, default-currency provenance, append-only cost revisions, per-event half-even FX, attribution-status-separated ROAS, retention, and cohort LTV/count. Fixture 34 exercises every Stage C method/model row, both Apple aggregate event names, every Stage C reason, synthetic postback producers, and typed Meta evidence. Fixture 35 exercises authenticated tenant-admin and on-device privacy-request provenance plus same-installation scope enforcement. Fixture 36 exercises the child-directed audience boundary without adding an advertising identifier to the canonical event vocabulary. Fixture 37 proves that an organic cohort without attributed cost emits an undefined ROAS rather than zero or infinity. Fixture 38 classifies a modeled external row without an internal candidate as `provider_modeled_conversion`. Fixture 39 classifies a foreign third-party referrer. Fixture 40 validates the closed custom-event envelope plus wrapper provenance. Fixture 41 derives the public click-injection category from server CTIT. Fixture 42 exercises the v0.3.1 `metric_date` dimension with deterministic daily click and organic-install event counts. Fixtures 25, 33, and 34 collectively exercise every registered processing purpose. Validation also exercises invalid calendar timestamps, reconciliation reasons, attribution supersession, replay suspicion, retention expiry, impression-to-revenue evidence, reorder invariance, install-type evidence dominance, record-ID collision, click ambiguity, millisecond normalization boundaries, scoped-reference mutations, child-directed advertising-identifier rejection, CTIT boundaries, custom-event bounds, and unknown-purpose rejection; golden files remain committed review artifacts.
 
 The validation command never writes fixture files. `npm run validate`:
 
@@ -307,8 +307,8 @@ The validation command never writes fixture files. `npm run validate`:
 2. compiles every Draft 2020-12 schema;
 3. validates registry shape, uniqueness, and cross-references;
 4. validates every input event through its event schema;
-5. validates all 533 golden output artifacts;
-6. runs named assertions for all 41 scenarios and 26 acceptance criteria (AC01-AC26);
+5. validates all 546 golden output artifacts;
+6. runs named assertions for all 42 scenarios and 26 acceptance criteria (AC01-AC26);
 7. runs deliberate negative mutations;
 8. runs the TypeScript evaluator twice;
 9. runs the independently implemented Python evaluator;
@@ -317,6 +317,13 @@ The validation command never writes fixture files. `npm run validate`:
 Environment setup is `npm ci` and `python -m pip install --require-hashes --requirement requirements-contract.txt`.
 
 ## Changes from v0.2.1
+
+### v0.3.1 patch release
+
+- R-27 and M3-H-1 add the optional `metric_date` grouping dimension to metric definitions, metric runs, and fixture evaluations. Existing groupings and every v0.3.0 golden retain their meaning.
+- Daily event counts use the additive `event_count` calculation with exactly one supported `event_names` value (`click` or `install`) and a required `metric_date` grouping. `metric_date`, the `events` numerator, and `event_names` are reserved for `event_count`; other calculations continue to use cohort dimensions. `attribution_status` is valid only for an install event count, because clicks do not carry installation-attribution status. The v0.3.1 `daily_click_count` and `daily_install_count` definitions use a UTC calendar-day anchor and emit count-valued metric runs.
+- M3-H-2 resolves aggregate attribution-method display without a new artifact field: an aggregate is identified by its rule-bundle id/version/hash and broken down by `attribution_status`. A single attribution method label would be false for an aggregate that may mix decision methods.
+- Schema `$id` values and registry filenames remain on the `v0.3` minor line. Existing event `contract_version`, event `schema_version`, and v0.3.0 outputs remain valid.
 
 ### Preserved v0.2.1 patch behavior
 

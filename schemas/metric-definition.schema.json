@@ -19,7 +19,7 @@
       "additionalProperties": false,
       "required": ["calculation", "window", "numerator"],
       "properties": {
-        "calculation": { "enum": ["revenue_sum", "revenue_over_cost", "active_installations_over_cohort", "revenue_over_cohort", "cohort_size"] },
+        "calculation": { "enum": ["revenue_sum", "revenue_over_cost", "active_installations_over_cohort", "revenue_over_cohort", "cohort_size", "event_count"] },
         "window": {
           "type": "object",
           "additionalProperties": false,
@@ -29,17 +29,18 @@
             "day": { "type": "integer", "minimum": 0, "maximum": 3650 }
           }
         },
-        "numerator": { "enum": ["revenue", "active_installations", "cohort_size"] },
+        "numerator": { "enum": ["revenue", "active_installations", "cohort_size", "events"] },
         "denominator": { "enum": ["cost", "cohort_size"] },
         "cost_basis": { "const": "cohort_acquisition_day_current_snapshot" }
       }
     },
     "activity_events": { "type": "array", "minItems": 1, "uniqueItems": true, "default": ["session_start"], "items": { "type": "string", "minLength": 1 } },
+    "event_names": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
     "grouping_dimensions": {
       "type": "array",
       "minItems": 1,
       "uniqueItems": true,
-      "items": { "enum": ["campaign_id", "network", "country", "cohort_date", "attribution_status"] }
+      "items": { "enum": ["campaign_id", "network", "country", "cohort_date", "metric_date", "attribution_status"] }
     },
     "rule_bundle_id": { "$ref": "common.schema.json#/$defs/id" },
     "rule_bundle_version": { "type": "string" },
@@ -123,6 +124,62 @@
         "properties": {
           "value_type": { "const": "count" },
           "definition": { "type": "object", "additionalProperties": true, "properties": { "numerator": { "const": "cohort_size" } } }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "definition": { "type": "object", "additionalProperties": true, "properties": { "calculation": { "const": "event_count" } }, "required": ["calculation"] } },
+        "required": ["definition"]
+      },
+      "then": {
+        "required": ["event_names", "grouping_dimensions"],
+        "properties": {
+          "anchor_event": { "const": "calendar_day" },
+          "value_type": { "const": "count" },
+          "event_names": {
+            "type": "array",
+            "maxItems": 1,
+            "items": { "enum": ["click", "install"] }
+          },
+          "grouping_dimensions": { "type": "array", "contains": { "const": "metric_date" } },
+          "definition": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+              "numerator": { "const": "events" },
+              "window": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": { "type": { "const": "calendar_day" }, "day": { "const": 0 } }
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "not": { "required": ["event_names"] },
+        "properties": {
+          "grouping_dimensions": { "type": "array", "not": { "contains": { "const": "metric_date" } } },
+          "definition": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": { "numerator": { "not": { "const": "events" } } }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "definition": { "type": "object", "additionalProperties": true, "properties": { "calculation": { "const": "event_count" } }, "required": ["calculation"] },
+          "grouping_dimensions": { "type": "array", "contains": { "const": "attribution_status" } }
+        },
+        "required": ["definition", "grouping_dimensions"]
+      },
+      "then": {
+        "properties": {
+          "event_names": { "type": "array", "items": { "const": "install" } }
         }
       }
     }

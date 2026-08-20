@@ -250,11 +250,27 @@ async function persistProjection(appPool: Pool, logical: Any, input: Any): Promi
   const projected = (value: Any) => JSON.stringify(value);
   await withTenant(appPool, logical.tenant_id, async (client) => {
     if (logical.event_name === "click") {
+      const importContext = payload.import_context ?? {};
+      const campaignId = payload.campaign_id ?? importContext.provider_campaign_ref ?? null;
+      const network = payload.network ?? importContext.provider_network ?? null;
+      const country = payload.country ?? importContext.provider_country ?? null;
       await client.query(
         `INSERT INTO ledger.click_facts (
-          logical_event_id, tenant_id, app_id, click_id, redirector_click_at, artifact
-        ) VALUES ($1,$2,$3,$4,$5,$6::jsonb) ON CONFLICT (logical_event_id) DO NOTHING`,
-        [logical.logical_event_id, logical.tenant_id, logical.app_id, payload.click_id, payload.redirector_click_at ?? null, projected({ click_id: payload.click_id, redirector_click_at: payload.redirector_click_at ?? null })],
+          logical_event_id, tenant_id, app_id, click_id, redirector_click_at,
+          campaign_id, network, country, artifact
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb) ON CONFLICT (logical_event_id) DO NOTHING`,
+        [
+          logical.logical_event_id, logical.tenant_id, logical.app_id,
+          payload.click_id, payload.redirector_click_at ?? null,
+          campaignId, network, country,
+          projected({
+            click_id: payload.click_id,
+            redirector_click_at: payload.redirector_click_at ?? null,
+            campaign_id: campaignId,
+            network,
+            country,
+          }),
+        ],
       );
     } else if (logical.event_name === "install") {
       const importContext = payload.import_context ?? {};
@@ -601,6 +617,18 @@ export async function ingestFixture(
 ): Promise<number> {
   await resetLedger(seedPool);
   await ensureApps(appPool, input);
+  await seedPool.query(
+    `INSERT INTO testing.fixture_inputs (fixture_name, input_digest, input)
+     VALUES ($1,$2,$3::jsonb) ON CONFLICT (fixture_name)
+     DO UPDATE SET input_digest=EXCLUDED.input_digest, input=EXCLUDED.input, loaded_at=clock_timestamp()`,
+    [fixtureName, sha256(input), JSON.stringify(input)],
+  );
+  await seedPool.query(
+    `INSERT INTO testing.fixture_runs (fixture_name, input_digest)
+     VALUES ($1,$2) ON CONFLICT (fixture_name)
+     DO UPDATE SET input_digest=EXCLUDED.input_digest, evaluated_at=clock_timestamp()`,
+    [fixtureName, sha256(input)],
+  );
   const candidates = await PostgresCandidateProvider.stageAndLoad(seedPool, fixtureName, input);
   const providerFactory = (values: readonly CandidateAttempt[]): CandidateProvider => {
     candidates.assertEvaluationAttempts(values);
@@ -610,13 +638,6 @@ export async function ingestFixture(
   const output = evaluate(input, providerFactory);
 
   await seedPool.query("DELETE FROM testing.fixture_artifacts WHERE fixture_name = $1", [fixtureName]);
-  await seedPool.query(
-    `INSERT INTO testing.fixture_runs (fixture_name, input_digest)
-     VALUES ($1,$2) ON CONFLICT (fixture_name)
-     DO UPDATE SET input_digest=EXCLUDED.input_digest, evaluated_at=clock_timestamp()`,
-    [fixtureName, sha256(input)],
-  );
-
   for (const raw of baseOutput.raw_records) {
     const stored = await persistRaw(appPool, raw, policyDigestForRecord(input, raw.record_id));
     assertRoundTrip(raw, stored, `${fixtureName}/base raw/${raw.record_id}`);

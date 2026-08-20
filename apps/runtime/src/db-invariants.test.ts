@@ -1,5 +1,5 @@
 import { strict as assert } from "node:assert";
-import { createAppPool, createMigrationPool } from "./index.js";
+import { createAppPool, createMigrationPool, createReaderPool, withTenant } from "./index.js";
 
 const timestamp = "2026-08-19T00:00:00.000Z";
 const suffix = `${Date.now()}`;
@@ -11,6 +11,7 @@ const recordA = `test-record-a-${suffix}`;
 const recordB = `test-record-b-${suffix}`;
 
 const appPool = createAppPool();
+const readerPool = createReaderPool();
 const migrationPool = createMigrationPool();
 const appClient = await appPool.connect();
 
@@ -46,6 +47,11 @@ try {
     seed_can_manage_fixtures: boolean;
     app_can_delete_nonce: boolean;
     app_can_delete_ledger: boolean;
+    reader_bypass: boolean;
+    reader_owns_ledger: boolean;
+    reader_can_create: boolean;
+    reader_can_select_sessions: boolean;
+    reader_can_insert_sessions: boolean;
   }>(`
     SELECT
       rolbypassrls AS bypass,
@@ -68,7 +74,16 @@ try {
         'SELECT,INSERT,UPDATE,DELETE'
       ) AS seed_can_manage_fixtures,
       has_table_privilege('openmmp_app', 'ephemeral.request_nonces', 'DELETE') AS app_can_delete_nonce,
-      has_table_privilege('openmmp_app', 'ledger.ingest_batches', 'DELETE') AS app_can_delete_ledger
+      has_table_privilege('openmmp_app', 'ledger.ingest_batches', 'DELETE') AS app_can_delete_ledger,
+      (SELECT rolbypassrls FROM pg_roles WHERE rolname = 'openmmp_reader') AS reader_bypass,
+      EXISTS (
+        SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'ledger'
+          AND c.relowner = (SELECT oid FROM pg_roles WHERE rolname = 'openmmp_reader')
+      ) AS reader_owns_ledger,
+      has_database_privilege('openmmp_reader', current_database(), 'CREATE') AS reader_can_create,
+      has_table_privilege('openmmp_reader', 'ephemeral.dashboard_sessions', 'SELECT') AS reader_can_select_sessions,
+      has_table_privilege('openmmp_reader', 'ephemeral.dashboard_sessions', 'INSERT') AS reader_can_insert_sessions
     FROM pg_roles r
     WHERE rolname = 'openmmp_app'
   `);
@@ -82,13 +97,31 @@ try {
   assert.equal(role.rows[0].seed_can_manage_fixtures, true);
   assert.equal(role.rows[0].app_can_delete_nonce, true);
   assert.equal(role.rows[0].app_can_delete_ledger, false);
+  assert.equal(role.rows[0].reader_bypass, false);
+  assert.equal(role.rows[0].reader_owns_ledger, false);
+  assert.equal(role.rows[0].reader_can_create, false);
+  assert.equal(role.rows[0].reader_can_select_sessions, true);
+  assert.equal(role.rows[0].reader_can_insert_sessions, false);
+
+  await withTenant(appPool, tenantA, (client) => client.query(
+    "INSERT INTO control.apps (tenant_id, app_id, created_at) VALUES ($1,$2,$3)",
+    [tenantA, appA, timestamp],
+  ));
+  assert.equal((await readerPool.query("SELECT app_id FROM control.apps WHERE tenant_id=$1", [tenantA])).rowCount, 0);
+  assert.equal((await withTenant(readerPool, tenantA, (client) => client.query(
+    "SELECT app_id FROM control.apps WHERE tenant_id=$1 AND app_id=$2",
+    [tenantA, appA],
+  ))).rowCount, 1);
+  await assert.rejects(
+    () => withTenant(readerPool, tenantA, (client) => client.query(
+      "INSERT INTO control.apps (tenant_id, app_id, created_at) VALUES ($1,$2,$3)",
+      [tenantA, `reader-write-${suffix}`, timestamp],
+    )),
+    (error: unknown) => typeof error === "object" && error !== null && "code" in error && error.code === "42501",
+  );
 
   await appClient.query("BEGIN");
   await setTenant(tenantA);
-  await appClient.query(
-    "INSERT INTO control.apps (tenant_id, app_id, created_at) VALUES ($1, $2, $3)",
-    [tenantA, appA, timestamp],
-  );
   await appClient.query(
     `INSERT INTO ephemeral.request_nonces (
       tenant_id, app_id, principal_type, principal_key_id, nonce,
@@ -193,6 +226,7 @@ try {
   console.log("A7 tenant isolation passed: unset=0, cross-tenant=0, mismatched INSERT and cross-scope reference rejected.");
   console.log(`A8 append-only database controls passed for ${ledgerTables.rowCount} ledger tables; raw row remained byte-identical.`);
   console.log("A8 payload encryption, decryption, and purge behavior is covered by the Stage 5 integration suite.");
+  console.log("C03 reader RLS passed: unset tenant returned zero rows, tenant scope selected one row, and INSERT failed with 42501.");
 } catch (error) {
   try {
     await appClient.query("ROLLBACK");
@@ -203,5 +237,6 @@ try {
 } finally {
   appClient.release();
   await appPool.end();
+  await readerPool.end();
   await migrationPool.end();
 }

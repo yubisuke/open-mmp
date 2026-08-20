@@ -1,6 +1,7 @@
 import type { Pool } from "pg";
 import { assertAllowedDestination, randomSlug } from "@open-mmp/redirector-core";
 import { uuidV7, withTenant } from "@open-mmp/runtime";
+import { recordDashboardAudit } from "./session.js";
 
 type Any = Record<string, any>;
 
@@ -8,6 +9,7 @@ export async function createTrackingLink(input: {
   pool: Pool;
   tenantId: string;
   appId: string;
+  actorRef: string;
   allowedOrigins: readonly string[];
   body: Any;
   now?: string;
@@ -60,6 +62,16 @@ export async function createTrackingLink(input: {
       [artifact.tracking_link_id, input.tenantId, input.appId, now,
         JSON.stringify({ tracking_link_id: artifact.tracking_link_id, status: "active", changed_at: now })],
     );
+  });
+  await recordDashboardAudit(input.pool, {
+    tenantId: input.tenantId,
+    appId: input.appId,
+    actorRef: input.actorRef,
+    action: "tracking_link_created",
+    targetScope: "tracking_link",
+    targetRef: artifact.tracking_link_id,
+    outcome: "succeeded",
+    now: new Date(now),
   });
   return artifact;
 }

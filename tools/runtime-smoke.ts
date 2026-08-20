@@ -29,6 +29,37 @@ const redirectorBase = process.env.OPENMMP_REDIRECTOR_BASE_URL ?? env.OPENMMP_RE
   ?? `http://127.0.0.1:${redirectorPort}`;
 const health = await fetch(`${base}/health`);
 if (!health.ok) throw new Error(`health smoke failed with ${health.status}`);
+const dashboardLoginPage = await fetch(`${base}/dashboard`);
+const dashboardLoginBody = await dashboardLoginPage.text();
+if (dashboardLoginPage.status !== 200 || !dashboardLoginBody.includes("Admin key") || dashboardLoginBody.includes("Cohort metrics")) {
+  throw new Error(`unauthenticated dashboard smoke returned ${dashboardLoginPage.status}`);
+}
+const unauthenticatedData = await fetch(`${base}/dashboard/apps/app-local`);
+if (unauthenticatedData.status !== 401) {
+  throw new Error(`unauthenticated dashboard data route returned ${unauthenticatedData.status}`);
+}
+const dashboardLogin = await fetch(`${base}/dashboard/session`, {
+  method: "POST",
+  redirect: "manual",
+  headers: { "content-type": "application/x-www-form-urlencoded" },
+  body: new URLSearchParams({ admin_key: required("OPENMMP_ADMIN_KEY") }),
+});
+const dashboardCookie = (dashboardLogin.headers.get("set-cookie") ?? "").split(";", 1)[0];
+if (dashboardLogin.status !== 303 || !dashboardCookie) {
+  throw new Error(`dashboard login smoke returned ${dashboardLogin.status}`);
+}
+const dashboardHome = await fetch(`${base}/dashboard`, { headers: { cookie: dashboardCookie } });
+if (dashboardHome.status !== 200 || !(await dashboardHome.text()).includes("Open MMP dashboard")) {
+  throw new Error(`authenticated dashboard smoke returned ${dashboardHome.status}`);
+}
+const configuredAppId = required("OPENMMP_MAX_APP_ID");
+const dashboardApp = await fetch(`${base}/dashboard/apps/${encodeURIComponent(configuredAppId)}`, {
+  headers: { cookie: dashboardCookie },
+});
+const dashboardAppBody = await dashboardApp.text();
+if (dashboardApp.status !== 200 || !/data-value-unscaled="-?[0-9]+"/.test(dashboardAppBody)) {
+  throw new Error(`seeded dashboard metric smoke returned ${dashboardApp.status}`);
+}
 const parameters = new URLSearchParams({
   event_id: "abcdef0123456789abcdef0123456789abcdef02",
   revenue: "0.000001",
@@ -49,6 +80,7 @@ const linkResponse = await fetch(`${base}/v1/admin/tracking-links`, {
   method: "POST",
   headers: { authorization: `Bearer ${required("OPENMMP_ADMIN_KEY")}`, "content-type": "application/json" },
   body: JSON.stringify({
+    app_id: configuredAppId,
     destination_kind: "play_store",
     destination_url: "https://play.google.com/store/apps/details?id=dev.openmmp.synthetic",
     play_package_name: "dev.openmmp.synthetic",
@@ -103,4 +135,4 @@ const batch = await signedPost("/v1/events/batch", { records: [{
 }] }, { keyId: credential.installation_key_id, secret: credential.installation_secret });
 if (batch.status !== 202) throw new Error(`signed SDK batch smoke returned ${batch.status}`);
 
-console.log("Runtime smoke passed: health=200 valid_max=204 tampered_max=401 redirect=302 enrollment=201 sdk_batch=202.");
+console.log("Runtime smoke passed: health=200 dashboard=200/login303 seeded_metric=visible valid_max=204 tampered_max=401 redirect=302 enrollment=201 sdk_batch=202.");

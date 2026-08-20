@@ -129,7 +129,7 @@ for (const state of schemaStates) {
 function validatorFor(id: string): Validator {
   const state = schemaStates.find((candidate) => candidate.id === id);
   check(state, `schema state missing: ${id}`);
-  check(!state.compileError, `schema did not compile: ${id}`);
+  check(!state.compileError, `schema did not compile: ${id}: ${String(state.compileError)}`);
   check(state.validator, `schema validator missing: ${id}`);
   return state.validator;
 }
@@ -317,7 +317,8 @@ function validateRegistryReferences(output: Any, label: string): void {
     check(cost.dimension_digest === sha256(dimensions), `cost dimension digest mismatch in ${label}`);
   }
   for (const definition of output.metric_definitions) {
-    check(definition.metric_definition_version === "0.3.0", `wrong metric definition version in ${label}`);
+    const expectedVersion = definition.definition.calculation === "event_count" ? "0.3.1" : "0.3.0";
+    check(definition.metric_definition_version === expectedVersion, `wrong metric definition version in ${label}`);
     check(["UTC", "Asia/Tokyo"].includes(definition.aggregation_time_zone), `unknown metric definition time zone in ${label}`);
   }
   for (const rejection of output.rejections) {
@@ -445,7 +446,7 @@ if (!summaryOnly) {
         check(value.$schema === DRAFT, `wrong schema dialect: ${relative(root, state.path)}`);
         check(/^urn:open-mmp:schema:[a-z0-9-]+:v0\.3$/.test(value.$id), `unstable schema id: ${relative(root, state.path)}`);
         assertClosedObjects(value, relative(root, state.path));
-        check(!state.compileError, `schema did not compile: ${value.$id}`);
+        check(!state.compileError, `schema did not compile: ${value.$id}: ${String(state.compileError)}`);
         check(state.validator, `schema validator missing: ${value.$id}`);
       });
     }
@@ -553,8 +554,8 @@ if (!summaryOnly) {
         }
       });
     }
-    it("contains 41 fixture directories", () => {
-      check(fixtureDirs.length === 41, `expected 41 fixture directories, found ${fixtureDirs.length}`);
+    it("contains 42 fixture directories", () => {
+      check(fixtureDirs.length === 42, `expected 42 fixture directories, found ${fixtureDirs.length}`);
     });
   });
 
@@ -839,12 +840,19 @@ const scenarios: Array<[string, () => void]> = [
     check(value.attributions[0].reason_code === "valid_install_referrer", "scenario 41 attribution remains evidence-based");
     check(value.fraud_decisions[0].reason_code === "click_injection_suspected" && value.fraud_decisions[0].action === "flag", "scenario 41 public fraud classification");
   }],
+  ["42 daily metric date", () => {
+    const value = fixture("42-daily-metric-date").output;
+    const runs = Object.fromEntries(value.metric_runs.map((run: Any) => [run.metric_name, run]));
+    check(runs.daily_click_count.value_unscaled === "1" && runs.daily_click_count.grouping.dimensions.metric_date === "2026-08-20", "scenario 42 click count");
+    check(runs.daily_install_count.value_unscaled === "1" && runs.daily_install_count.grouping.dimensions.attribution_status === "organic", "scenario 42 install count");
+    check(value.metric_definitions.some((definition: Any) => definition.definition.calculation === "event_count" && definition.metric_definition_version === "0.3.1"), "scenario 42 definition version");
+  }],
 ];
 if (!summaryOnly) {
   describe("reviewed scenarios", () => {
     for (const [name, assertion] of scenarios) it(name, assertion);
-    it("contains 41 scenario assertions", () => {
-      check(scenarios.length === 41, "scenario assertion inventory must contain 41 entries");
+    it("contains 42 scenario assertions", () => {
+      check(scenarios.length === 42, "scenario assertion inventory must contain 42 entries");
     });
   });
 
@@ -1385,7 +1393,7 @@ const acceptance: Array<[string, () => void]> = [
     check(corrections.some((item: Any) => item.correction_type === "retraction"), "AC15 retraction");
     check(fixture("17-redaction-recalculation").output.metric_runs.some((item: Any) => item.supersedes_metric_run_id), "AC15 redaction");
   }],
-  ["AC16 clock referrer prefetch and withdrawal fixtures pass", () => check(scenarios.length === 41 && fixture("11-clock-skew").output.deliveries.some((item: Any) => item.clock_skew_suspected) && fixture("13-referrer-unsupported").output.attributions.length === 2 && fixture("19-bot-prefetch").output.fraud_decisions.length === 1 && fixture("41-click-injection-suspected").output.fraud_decisions.length === 1 && fixture("20-timestamp-invalid").output.rejections.some((item: Any) => item.reason_code === "timestamp_invalid"), "AC16")],
+  ["AC16 clock referrer prefetch and withdrawal fixtures pass", () => check(scenarios.length === 42 && fixture("11-clock-skew").output.deliveries.some((item: Any) => item.clock_skew_suspected) && fixture("13-referrer-unsupported").output.attributions.length === 2 && fixture("19-bot-prefetch").output.fraud_decisions.length === 1 && fixture("41-click-injection-suspected").output.fraud_decisions.length === 1 && fixture("20-timestamp-invalid").output.rejections.some((item: Any) => item.reason_code === "timestamp_invalid"), "AC16")],
   ["AC17 server-recognized withdrawal rejects and redacts payload", () => {
     for (const name of ["14-withdrawal-after-occurrence", "15-event-after-withdrawal"]) {
       const value = fixture(name).output;
@@ -1425,7 +1433,7 @@ const acceptance: Array<[string, () => void]> = [
     for (const forbidden of ["threshold", "model_weight", "watchlist", "ip_address", "user_agent", "response_timing"]) check(!schemaText.includes(forbidden), `AC20 ${forbidden}`);
     check(specText.includes("remain private"), "AC20 private boundary");
   }],
-  ["AC21 one command validates every schema registry fixture and golden", () => check(schemaPaths.length === 27 && Object.keys(registries).length === 8 && fixtureDirs.length === 41 && outputArtifactCount === 41 * 13, "AC21")],
+  ["AC21 one command validates every schema registry fixture and golden", () => check(schemaPaths.length === 27 && Object.keys(registries).length === 8 && fixtureDirs.length === 42 && outputArtifactCount === 42 * 13, "AC21")],
   ["AC22 repeated and independent evaluators produce identical JCS", () => {
     for (const { output, python } of results.values()) check(equal(output, python), "AC22 evaluator mismatch");
     const vector = { numbers: [333333333.33333329, 1e30, 4.50, 2e-3, 1e-27, -0], string: "€$\u000f\nA'B\"\\\"/" };
@@ -1511,6 +1519,33 @@ const validRevenue = {
 };
 if (!summaryOnly) {
   describe("semantic mutations", () => {
+    it("keeps daily event counts bound to one date and one supported event", () => {
+      const definitionValidator = validatorFor("urn:open-mmp:schema:metric-definition:v0.3");
+      const baseline = structuredClone(fixture("42-daily-metric-date").input);
+      const clickDefinition = baseline.metric_definitions.find((definition: Any) => definition.metric_name === "daily_click_count");
+      check(definitionValidator(clickDefinition), "daily click definition baseline invalid");
+
+      const missingDimension = structuredClone(clickDefinition);
+      missingDimension.grouping_dimensions = missingDimension.grouping_dimensions.filter((name: string) => name !== "metric_date");
+      check(!definitionValidator(missingDimension), "event_count accepted a definition without metric_date");
+      check(!definitionValidator({ ...clickDefinition, event_names: ["click", "install"] }), "event_count accepted multiple event names");
+      check(!definitionValidator({ ...clickDefinition, event_names: ["custom_event"] }), "event_count accepted an unsupported event name");
+      check(!definitionValidator({ ...clickDefinition, grouping_dimensions: ["metric_date", "attribution_status"] }), "click event_count accepted attribution_status grouping");
+
+      const revenue = structuredClone(fixture("33-stage-b-cohort-metrics").input.metric_definitions.find((definition: Any) => definition.metric_name === "d1_roas"));
+      revenue.definition.numerator = "events";
+      check(!definitionValidator(revenue), "non-event calculation accepted the events numerator");
+
+      const missingDateEvaluation = structuredClone(baseline);
+      delete missingDateEvaluation.metric_evaluations[0].grouping.metric_date;
+      check(!capture(() => evaluate(missingDateEvaluation)).ok, "TypeScript event_count accepted a missing metric_date evaluation");
+      check(!capture(() => pythonOutputs([missingDateEvaluation])).ok, "Python event_count accepted a missing metric_date evaluation");
+
+      const reservedDate = structuredClone(fixture("33-stage-b-cohort-metrics").input);
+      reservedDate.metric_evaluations[0].grouping.metric_date = "2026-08-01";
+      check(!capture(() => evaluate(reservedDate)).ok, "TypeScript non-event calculation accepted metric_date");
+      check(!capture(() => pythonOutputs([reservedDate])).ok, "Python non-event calculation accepted metric_date");
+    });
     it("enforces present and undefined metric value shapes", () => {
       const validator = validatorFor(outputSchemaIds.metric_runs);
       const present = structuredClone(fixture("33-stage-b-cohort-metrics").output.metric_runs.find((run: Any) => run.metric_run_id === "run-33:d1_roas"));

@@ -84,7 +84,7 @@ Before implementation, legal and operational requirements must validate these de
 - Privacy tombstones retain plaintext `reason_code` and `policy_version`. Their `provenance_digest` is a tamper-evident SHA-256/JCS anchor over tenant, app, privacy request, record, and completion time; it is not a secrecy mechanism.
 - Retention expiry follows the same tombstone and immutable recalculation path without creating a privacy request. Replacement metric runs are marked `retention_affected`.
 - Request state is `received | processing | completed | failed`.
-- Data access and export (DSAR access/portability) will be provided through the M3 reporting API; the request contract is not yet defined and is tracked as an open design item.
+- M3 CSV and dashboard exports are aggregate operator reports. They are not data-subject access or portability exports and must never be presented as such. A DSAR access/portability contract remains a separate open design item.
 
 ## Authentication and secrets
 
