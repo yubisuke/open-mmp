@@ -325,6 +325,47 @@ describe("M2a signed SDK ingestion", () => {
     ))).rows[0].artifact);
   });
 
+  it("rejects consent-required events received after a server-recognised withdrawal", async () => {
+    const before = await withTenant(pool, tenantId, async (client) => (await client.query<{ count: number }>(
+      `SELECT count(*)::int AS count FROM ledger.rejections
+       WHERE tenant_id=$1 AND app_id=$2 AND reason_code='consent_withdrawn'`,
+      [tenantId, appId],
+    )).rows[0].count);
+    const withdrawal = sourceEvent(`event:withdrawal:${run}`, "consent_changed", {
+      consent_state: "withdrawn",
+      effective_at: "2026-08-19T00:00:00.000Z",
+      consent_policy_version: "synthetic-consent-v1",
+    });
+    assert.equal((await signed("/v1/events/batch", { records: [withdrawal] }, {
+      secret: installationSecret, installationKeyId,
+    })).status, 202);
+    await processSdkInbox(pool, payloadStore, tenantId);
+
+    const eventId = `event:post-withdrawal:${run}`;
+    const postWithdrawal = sourceEvent(eventId, "custom_event", {
+      installation_id: installationId,
+      event_key: "post_withdrawal",
+      attributes: { source: "synthetic" },
+    }, "2026-08-18T00:00:00.000Z");
+    // A client cannot bypass the server-owned purpose mapping.
+    postWithdrawal.processing_purpose_id = "fraud_prevention";
+    assert.equal((await signed("/v1/events/batch", { records: [postWithdrawal] }, {
+      secret: installationSecret, installationKeyId,
+    })).status, 202);
+    await processSdkInbox(pool, payloadStore, tenantId);
+
+    const after = await withTenant(pool, tenantId, async (client) => (await client.query<{ count: number }>(
+      `SELECT count(*)::int AS count FROM ledger.rejections
+       WHERE tenant_id=$1 AND app_id=$2 AND reason_code='consent_withdrawn'`,
+      [tenantId, appId],
+    )).rows[0].count);
+    assert.equal(after, before + 1);
+    assert.equal(await withTenant(pool, tenantId, async (client) => (await client.query(
+      `SELECT event_id FROM ledger.logical_events
+       WHERE tenant_id=$1 AND app_id=$2 AND event_id=$3`, [tenantId, appId, eventId],
+    )).rowCount), 0);
+  });
+
   it("authorises on-device deletion only for the credential's own installation", async () => {
     const secondId = `installation:other-${run}`;
     const secondResponse = await signed("/v1/installations", { installation_id: secondId });

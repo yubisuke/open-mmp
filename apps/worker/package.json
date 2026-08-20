@@ -14,6 +14,7 @@
   "dependencies": {
     "@open-mmp/attribution-core": "0.3.0",
     "@open-mmp/contracts": "0.3.0",
+    "@open-mmp/meta-install-referrer": "0.1.0",
     "@open-mmp/runtime": "0.1.0",
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1"

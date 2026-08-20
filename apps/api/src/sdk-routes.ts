@@ -83,6 +83,12 @@ function normalizedRecord(
     && installationIdDigest(config, payload.installation_id) !== identity.installationIdDigest) {
     throw new Error("installation_scope_mismatch");
   }
+  const processingPurposeId = (() => {
+    if (source.event_name === "install") return "attribution";
+    if (source.event_name === "ad_revenue") return "revenue_measurement";
+    if (source.event_name === "consent_changed" || source.event_name === "privacy_control") return "fraud_prevention";
+    return "analytics";
+  })();
   const recordId = `record:${uuidV7()}`;
   return {
     contract_version: "0.3.0",
@@ -100,7 +106,8 @@ function normalizedRecord(
     occurred_at: source.occurred_at,
     occurred_at_source: source.occurred_at_source,
     received_at: receivedAt,
-    processing_purpose_id: source.processing_purpose_id,
+    // Processing purpose is assigned by the authenticated runtime, never trusted from the client.
+    processing_purpose_id: processingPurposeId,
     processing_sequence: source.processing_sequence,
     payload,
   };

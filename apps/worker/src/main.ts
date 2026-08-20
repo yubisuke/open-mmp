@@ -15,6 +15,8 @@ const maxTenantId = process.env.OPENMMP_MAX_TENANT_ID ?? "tenant-local";
 const sdkTenantId = process.env.OPENMMP_SDK_TENANT_ID ?? maxTenantId;
 const secrets = new EnvironmentSecretStore({
   OPENMMP_PAYLOAD_MASTER_KEY: { value: process.env.OPENMMP_PAYLOAD_MASTER_KEY, file: process.env.OPENMMP_PAYLOAD_MASTER_KEY_FILE },
+  OPENMMP_META_IR_DECRYPTION_KEY: { value: process.env.OPENMMP_META_IR_DECRYPTION_KEY, file: process.env.OPENMMP_META_IR_DECRYPTION_KEY_FILE },
+  OPENMMP_META_IR_DECRYPTION_KEY_PREVIOUS: { value: process.env.OPENMMP_META_IR_DECRYPTION_KEY_PREVIOUS, file: process.env.OPENMMP_META_IR_DECRYPTION_KEY_PREVIOUS_FILE },
 });
 const payloadStore = new EncryptedFilePayloadStore(
   process.env.OPENMMP_PAYLOAD_STORE_DIR ?? ".openmmp/payloads",
@@ -26,7 +28,12 @@ const tick = async (): Promise<void> => {
   busy = true;
   try {
     await processMaxInbox(pool, payloadStore, maxTenantId);
-    await processSdkInbox(pool, payloadStore, sdkTenantId);
+    await processSdkInbox(pool, payloadStore, sdkTenantId, {
+      metaKeys: [
+        secrets.read("OPENMMP_META_IR_DECRYPTION_KEY") ? { key_id: "current", key_hex: secrets.read("OPENMMP_META_IR_DECRYPTION_KEY")! } : undefined,
+        secrets.read("OPENMMP_META_IR_DECRYPTION_KEY_PREVIOUS") ? { key_id: "previous", key_hex: secrets.read("OPENMMP_META_IR_DECRYPTION_KEY_PREVIOUS")! } : undefined,
+      ].filter((value): value is { key_id: string; key_hex: string } => value !== undefined),
+    });
   }
   finally { busy = false; }
 };
