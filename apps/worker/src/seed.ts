@@ -16,6 +16,8 @@ const seedPool = createSeedPool();
 let artifactCount = 0;
 
 try {
+  await seedPool.query("DELETE FROM testing.fixture_runs");
+  await seedPool.query("DELETE FROM testing.fixture_inputs");
   for (const fixtureName of fixtureNames) {
     const input: Any = JSON.parse(readFileSync(join(fixtureRoot, fixtureName, "input.json"), "utf8"));
     const inputDigest = sha256(input);
