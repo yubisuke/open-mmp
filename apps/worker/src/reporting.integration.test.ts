@@ -96,11 +96,11 @@ describe("M1b reporting and difference audit", { concurrency: false }, () => {
   });
 
   it("B7 protects reporting with the admin key and preserves JSON/CSV values and metadata", async () => {
-    const unauthorized = await fetch(`${baseUrl}/v1/reports/metrics?format=json`);
+    const unauthorized = await fetch(`${baseUrl}/v1/reports/metrics?app_id=app-a&format=json`);
     assert.equal(unauthorized.status, 401);
     const headers = { authorization: `Bearer ${adminKey}` };
-    const jsonResponse = await fetch(`${baseUrl}/v1/reports/metrics?format=json`, { headers });
-    const csvResponse = await fetch(`${baseUrl}/v1/reports/metrics?format=csv`, { headers });
+    const jsonResponse = await fetch(`${baseUrl}/v1/reports/metrics?app_id=app-a&format=json`, { headers });
+    const csvResponse = await fetch(`${baseUrl}/v1/reports/metrics?app_id=app-a&format=csv`, { headers });
     assert.equal(jsonResponse.status, 200);
     assert.equal(csvResponse.status, 200);
     const json = await jsonResponse.json() as { data: Any[] };
@@ -124,7 +124,7 @@ describe("M1b reporting and difference audit", { concurrency: false }, () => {
     const input = fixture("37-undefined-organic-roas");
     await registerAndIngest("37-undefined-organic-roas", input);
     await computeSqlMetricRuns(appPool, input, true);
-    const response = await fetch(`${baseUrl}/v1/reports/metrics?format=json`, {
+    const response = await fetch(`${baseUrl}/v1/reports/metrics?app_id=app-a&format=json`, {
       headers: { authorization: `Bearer ${adminKey}` },
     });
     const body = await response.json() as { data: Any[] };
@@ -142,7 +142,7 @@ describe("M1b reporting and difference audit", { concurrency: false }, () => {
     it(`B5/B10 returns complete automatically-derived ${reason} evidence`, async () => {
       const input = fixture(name);
       await registerAndIngest(name, input);
-      const response = await fetch(`${baseUrl}/v1/audit/differences?format=json`, {
+      const response = await fetch(`${baseUrl}/v1/audit/differences?app_id=app-a&format=json`, {
         headers: { authorization: `Bearer ${adminKey}` },
       });
       const body = await response.json() as { data: Any[] };

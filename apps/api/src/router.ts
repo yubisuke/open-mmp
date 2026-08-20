@@ -117,7 +117,6 @@ async function adminIdentity(
   request: IncomingMessage,
   pool: Pool,
 ): Promise<AdminIdentity | undefined> {
-  if (dependencies.adminBucket && !dependencies.adminBucket.allow()) return undefined;
   return verifyAdminKey(pool, dependencies.dashboard.tenantId, authorization(request));
 }
 
@@ -185,6 +184,10 @@ export function createRequestHandler(dependencies: RequestHandlerDependencies): 
       }
       if (route.id === "dashboard_root") {
         const session = await dashboardSessionFor(dependencies, request);
+        if (!session && authorization(request)) {
+          dashboardHtml(response, 401, loginPage("Authentication required."));
+          return;
+        }
         dashboardHtml(response, 200, session ? dashboardPage(session) : loginPage());
         return;
       }
@@ -275,6 +278,10 @@ export function createRequestHandler(dependencies: RequestHandlerDependencies): 
       }
 
       if (route.auth === "admin_bearer") {
+        if (dependencies.adminBucket && !dependencies.adminBucket.allow()) {
+          response.writeHead(429, { "retry-after": "1", "cache-control": "no-store" }).end();
+          return;
+        }
         const identity = await adminIdentity(dependencies, request, pool);
         if (!identity) {
           json(response, 401, { error: "unauthorized" });

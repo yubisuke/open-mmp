@@ -1,6 +1,7 @@
 ALTER TABLE control.admin_keys
   DROP CONSTRAINT admin_keys_tenant_id_app_id_fkey,
-  ALTER COLUMN app_id DROP NOT NULL;
+  ALTER COLUMN app_id DROP NOT NULL,
+  ADD CONSTRAINT admin_keys_tenant_key_unique UNIQUE (tenant_id, key_id);
 
 ALTER TABLE control.admin_key_states
   DROP CONSTRAINT admin_key_states_tenant_id_app_id_fkey,
@@ -9,12 +10,14 @@ ALTER TABLE control.admin_key_states
 CREATE TABLE ephemeral.dashboard_sessions (
   session_id control.identifier PRIMARY KEY,
   tenant_id control.identifier NOT NULL,
-  admin_key_id control.identifier NOT NULL REFERENCES control.admin_keys (key_id),
+  admin_key_id control.identifier NOT NULL,
   token_digest text NOT NULL CHECK (token_digest ~ '^[0-9a-f]{64}$'),
   created_at timestamptz NOT NULL,
   expires_at timestamptz NOT NULL,
   CHECK (expires_at > created_at),
-  UNIQUE (token_digest)
+  UNIQUE (token_digest),
+  FOREIGN KEY (tenant_id, admin_key_id)
+    REFERENCES control.admin_keys (tenant_id, key_id)
 );
 
 CREATE INDEX dashboard_sessions_expiry_idx

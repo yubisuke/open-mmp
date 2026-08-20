@@ -47,7 +47,10 @@ export async function ensureAdminKeys(
         [id, scope.tenantId, now, JSON.stringify({ key_id: id, status: "active", changed_at: now })],
       );
     }
-    const active = await client.query("SELECT count(*)::int AS count FROM control.admin_keys_current WHERE status='active'");
+    const active = await client.query(
+      "SELECT count(*)::int AS count FROM control.admin_keys_current WHERE tenant_id=$1 AND status='active'",
+      [scope.tenantId],
+    );
     if (active.rows[0].count > 2) throw new Error("admin key overlap exceeds two active keys");
     return identifiers;
   });
