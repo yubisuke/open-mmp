@@ -74,6 +74,9 @@ describe("M3 typed reporting query", () => {
       assert.equal(JSON.stringify(statement.values).includes(value), true, `${value} was not bound`);
     }
     assert.match(statement.text, /ORDER BY mr\.metric_name COLLATE "C"/);
+    assert.match(statement.text, /mr\.grouping->>'campaign_id'/);
+    assert.match(statement.text, /mr\.grouping->>'metric_date'/);
+    assert.equal(statement.text.includes("grouping->'dimensions'"), false);
     assert.equal(/\bOFFSET\b/i.test(statement.text), false);
   });
 });

@@ -223,7 +223,7 @@ function push(values: unknown[], value: unknown): string {
 }
 
 function runDateExpression(alias: string): string {
-  return `COALESCE(NULLIF(${alias}.grouping->'dimensions'->>'metric_date',''), NULLIF(${alias}.grouping->'dimensions'->>'cohort_date',''))`;
+  return `COALESCE(NULLIF(${alias}.grouping->>'metric_date',''), NULLIF(${alias}.grouping->>'cohort_date',''))`;
 }
 
 export function buildMetricQuery(query: MetricQuery): ParameterizedQuery {
@@ -232,7 +232,7 @@ export function buildMetricQuery(query: MetricQuery): ParameterizedQuery {
   if (query.metricNames) predicates.push(`mr.metric_name=ANY(${push(values, query.metricNames)}::text[])`);
   if (query.metricDefinitionVersion) predicates.push(`mr.metric_definition_version=${push(values, query.metricDefinitionVersion)}`);
   for (const [dimension, value] of Object.entries(query.grouping ?? {}) as [GroupingDimension, string][]) {
-    predicates.push(`mr.grouping->'dimensions'->>'${dimension}'=${push(values, value)}`);
+    predicates.push(`mr.grouping->>'${dimension}'=${push(values, value)}`);
   }
   if (query.dateFrom) predicates.push(`${runDateExpression("mr")} >= ${push(values, query.dateFrom)}`);
   if (query.dateTo) predicates.push(`${runDateExpression("mr")} < ${push(values, query.dateTo)}`);
