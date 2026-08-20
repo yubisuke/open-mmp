@@ -64,6 +64,14 @@ class OpenMmpSdk private constructor(
     }
   }
 
+  fun startSession() {
+    if (!isCollectionEnabled()) return
+    executor.execute {
+      enqueueJson("session_start", "analytics", EventFactory.session(storage.installationId(), EventFactory.newSessionId()))
+      drain()
+    }
+  }
+
   fun enqueueAdRevenue(payload: JSONObject) {
     if (!isCollectionEnabled()) return
     executor.execute { enqueueJson("ad_revenue", "revenue_measurement", payload); drain() }

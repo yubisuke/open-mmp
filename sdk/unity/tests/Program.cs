@@ -44,6 +44,7 @@ internal static class Program
         private readonly CountdownEvent callbacks = new CountdownEvent(10_000);
         public void Initialize(OpenMmpOptions options) { }
         public void TrackCustomEvent(string eventKey) { }
+        public void StartSession() { }
         public void SetCollectionEnabled(bool enabled) { }
         public void ResetInstallationId(Action<bool> completion) => completion(true);
         public void PingFromBackground(string value, Action<string> completion)

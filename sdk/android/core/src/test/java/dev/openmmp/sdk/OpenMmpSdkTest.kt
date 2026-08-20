@@ -76,6 +76,17 @@ class OpenMmpSdkTest {
     assertEquals(setOf("fraud_prevention"), remaining.map { it.processingPurposeId }.toSet())
   }
 
+  @Test fun `session start uses a durable analytics event`() {
+    val sdk = sdk(RecordingTransport(false))
+    sdk.initialize()
+    sdk.startSession()
+    await { sdk.pendingEvents().any { it.eventName == "session_start" } }
+    val session = sdk.pendingEvents().single { it.eventName == "session_start" }
+    assertEquals("analytics", session.processingPurposeId)
+    assertTrue(session.payloadJson.contains("\"installation_id\""))
+    assertTrue(session.payloadJson.contains("\"session_id\":\"session:"))
+  }
+
   @Test fun `reset deletes first then creates a fresh anchor without re-reading referrers`() {
     val transport = RecordingTransport(true)
     val reads = AtomicInteger()

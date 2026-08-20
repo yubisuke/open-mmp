@@ -45,6 +45,11 @@ internal object EventFactory {
     JSONObject().put("event_name", "custom_event").put("installation_id", installationId)
       .put("event_key", eventKey).put("attributes", JSONObject(attributes))
 
+  fun session(installationId: String, sessionId: String): JSONObject = JSONObject()
+    .put("event_name", "session_start")
+    .put("installation_id", installationId)
+    .put("session_id", sessionId)
+
   fun consent(state: String, policyVersion: String): JSONObject = JSONObject()
     .put("event_name", "consent_changed")
     .put("consent_state", state)
@@ -66,4 +71,5 @@ internal object EventFactory {
     })).toString()
 
   fun newEventId(): String = "event:${UUID.randomUUID()}"
+  fun newSessionId(): String = "session:${UUID.randomUUID()}"
 }

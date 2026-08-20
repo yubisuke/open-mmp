@@ -21,6 +21,7 @@ namespace OpenMmp.Unity
         }
 
         public void TrackCustomEvent(string eventKey) => EnsureBridge().CallStatic("trackCustomEvent", eventKey);
+        public void StartSession() => EnsureBridge().CallStatic("startSession");
         public void SetCollectionEnabled(bool enabled) => EnsureBridge().CallStatic("setCollectionEnabled", enabled);
         public void ResetInstallationId(Action<bool> completion) =>
             EnsureBridge().CallStatic("resetInstallationId", new BooleanCallback(completion));

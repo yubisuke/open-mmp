@@ -7,6 +7,7 @@ namespace OpenMmp.Unity
     {
         void Initialize(OpenMmpOptions options);
         void TrackCustomEvent(string eventKey);
+        void StartSession();
         void SetCollectionEnabled(bool enabled);
         void ResetInstallationId(Action<bool> completion);
         void PingFromBackground(string value, Action<string> completion);
@@ -34,6 +35,7 @@ namespace OpenMmp.Unity
 
         public void Initialize(OpenMmpOptions options) => platform.Initialize(options);
         public void TrackCustomEvent(string eventKey) => platform.TrackCustomEvent(eventKey);
+        public void StartSession() => platform.StartSession();
         public void SetCollectionEnabled(bool enabled) => platform.SetCollectionEnabled(enabled);
         public void ResetInstallationId(Action<bool> completion) =>
             platform.ResetInstallationId(value => dispatcher.Post(() => completion(value)));

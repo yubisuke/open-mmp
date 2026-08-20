@@ -20,6 +20,7 @@ public sealed class OpenMmpSample : MonoBehaviour
             SdkSecret = sdkSecret,
             WrapperVersion = "unity-sample-0.1.0",
         });
+        client.StartSession();
 #else
         Debug.Log("Open MMP Android sample is active only in an Android player build.");
 #endif

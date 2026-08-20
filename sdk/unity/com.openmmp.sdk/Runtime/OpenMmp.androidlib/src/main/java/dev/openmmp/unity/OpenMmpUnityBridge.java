@@ -24,6 +24,8 @@ public final class OpenMmpUnityBridge {
     requireSdk().trackCustomEvent(eventKey, Collections.emptyMap());
   }
 
+  public static void startSession() { requireSdk().startSession(); }
+
   public static void setCollectionEnabled(boolean enabled) { requireSdk().setCollectionEnabled(enabled); }
 
   public static void resetInstallationId(BooleanCallback callback) {
