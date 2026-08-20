@@ -618,6 +618,12 @@ export async function ingestFixture(
   await resetLedger(seedPool);
   await ensureApps(appPool, input);
   await seedPool.query(
+    `INSERT INTO testing.fixture_inputs (fixture_name, input_digest, input)
+     VALUES ($1,$2,$3::jsonb) ON CONFLICT (fixture_name)
+     DO UPDATE SET input_digest=EXCLUDED.input_digest, input=EXCLUDED.input, loaded_at=clock_timestamp()`,
+    [fixtureName, sha256(input), JSON.stringify(input)],
+  );
+  await seedPool.query(
     `INSERT INTO testing.fixture_runs (fixture_name, input_digest)
      VALUES ($1,$2) ON CONFLICT (fixture_name)
      DO UPDATE SET input_digest=EXCLUDED.input_digest, evaluated_at=clock_timestamp()`,
