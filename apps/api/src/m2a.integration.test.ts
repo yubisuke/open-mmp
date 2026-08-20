@@ -73,7 +73,7 @@ async function signed(path: string, value: unknown, options: {
       "x-openmmp-nonce": nonce,
       "x-openmmp-signature": signature,
     },
-    body,
+    body: body.toString("utf8"),
   });
 }
 
