@@ -13,6 +13,7 @@ import {
 } from "@open-mmp/runtime";
 import { ensureAdminKeys, verifyAdminKey, type AppAdminIdentity } from "./admin-auth.js";
 import { createRequestHandler } from "./router.js";
+import { OperationalMetrics } from "./operational-metrics.js";
 import { activateRuleBundle } from "./rule-bundles.js";
 import { issueDashboardSession, verifyDashboardSession } from "./session.js";
 
@@ -33,6 +34,7 @@ describe("M5 RBAC and rule-bundle production controls", { concurrency: false }, 
   let payloadRoot: string;
   let payloadStore: EncryptedFilePayloadStore;
   let identities: Record<keyof typeof keys, AppAdminIdentity>;
+  const operationalMetrics = new OperationalMetrics();
 
   before(async () => {
     appPool = createAppPool();
@@ -76,6 +78,7 @@ describe("M5 RBAC and rule-bundle production controls", { concurrency: false }, 
         tenantId,
         sessionTtlSeconds: 43200,
       },
+      operationalMetrics,
     }));
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     const address = server.address();
@@ -101,6 +104,7 @@ describe("M5 RBAC and rule-bundle production controls", { concurrency: false }, 
     for (const role of Object.keys(keys) as (keyof typeof keys)[]) {
       assert.equal((await request(role, "/v1/admin/apps")).status, 200);
     }
+    assert.equal((await request("read_only", "/metrics")).status, 200);
 
     assert.equal((await request("admin", "/v1/admin/apps", {
       method: "POST",
@@ -158,6 +162,22 @@ describe("M5 RBAC and rule-bundle production controls", { concurrency: false }, 
     ), undefined);
   });
 
+  it("serves identifier-free Prometheus metrics only to authenticated readers", async () => {
+    assert.equal((await fetch(`${baseUrl}/metrics`)).status, 401);
+    assert.equal((await fetch(`${baseUrl}/metrics`, {
+      headers: { authorization: `Bearer synthetic-invalid-${"x".repeat(32)}` },
+    })).status, 401);
+    const response = await request("admin", "/metrics");
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get("content-type") ?? "", /^text\/plain; version=0\.0\.4/);
+    const body = await response.text();
+    assert.match(body, /openmmp_http_requests_total/);
+    assert.match(body, /openmmp_ingest_backlog\{queue="sdk_batches"\}/);
+    for (const forbidden of ["tenant_id", "app_id", "installation_id", "record_id", "payload", "authorization", "cookie"]) {
+      assert.equal(body.includes(forbidden), false);
+    }
+  });
+
   it("keeps rule-bundle versions append-only with one current successor and audit history", async () => {
     const first = await activateRuleBundle({
       pool: appPool,
@@ -190,6 +210,49 @@ describe("M5 RBAC and rule-bundle production controls", { concurrency: false }, 
         supersedes_rule_bundle_revision_id: first.rule_bundle_revision_id,
       },
     }), /rule_bundle_predecessor_mismatch/);
+
+    const invalidInsert = (values: readonly unknown[]) => withTenant(appPool, tenantId, (client) => client.query(
+      `INSERT INTO control.rule_bundle_revisions (
+        rule_bundle_revision_id, tenant_id, app_id, rule_bundle_id,
+        rule_bundle_version, rule_bundle_hash, supersedes_rule_bundle_revision_id,
+        activated_at, actor_ref, artifact
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb)`,
+      [...values],
+    ));
+    await assert.rejects(() => invalidInsert([
+      "rule-bundle:second-root", tenantId, appId, "attribution-default", "2.0.0",
+      "4".repeat(64), null, "2026-08-20T01:02:00.000Z", "admin_key:synthetic",
+      JSON.stringify({
+        rule_bundle_revision_id: "rule-bundle:second-root",
+        rule_bundle_id: "attribution-default",
+        rule_bundle_version: "2.0.0",
+        rule_bundle_hash: "4".repeat(64),
+        activated_at: "2026-08-20T01:02:00.000Z",
+      }),
+    ]), (error: any) => error?.code === "23505");
+    await assert.rejects(() => invalidInsert([
+      "rule-bundle:cross-bundle", tenantId, appId, "fraud-default", "1.0.0",
+      "5".repeat(64), first.rule_bundle_revision_id, "2026-08-20T01:03:00.000Z", "admin_key:synthetic",
+      JSON.stringify({
+        rule_bundle_revision_id: "rule-bundle:cross-bundle",
+        rule_bundle_id: "fraud-default",
+        rule_bundle_version: "1.0.0",
+        rule_bundle_hash: "5".repeat(64),
+        supersedes_rule_bundle_revision_id: first.rule_bundle_revision_id,
+        activated_at: "2026-08-20T01:03:00.000Z",
+      }),
+    ]), (error: any) => error?.code === "23503");
+    await assert.rejects(() => invalidInsert([
+      "rule-bundle:artifact-mismatch", tenantId, appId, "measurement-default", "1.0.0",
+      "6".repeat(64), null, "2026-08-20T01:04:00.000Z", "admin_key:synthetic",
+      JSON.stringify({
+        rule_bundle_revision_id: "rule-bundle:artifact-mismatch",
+        rule_bundle_id: "wrong-bundle",
+        rule_bundle_version: "1.0.0",
+        rule_bundle_hash: "6".repeat(64),
+        activated_at: "2026-08-20T01:04:00.000Z",
+      }),
+    ]), (error: any) => error?.code === "23514");
 
     const state = await withTenant(appPool, tenantId, async (client) => ({
       history: await client.query<{ rule_bundle_revision_id: string }>(

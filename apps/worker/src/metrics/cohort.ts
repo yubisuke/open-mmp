@@ -483,7 +483,7 @@ async function metricValue(
   };
 }
 
-async function persistMetricRun(client: Queryable, scope: Scope, artifact: Any): Promise<void> {
+export async function persistMetricRun(client: Queryable, scope: Scope, artifact: Any): Promise<void> {
   const grouping = artifact.grouping?.dimensions ?? {};
   const result = await client.query(
     `INSERT INTO ledger.metric_runs (
@@ -519,6 +519,41 @@ async function persistMetricRun(client: Queryable, scope: Scope, artifact: Any):
   if (result.rowCount !== 1) {
     throw new Error(`metric run already exists: ${artifact.metric_run_id}`);
   }
+}
+
+async function persistMetricReplayManifest(
+  client: Queryable,
+  scope: Scope,
+  artifact: Any,
+  definition: Any,
+  evaluation: Any,
+  fxPolicy: Any,
+): Promise<void> {
+  const replayArtifact = {
+    version: 1,
+    source_metric_run_id: artifact.metric_run_id,
+    metric_definition: definition,
+    evaluation: {
+      ...evaluation,
+      metric_names: [artifact.metric_name],
+    },
+    fx_policy: fxPolicy,
+  };
+  const manifestId = `metric-replay:${sha256(replayArtifact).slice(0, 48)}`;
+  await client.query(
+    `INSERT INTO control.metric_replay_manifests (
+      metric_replay_manifest_id, tenant_id, app_id, source_metric_run_id, created_at, artifact
+    ) VALUES ($1,$2,$3,$4,$5,$6::jsonb)
+    ON CONFLICT (tenant_id, app_id, source_metric_run_id) DO NOTHING`,
+    [
+      manifestId,
+      scope.tenant_id,
+      scope.app_id,
+      artifact.metric_run_id,
+      artifact.computed_at,
+      JSON.stringify(replayArtifact),
+    ],
+  );
 }
 
 export async function computeSqlMetricRunsWithClient(
@@ -635,7 +670,10 @@ export async function computeSqlMetricRunsWithClient(
           supersedes_metric_run_id: `${evaluation.supersedes_metric_run_id_prefix}:${metricName}`,
         } : {}),
       };
-      if (persist) await persistMetricRun(client, scope, artifact);
+      if (persist) {
+        await persistMetricRun(client, scope, artifact);
+        await persistMetricReplayManifest(client, scope, artifact, definition, evaluation, fxPolicy);
+      }
       output.push(artifact);
     }
   }
