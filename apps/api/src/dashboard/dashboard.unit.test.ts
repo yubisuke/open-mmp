@@ -126,4 +126,30 @@ describe("M3 zero-JavaScript dashboard", () => {
     assert.equal(first.includes("<script"), false);
     assert.equal(/(?:href|src)=/i.test(first), false);
   });
+
+  it("M4-A12 renders deterministic and Apple aggregate series without combining them", () => {
+    const deterministic = metric({ metric_run_id: "metric:deterministic", metric_name: "daily_install_count" });
+    const skan = metric({
+      metric_run_id: "metric:skan", metric_name: "skan_attributed_installs",
+      metric_definition_version: "0.3.3", value_unscaled: "2",
+      grouping: { metric_date: "2026-08-20" },
+    });
+    const aak = metric({
+      metric_run_id: "metric:aak", metric_name: "aak_attributed_installs",
+      metric_definition_version: "0.3.3", value_unscaled: "1",
+      grouping: { metric_date: "2026-08-20" },
+    });
+    const view = buildDashboardView({
+      apps: [], selectedAppId: "app-one", metrics: { data: [deterministic, skan, aak] }, csrfToken: "synthetic-csrf",
+    });
+    assert.deepEqual(view.deterministicRows.map((row) => row.metric_run_id), ["metric:deterministic"]);
+    assert.deepEqual(view.appleAggregateRows.map((row) => row.metric_run_id), ["metric:aak", "metric:skan"]);
+    const html = renderDashboard(view);
+    assert.match(html, /Deterministic cohort metrics/);
+    assert.match(html, /Apple aggregate postback metrics/);
+    assert.equal(html.includes("aggregate total"), false);
+    assert.equal(view.charts.length, 3);
+    assert.equal(view.deterministicCharts.length, 1);
+    assert.equal(view.appleAggregateCharts.length, 2);
+  });
 });

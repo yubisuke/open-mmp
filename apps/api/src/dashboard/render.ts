@@ -32,6 +32,21 @@ function trackingLinks(view: DashboardView): string {
   return `<section><h2>Measurement links</h2><table><caption>Registered measurement links</caption><thead><tr><th scope="col">Measurement URL</th><th scope="col">Destination</th><th scope="col">Network</th><th scope="col">Campaign</th><th scope="col">Status</th><th scope="col">Created at</th></tr></thead><tbody>${view.trackingLinks.map((link) => `<tr><th scope="row"><a href="${escapeHtml(link.measurement_url)}">${escapeHtml(link.measurement_url)}</a></th><td>${escapeHtml(link.destination_url)}</td><td>${escapeHtml(link.network ?? "—")}</td><td>${escapeHtml(link.campaign_id ?? "—")}</td><td>${escapeHtml(link.status)}</td><td>${escapeHtml(link.created_at)}</td></tr>`).join("")}</tbody></table></section>`;
 }
 
+function metricTable(caption: string, rows: DashboardView["rows"]): string {
+  if (rows.length === 0) return "";
+  return `<table><caption>${escapeHtml(caption)}</caption><thead><tr><th scope="col">Metric</th><th scope="col">Grouping</th><th scope="col">Value</th><th scope="col">Freshness</th><th scope="col">Computed at</th><th scope="col">Rule bundle</th><th scope="col">Reproducibility</th></tr></thead><tbody>${rows.map((row) => {
+    const value = row.value_state === "undefined"
+      ? `<span class="undefined-value">—</span><small>${escapeHtml(row.undefined_reason)}</small>`
+      : `<span data-metric-run-id="${escapeHtml(row.metric_run_id)}" data-value-unscaled="${escapeHtml(row.value_unscaled)}">${escapeHtml(row.value_unscaled)}</span>`;
+    return `<tr><th scope="row">${escapeHtml(row.metric_name)}</th><td>${escapeHtml(grouping(row.grouping))}</td><td>${value}</td><td>${escapeHtml(row.data_freshness)}</td><td>${escapeHtml(row.computed_at)}</td><td>${escapeHtml(row.rule_bundle_id)} / ${escapeHtml(row.metric_definition_version)}</td><td>${escapeHtml(row.reproducibility_status)}${row.superseded ? " (superseded)" : ""}</td></tr>`;
+  }).join("")}</tbody></table>`;
+}
+
+function chartSection(label: string, charts: DashboardView["charts"]): string {
+  if (charts.length === 0) return "";
+  return `<section aria-label="${escapeHtml(label)}">${charts.map((chart) => `<figure>${renderSparkline(chart.series, { label: `${chart.metric_name} trend` })}<figcaption>${escapeHtml(chart.metric_name)}</figcaption></figure>`).join("")}</section>`;
+}
+
 export function renderDashboard(view: DashboardView): string {
   const selected = view.selectedAppId;
   const appNavigation = view.apps.length
@@ -40,14 +55,11 @@ export function renderDashboard(view: DashboardView): string {
   const empty = selected && view.rows.length === 0
     ? "<p>No data yet; run <code>npm run seed</code>.</p>"
     : "";
-  const metrics = view.rows.length === 0 ? "" : `<table><caption>Cohort metrics</caption><thead><tr><th scope="col">Metric</th><th scope="col">Grouping</th><th scope="col">Value</th><th scope="col">Freshness</th><th scope="col">Computed at</th><th scope="col">Rule bundle</th><th scope="col">Reproducibility</th></tr></thead><tbody>${view.rows.map((row) => {
-    const value = row.value_state === "undefined"
-      ? `<span class="undefined-value">—</span><small>${escapeHtml(row.undefined_reason)}</small>`
-      : `<span data-metric-run-id="${escapeHtml(row.metric_run_id)}" data-value-unscaled="${escapeHtml(row.value_unscaled)}">${escapeHtml(row.value_unscaled)}</span>`;
-    return `<tr><th scope="row">${escapeHtml(row.metric_name)}</th><td>${escapeHtml(grouping(row.grouping))}</td><td>${value}</td><td>${escapeHtml(row.data_freshness)}</td><td>${escapeHtml(row.computed_at)}</td><td>${escapeHtml(row.rule_bundle_id)} / ${escapeHtml(row.metric_definition_version)}</td><td>${escapeHtml(row.reproducibility_status)}${row.superseded ? " (superseded)" : ""}</td></tr>`;
-  }).join("")}</tbody></table>`;
+  const deterministicMetrics = metricTable("Deterministic cohort metrics", view.deterministicRows);
+  const appleAggregateMetrics = metricTable("Apple aggregate postback metrics", view.appleAggregateRows);
   const recordRows = view.records.length === 0 ? "" : `<table><caption>Aggregate record counts at the fixed watermark</caption><thead><tr><th scope="col">Metric</th><th scope="col">Grouping</th><th scope="col">Count</th></tr></thead><tbody>${view.records.map((row) => `<tr><th scope="row">${escapeHtml(row.metric_name)}</th><td>${escapeHtml(grouping(row.grouping))}</td><td>${escapeHtml(row.count)}</td></tr>`).join("")}</tbody></table>`;
-  const charts = view.charts.map((chart) => `<figure>${renderSparkline(chart.series, { label: `${chart.metric_name} trend` })}<figcaption>${escapeHtml(chart.metric_name)}</figcaption></figure>`).join("");
+  const deterministicCharts = chartSection("Deterministic metric charts", view.deterministicCharts);
+  const appleAggregateCharts = chartSection("Apple aggregate postback charts", view.appleAggregateCharts);
   const exportLink = selected ? `<p><a href="/dashboard/apps/${encodeURIComponent(selected)}/cohorts.csv${view.query?.watermarkAtMost ? `?watermark_at_most=${encodeURIComponent(view.query.watermarkAtMost)}&export=true` : "?export=true"}">Export aggregate CSV</a></p>` : "";
   const reportNavigation = selected
     ? `<nav aria-label="Report views"><a href="/dashboard/apps/${encodeURIComponent(selected)}">Cohorts and activity</a> <a href="/dashboard/apps/${encodeURIComponent(selected)}/differences">Stored difference audit</a> <a href="/dashboard/apps/${encodeURIComponent(selected)}/tracking-links">Measurement links</a></nav>`
@@ -57,5 +69,5 @@ export function renderDashboard(view: DashboardView): string {
   const createTrackingLink = selected
     ? `<section><h2>Create a tracking link</h2><form method="post" action="/dashboard/apps/${encodeURIComponent(selected)}/tracking-links"><input type="hidden" name="csrf_token" value="${escapeHtml(view.csrfToken)}"><label>Destination kind <select name="destination_kind"><option value="play_store">Play Store</option><option value="custom_https">Custom HTTPS</option></select></label><label>Destination URL <input type="url" name="destination_url" required></label><label>Play package name <input name="play_package_name"></label><label>Network <input name="network"></label><label>Campaign ID <input name="campaign_id"></label><button type="submit">Create tracking link</button></form></section>`
     : "";
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Open MMP dashboard</title><link rel="stylesheet" href="/dashboard/app.css"></head><body><header><h1>Open MMP dashboard</h1><p>${view.undefinedCount} undefined value${view.undefinedCount === 1 ? "" : "s"} on this page.</p></header><main>${appNavigation}${selected ? `<h2>${escapeHtml(selected)}</h2>` : "<h2>Applications</h2>"}${reportNavigation}${metadata}${empty}${exportLink}${metrics}${recordRows}${charts}${selected ? differences(view) : ""}${trackingLinks(view)}${createTrackingLink}${createApp}<form method="post" action="/dashboard/session/delete"><input type="hidden" name="csrf_token" value="${escapeHtml(view.csrfToken)}"><button type="submit">Sign out</button></form></main></body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Open MMP dashboard</title><link rel="stylesheet" href="/dashboard/app.css"></head><body><header><h1>Open MMP dashboard</h1><p>${view.undefinedCount} undefined value${view.undefinedCount === 1 ? "" : "s"} on this page.</p></header><main>${appNavigation}${selected ? `<h2>${escapeHtml(selected)}</h2>` : "<h2>Applications</h2>"}${reportNavigation}${metadata}${empty}${exportLink}${deterministicMetrics}${appleAggregateMetrics}${recordRows}${deterministicCharts}${appleAggregateCharts}${selected ? differences(view) : ""}${trackingLinks(view)}${createTrackingLink}${createApp}<form method="post" action="/dashboard/session/delete"><input type="hidden" name="csrf_token" value="${escapeHtml(view.csrfToken)}"><button type="submit">Sign out</button></form></main></body></html>`;
 }

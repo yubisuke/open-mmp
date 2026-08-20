@@ -285,6 +285,7 @@ export async function recordCounts(
       SELECT candidate.status FROM ledger.attribution_results AS candidate
       WHERE candidate.tenant_id=logical.tenant_id AND candidate.app_id=logical.app_id
         AND candidate.subject_scope='aggregate'
+        AND candidate.decided_at <= $3
         AND candidate.artifact->'evidence_refs' @>
           jsonb_build_array(jsonb_build_object('ref', raw.record_id))
       ORDER BY candidate.decided_at DESC, candidate.attribution_id DESC LIMIT 1

@@ -214,6 +214,7 @@ async function eventCountValue(
          WHERE candidate.tenant_id=logical.tenant_id
            AND candidate.app_id=logical.app_id
            AND candidate.subject_scope='aggregate'
+           AND candidate.decided_at <= $3
            AND candidate.artifact->'evidence_refs' @>
              jsonb_build_array(jsonb_build_object('ref', raw.record_id))
          ORDER BY candidate.decided_at DESC, candidate.attribution_id DESC
@@ -536,6 +537,7 @@ export async function computeSqlMetricRunsWithClient(
   for (const definition of input.metric_definitions ?? []) {
     definitions.set(definition.metric_name, definition);
   }
+  for (const definition of definitions.values()) assertMetricDefinitionSeries(definition);
   const output: Any[] = [];
 
   for (const evaluation of input.metric_evaluations ?? []) {
@@ -638,6 +640,27 @@ export async function computeSqlMetricRunsWithClient(
     }
   }
   return output.sort((left, right) => compareText(left.metric_run_id, right.metric_run_id));
+}
+
+function assertMetricDefinitionSeries(definition: Any): void {
+  const aggregateNames = new Set([
+    "skan_attributed_installs", "skan_conversion_value_distribution", "aak_attributed_installs",
+  ]);
+  const eventNames = definition.event_names ?? [];
+  const grouping = definition.grouping_dimensions ?? [];
+  const fail = () => { throw new Error(`metric_definition_series_mismatch:${definition.metric_name}`); };
+  if (aggregateNames.has(definition.metric_name)) {
+    const expectedEvent = definition.metric_name === "aak_attributed_installs"
+      ? "adattributionkit_postback" : "skan_postback";
+    const expectedGrouping = definition.metric_name === "skan_conversion_value_distribution"
+      ? ["metric_date", "apple_conversion_bucket"] : ["metric_date"];
+    if (definition.definition?.calculation !== "event_count" || definition.definition?.numerator !== "events" ||
+        definition.aggregation_time_zone !== "UTC" || eventNames.length !== 1 || eventNames[0] !== expectedEvent ||
+        grouping.length !== expectedGrouping.length || expectedGrouping.some((value) => !grouping.includes(value))) fail();
+    return;
+  }
+  if (eventNames.some((value: string) => value === "skan_postback" || value === "adattributionkit_postback") ||
+      grouping.includes("apple_conversion_bucket")) fail();
 }
 
 export async function computeSqlMetricRuns(pool: Pool, input: Any, persist = true): Promise<Any[]> {

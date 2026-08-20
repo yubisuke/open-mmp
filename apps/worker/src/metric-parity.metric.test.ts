@@ -558,6 +558,30 @@ describe("M1b SQL metric parity", { concurrency: false }, () => {
     assert.equal(actual.find((run) =>
       run.metric_run_id === "run-44-skan-fine-21:skan_conversion_value_distribution")?.value_unscaled, "1");
 
+    await withTenant(appPool, appleInput.server_context.tenant_id, async (client) => {
+      await client.query(
+        `INSERT INTO ledger.attribution_results (
+           attribution_id, tenant_id, app_id, subject_scope, subject_ref,
+           effective_at, decided_at, status, method, model, reason_code, artifact
+         )
+         SELECT attribution_id || ':future', tenant_id, app_id, subject_scope, subject_ref,
+           effective_at, '2026-08-22T00:00:00.000Z', 'organic', method, model, reason_code,
+           artifact || jsonb_build_object(
+             'attribution_id', attribution_id || ':future',
+             'decided_at', '2026-08-22T00:00:00.000Z',
+             'status', 'organic'
+           )
+         FROM ledger.attribution_results
+         WHERE tenant_id=$1 AND app_id=$2 AND subject_scope='aggregate'
+         ORDER BY attribution_id COLLATE "C" LIMIT 1`,
+        [appleInput.server_context.tenant_id, appleInput.server_context.app_id],
+      );
+    });
+    const fixedWatermarkActual = await computeSqlMetricRuns(appPool, appleInput, false);
+    assert.equal(fixedWatermarkActual.find((run) =>
+      run.metric_name === "skan_attributed_installs")?.value_unscaled, "2",
+    "an attribution decided after the fixed watermark changed a historical aggregate metric");
+
     const receiptAuthority = structuredClone(appleInput);
     receiptAuthority.records.find((record: Any) => record.record_id === "skan-fine-44").occurred_at =
       "2026-08-19T01:00:00.000Z";

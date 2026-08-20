@@ -174,6 +174,23 @@ export function parseMetricQuery(input: {
     validateGrouping(dimension, value);
     grouping[dimension] = value;
   }
+  const aggregateMetricNames = new Set([
+    "skan_attributed_installs", "skan_conversion_value_distribution", "aak_attributed_installs",
+  ]);
+  const selectedAggregate = metricNames.filter((name) => aggregateMetricNames.has(name));
+  const selectedDeterministic = metricNames.filter((name) => !aggregateMetricNames.has(name));
+  const deterministicOnlyDimensions: GroupingDimension[] = [
+    "campaign_id", "network", "country", "cohort_date", "attribution_status",
+  ];
+  if (selectedAggregate.length > 0 && deterministicOnlyDimensions.some((dimension) => grouping[dimension] !== undefined)) {
+    throw new ReportQueryError("metric_series_mismatch");
+  }
+  if (grouping.apple_conversion_bucket !== undefined && (
+    selectedAggregate.length !== 1 || selectedAggregate[0] !== "skan_conversion_value_distribution" ||
+    selectedDeterministic.length > 0
+  )) {
+    throw new ReportQueryError("metric_series_mismatch");
+  }
 
   const dateFrom = one(input.searchParams, "date_from");
   const dateTo = one(input.searchParams, "date_to");
