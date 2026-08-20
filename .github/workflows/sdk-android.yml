@@ -20,7 +20,7 @@ jobs:
           java-version: "17"
           cache: gradle
       - name: Install Android SDK 36
-        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+        run: "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0"
       - name: Verify Android SDK, A-09b accessors, manifest, backup rules, and SBOM
         run: ./sdk/android/gradlew -p sdk/android androidAcceptance verifySdkSbom --no-daemon
       - name: Verify the pinned Gradle wrapper JAR
