@@ -30,6 +30,7 @@ const adamA = 410_000_000 + Number.parseInt(run.slice(0, 5), 16) % 10_000_000;
 const adamUnknown = adamA + 20_000_000;
 const adminSecret = `m4-admin-${randomBytes(32).toString("base64url")}`;
 const fixedNow = new Date("2026-08-20T12:00:00.000Z");
+let currentNow = fixedNow;
 const root = mkdtempSync(join(tmpdir(), "openmasu-m4-postback-"));
 const pool = createAppPool();
 const readerPool = createReaderPool();
@@ -168,7 +169,7 @@ describe("M4 Apple aggregate postback receiver", () => {
         sourceBucket: new KeyedTokenBucket(10_000, 10_000),
         appBucket: new KeyedTokenBucket(10_000, 10_000),
         invalidLedgerQuota: quota,
-        now: () => fixedNow,
+        now: () => currentNow,
         verificationKeys: {
           skanPublicKeyBase64: signingPair.publicKeyBase64,
           aakKeySet: { "apple-cas-identifier/0": signingPair.publicKeyBase64 },
@@ -327,6 +328,7 @@ describe("M4 Apple aggregate postback receiver", () => {
     ));
     assert.equal(windowEvents.rows[0].count, 3);
 
+    currentNow = new Date(fixedNow.getTime() + 1);
     const changed = skanBody({ transactionId: retryTransactionId, sourceIdentifier: "1234" });
     assert.equal((await post("/.well-known/skadnetwork/report-attribution/", changed)).response.status, 200);
     await processSdkInbox(pool, payloadStore, tenantA);

@@ -141,10 +141,10 @@ describe("M1a import integration", () => {
     assert.equal(imported.inserted, 1);
     assert.equal(imported.rows, 1);
     await withTenant(appPool, "tenant-local", async (client) => {
-      const result = await client.query(`SELECT spend_unscaled, amount_scale, currency
+      const result = await client.query(`SELECT spend_unscaled, spend_scale, currency
         FROM ledger.cost_records_current
         WHERE campaign_id='synthetic-decimal-campaign'`);
-      assert.deepEqual(result.rows, [{ spend_unscaled: "1230000", amount_scale: 6, currency: "USD" }]);
+      assert.deepEqual(result.rows, [{ spend_unscaled: "1230000", spend_scale: 6, currency: "USD" }]);
     });
   });
 
