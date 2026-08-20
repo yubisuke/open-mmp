@@ -20,6 +20,7 @@ export type VerificationResult =
       readonly reason: VerificationFailureReason;
       readonly unsigned: JsonObject;
       readonly signingKeyEnvironment?: "production" | "development";
+      readonly unverifiedClaims?: JsonObject;
     };
 
 export const unsignedApplePostbackEvidenceNotice =
@@ -92,7 +93,7 @@ export function skanSignedMessage(body: JsonObject): string {
   throw new Error("unsupported_version");
 }
 
-const skanUnsignedFields = ["conversion-value", "coarse-conversion-value"] as const;
+const skanUnsignedFields = ["conversion-value", "coarse-conversion-value", "country-code"] as const;
 
 export function verifySkAdNetworkPostback(
   body: JsonObject,
@@ -148,25 +149,36 @@ export function verifyAdAttributionKitPostback(
     const parts = jws.split(".");
     if (parts.length !== 3 || parts.some((part) => part.length === 0)) return { verified: false, reason: "malformed", unsigned };
     const header = decodeBase64UrlJson(parts[0]);
+    const unverifiedClaims = decodeBase64UrlJson(parts[1]);
     if (header.alg !== "ES256" || typeof header.kid !== "string") return { verified: false, reason: "malformed", unsigned };
     const environment = keyEnvironment(header.kid);
-    if (!environment) return { verified: false, reason: "unknown_key", unsigned };
+    if (!environment) return { verified: false, reason: "unknown_key", unsigned, unverifiedClaims };
     if (environment === "development" && !options.acceptDevelopmentPostbacks) {
-      return { verified: false, reason: "development_postback_rejected", unsigned, signingKeyEnvironment: environment };
+      return {
+        verified: false,
+        reason: "development_postback_rejected",
+        unsigned,
+        signingKeyEnvironment: environment,
+        unverifiedClaims,
+      };
     }
     const keys = options.keySet ?? APPLE_AAK_PUBLIC_KEYS;
     const encodedKey = keys[header.kid as AppleAakKeyId];
-    if (!encodedKey) return { verified: false, reason: "unknown_key", unsigned, signingKeyEnvironment: environment };
+    if (!encodedKey) {
+      return { verified: false, reason: "unknown_key", unsigned, signingKeyEnvironment: environment, unverifiedClaims };
+    }
     const valid = verify(
       "sha256",
       Buffer.from(`${parts[0]}.${parts[1]}`, "ascii"),
       { key: publicKey(encodedKey), dsaEncoding: "ieee-p1363" },
       Buffer.from(parts[2], "base64url"),
     );
-    if (!valid) return { verified: false, reason: "signature_invalid", unsigned, signingKeyEnvironment: environment };
+    if (!valid) {
+      return { verified: false, reason: "signature_invalid", unsigned, signingKeyEnvironment: environment, unverifiedClaims };
+    }
     return {
       verified: true,
-      authenticated: decodeBase64UrlJson(parts[1]),
+      authenticated: unverifiedClaims,
       unsigned,
       signingKeyEnvironment: environment,
     };

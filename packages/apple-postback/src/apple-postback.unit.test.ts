@@ -102,10 +102,11 @@ describe("SKAdNetwork postback verification", () => {
     const pair = keyPair();
     const original = skanV4();
     const body = { ...original, "attribution-signature": signSkan(original, pair.privateKey) };
-    const changed = { ...body, "conversion-value": 63 };
+    const changed = { ...body, "conversion-value": 63, "country-code": "JP" };
     const result = verifySkAdNetworkPostback(changed, pair);
     assert.equal(result.verified, true);
-    assert.deepEqual(result.unsigned, { "conversion-value": 63 });
+    assert.deepEqual(result.unsigned, { "conversion-value": 63, "country-code": "JP" });
+    assert.equal("country-code" in result.authenticated, false);
     assert.match(unsignedApplePostbackEvidenceNotice, /unsigned observations/);
   });
 });
@@ -131,6 +132,7 @@ describe("AdAttributionKit postback verification", () => {
       reason: "development_postback_rejected",
       unsigned: {},
       signingKeyEnvironment: "development",
+      unverifiedClaims: claims,
     });
   });
 
@@ -160,5 +162,21 @@ describe("AdAttributionKit postback verification", () => {
     );
     assert.equal(result.verified, true);
     assert.deepEqual(result.unsigned, { "conversion-value": 42, "country-code": "JP" });
+  });
+
+  it("exposes decoded claims only as explicitly unverified evidence after signature failure", () => {
+    const pair = keyPair();
+    const claims = {
+      "postback-identifier": "00000000-0000-4000-8000-000000000504",
+      "advertised-item-identifier": 123456789,
+    };
+    const result = verifyAdAttributionKitPostback({
+      "jws-string": signJws("apple-cas-identifier/0", claims, pair.privateKey),
+    });
+    assert.equal(result.verified, false);
+    if (result.verified) assert.fail("expected signature failure");
+    assert.equal(result.reason, "signature_invalid");
+    assert.deepEqual(result.unverifiedClaims, claims);
+    assert.equal(verifyAdAttributionKitPostback({ "jws-string": "one.two" }).verified, false);
   });
 });
