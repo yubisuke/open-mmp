@@ -29,9 +29,48 @@ internal static class Program
             Require(dispatcher.DroppedCount == 0, "Unity dispatcher dropped callbacks");
         }
         Require(OpenMmpAndroidPlatform.ActiveAndroidObjectCount == 0, "AndroidJavaObject lease leaked");
+        ExerciseIosCallbackPath(mainThread);
+        Require(OpenMmpiOSPlatform.ActiveCallbackCount == 0, "iOS function-pointer callback leaked");
         Require(MaxRevenueSubscriptions.Formats.SequenceEqual(new[] { "Interstitial", "Rewarded", "Banner", "MRec" }), "MAX format subscription table is incomplete");
-        Console.WriteLine("Unity bridge probe passed: 10000 background callbacks, main-thread dispatch, 0 Android object leaks, 4 MAX formats.");
+        OpenMmpMaxUnityAdapter.Subscribe();
+        OpenMmpMaxUnityAdapter.Unsubscribe();
+        var plist = OpenMmp.Unity.Editor.OpenMmpIosPlistSettings.Apply(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?><plist version=\"1.0\"><dict/></plist>",
+            "https://synthetic.example", "https://copy.synthetic.example");
+        Require(plist.Contains("NSAdvertisingAttributionReportEndpoint"), "SKAN endpoint was not written");
+        Require(plist.Contains("AttributionCopyEndpoint"), "AdAttributionKit endpoint was not written");
+        Require(plist.Contains("OpenMmpCollectionEnabledDefault"), "collection default was not written");
+        Require(plist.Contains("<false"), "collection default must be disabled unless explicitly enabled");
+        Console.WriteLine("Unity bridge probe passed: Android and iOS 10000-callback paths, main-thread dispatch, zero callback/object leaks, both Apple plist keys, 4 MAX formats.");
         return 0;
+    }
+
+    private static void ExerciseIosCallbackPath(int mainThread)
+    {
+        var dispatcher = new OpenMmpDispatcher(20_000);
+        using (var platform = new OpenMmpiOSPlatform())
+        using (var client = new OpenMmpClient(platform, dispatcher))
+        {
+            var received = 0;
+            for (var index = 0; index < 10_000; index++)
+            {
+                var expected = "ios-value-" + index;
+                client.PingFromBackground(expected, actual =>
+                {
+                    Require(actual == expected, "iOS callback value changed");
+                    Require(Environment.CurrentManagedThreadId == mainThread, "iOS callback did not reach main thread");
+                    received++;
+                });
+            }
+            var deadline = DateTime.UtcNow.AddSeconds(30);
+            while (received < 10_000 && DateTime.UtcNow < deadline)
+            {
+                client.PumpCallbacks();
+                Thread.Yield();
+            }
+            Require(received == 10_000, "iOS callback count mismatch");
+            Require(dispatcher.DroppedCount == 0, "iOS dispatcher dropped callbacks");
+        }
     }
 
     private static void Require(bool value, string message)

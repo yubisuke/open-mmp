@@ -253,6 +253,10 @@ describe("M3 dashboard identity and control plane", { concurrency: false }, () =
       const tables = await appPool.query<{ table_schema: string; table_name: string }>(
         `SELECT table_schema, table_name FROM information_schema.tables
          WHERE table_type='BASE TABLE' AND table_schema IN ('control','ledger','ephemeral')
+           AND has_table_privilege(
+             quote_ident(table_schema) || '.' || quote_ident(table_name),
+             'SELECT'
+           )
          ORDER BY table_schema, table_name`,
       );
       for (const table of tables.rows) {

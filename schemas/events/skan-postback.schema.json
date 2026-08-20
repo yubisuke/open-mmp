@@ -10,7 +10,7 @@
   ],
   "properties": {
     "event_name": { "const": "skan_postback" },
-    "version": { "enum": ["3.0", "4.0"] },
+    "version": { "type": "string", "pattern": "^(3|4)\\.[0-9]+$" },
     "ad_network_id": { "type": "string", "minLength": 1, "maxLength": 128 },
     "app_id": { "type": "integer", "minimum": 0 },
     "attribution_signature": { "type": "string", "minLength": 1 },

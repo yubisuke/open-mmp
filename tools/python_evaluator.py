@@ -533,6 +533,10 @@ def attribution(
         return result("non_organic", "apple_adservices", "last_click", "adservices_attributed")
     if payload.get("adservices_context", {}).get("status") == "token_expired":
         return result("unattributed", "apple_adservices", "last_click", "adservices_token_expired")
+    if payload.get("adservices_context", {}).get("status") == "not_attributed":
+        return result("unattributed", "apple_adservices", "last_click", "adservices_not_attributed")
+    if payload.get("adservices_context", {}).get("status") == "lookup_unavailable":
+        return result("unattributed", "apple_adservices", "last_click", "adservices_lookup_unavailable")
 
     if payload["referrer_status"] == "none":
         return result("organic", "none", "none", "no_referrer")
@@ -544,6 +548,8 @@ def attribution(
         return result("unattributed", "none", "none", "install_referrer_unsupported")
     if payload["referrer_status"] == "unavailable":
         return result("unattributed", "none", "none", "install_referrer_unavailable")
+    if payload["referrer_status"] == "not_applicable":
+        return result("unattributed", "none", "none", "platform_referrer_not_available")
     clicks = [
         candidate for candidate in attempts
         if candidate["server"]["tenant_id"] == server["tenant_id"]
@@ -696,10 +702,40 @@ def metric_definitions(value: dict[str, Any]) -> list[dict[str, Any]]:
     for definition in definitions:
         if definition["metric_name"] in names:
             raise ValueError(f"duplicate metric definition: {definition['metric_name']}")
+        validate_metric_definition_series(definition)
         names.add(definition["metric_name"])
     return sort_by_key(definitions, lambda definition: (
         definition["metric_name"], definition["metric_definition_version"],
     ))
+
+
+def validate_metric_definition_series(definition: dict[str, Any]) -> None:
+    aggregate_names = {
+        "skan_attributed_installs", "skan_conversion_value_distribution", "aak_attributed_installs",
+    }
+    aggregate_events = {"skan_postback", "adattributionkit_postback"}
+    metric_name = definition["metric_name"]
+    event_names = definition.get("event_names", [])
+    grouping = definition.get("grouping_dimensions", [])
+
+    def fail() -> None:
+        raise ValueError(f"metric_definition_series_mismatch:{metric_name}")
+
+    if metric_name in aggregate_names:
+        expected_event = "adattributionkit_postback" if metric_name == "aak_attributed_installs" else "skan_postback"
+        expected_grouping = (
+            ["metric_date", "apple_conversion_bucket"]
+            if metric_name == "skan_conversion_value_distribution" else ["metric_date"]
+        )
+        if (definition.get("definition", {}).get("calculation") != "event_count"
+                or definition.get("definition", {}).get("numerator") != "events"
+                or definition.get("aggregation_time_zone") != "UTC"
+                or event_names != [expected_event]
+                or sorted(grouping) != sorted(expected_grouping)):
+            fail()
+        return
+    if any(event_name in aggregate_events for event_name in event_names) or "apple_conversion_bucket" in grouping:
+        fail()
 
 
 def cost_records(value: dict[str, Any]) -> list[dict[str, Any]]:
@@ -937,19 +973,71 @@ def metric_runs(
                 amount = cohort_size
             elif calculation == "event_count":
                 event_names = set(definition.get("event_names", []))
+                event_name = next(iter(event_names), None)
                 metric_date = evaluation.get("grouping", {}).get("metric_date")
                 if metric_date is None:
                     raise ValueError(f"event_count requires metric_date grouping: {metric_name}")
-                if len(event_names) != 1 or not event_names.issubset({"click", "install"}):
+                if len(event_names) != 1 or event_name not in {
+                    "click", "install", "skan_postback", "adattributionkit_postback",
+                }:
                     raise ValueError(f"event_count requires exactly one supported event name: {metric_name}")
-                if evaluation.get("grouping", {}).get("attribution_status") is not None and "install" not in event_names:
-                    raise ValueError(f"attribution_status event_count requires install events: {metric_name}")
-                amount = sum(
-                    1 for item in visible
-                    if item["record"]["event_name"] in event_names
-                    and matches_grouping(item, evaluation.get("grouping"), attribution_statuses)
-                    and day(item["record"]["occurred_at"], definition["aggregation_time_zone"], "occurred_at") == metric_date
-                )
+                aggregate_postback = event_name in {"skan_postback", "adattributionkit_postback"}
+                if aggregate_postback:
+                    if definition["aggregation_time_zone"] != "UTC":
+                        raise ValueError(f"aggregate event_count requires UTC aggregation: {metric_name}")
+                    if evaluation.get("grouping", {}).get("attribution_status") is not None:
+                        raise ValueError(f"aggregate event_count forbids attribution_status: {metric_name}")
+                    expected_event_name = (
+                        "adattributionkit_postback" if metric_name == "aak_attributed_installs" else "skan_postback"
+                    )
+                    if metric_name not in {
+                        "skan_attributed_installs", "skan_conversion_value_distribution", "aak_attributed_installs",
+                    } or event_name != expected_event_name:
+                        raise ValueError(f"aggregate event_count metric and event mismatch: {metric_name}")
+                    conversion_bucket = evaluation.get("grouping", {}).get("apple_conversion_bucket")
+                    if metric_name == "skan_conversion_value_distribution" and conversion_bucket is None:
+                        raise ValueError(f"SKAN conversion distribution requires apple_conversion_bucket: {metric_name}")
+                    if metric_name != "skan_conversion_value_distribution" and conversion_bucket is not None:
+                        raise ValueError(
+                            f"apple_conversion_bucket is reserved for SKAN conversion distribution: {metric_name}"
+                        )
+
+                    def qualifies_aggregate(item: dict[str, Any]) -> bool:
+                        if item["record"]["event_name"] != event_name:
+                            return False
+                        if day(item["record"]["received_at"], "UTC", "received_at") != metric_date:
+                            return False
+                        attribution = next((candidate for candidate in attributions
+                                            if candidate["tenant_id"] == item["server"]["tenant_id"]
+                                            and candidate["app_id"] == item["server"]["app_id"]
+                                            and candidate["subject_scope"] == "aggregate"
+                                            and candidate["status"] == "non_organic"
+                                            and any(reference["ref"] == item["record"]["record_id"]
+                                                    for reference in candidate["evidence_refs"])), None)
+                        if attribution is None:
+                            return False
+                        if conversion_bucket is None:
+                            return True
+                        payload = item["record"]["payload"]
+                        actual_bucket = (
+                            f"fine:{payload['conversion_value']}" if payload.get("conversion_value") is not None
+                            else f"coarse:{payload['coarse_conversion_value']}"
+                            if payload.get("coarse_conversion_value") is not None else None
+                        )
+                        return actual_bucket == conversion_bucket
+
+                    amount = sum(1 for item in visible if qualifies_aggregate(item))
+                else:
+                    if evaluation.get("grouping", {}).get("apple_conversion_bucket") is not None:
+                        raise ValueError(f"apple_conversion_bucket requires aggregate SKAN events: {metric_name}")
+                    if evaluation.get("grouping", {}).get("attribution_status") is not None and event_name != "install":
+                        raise ValueError(f"attribution_status event_count requires install events: {metric_name}")
+                    amount = sum(
+                        1 for item in visible
+                        if item["record"]["event_name"] in event_names
+                        and matches_grouping(item, evaluation.get("grouping"), attribution_statuses)
+                        and day(item["record"]["occurred_at"], definition["aggregation_time_zone"], "occurred_at") == metric_date
+                    )
             else:
                 raise ValueError(f"unsupported metric calculation: {calculation}")
             if calculation != "event_count" and evaluation.get("grouping", {}).get("metric_date") is not None:

@@ -2,6 +2,11 @@ import { createHash } from "node:crypto";
 import type { IncomingMessage, RequestListener, ServerResponse } from "node:http";
 import type { Pool } from "pg";
 import type { PayloadStore } from "@open-mmp/runtime";
+import { registerAppleApp, registerConversionSchema } from "./apple-admin.js";
+import {
+  receiveApplePostback,
+  type ApplePostbackReceiverDependencies,
+} from "./apple-postback-receiver.js";
 import { AppNotFoundError, listApps, registerApp, requireRegisteredApp } from "./apps-admin.js";
 import { verifyAdminKey, type AdminIdentity } from "./admin-auth.js";
 import { dashboardCss } from "./dashboard/css.js";
@@ -67,6 +72,7 @@ export type RequestHandlerDependencies = {
   readonly trackingDestinationAllowlist?: readonly string[];
   readonly reportMaximumRows?: number;
   readonly reportMaximumExportRows?: number;
+  readonly applePostback?: ApplePostbackReceiverDependencies;
 };
 
 function loginPage(error?: string): string {
@@ -160,6 +166,16 @@ function dashboardAppId(pathname: string): string | undefined {
   }
 }
 
+function adminAppId(pathname: string): string | undefined {
+  const match = /^\/v1\/admin\/apps\/([^/]+)\/(?:apple-registration|conversion-schemas)$/.exec(pathname);
+  if (!match) return undefined;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return undefined;
+  }
+}
+
 async function rejectDashboardCsrf(
   dependencies: RequestHandlerDependencies,
   response: ServerResponse,
@@ -210,6 +226,19 @@ export function createRequestHandler(dependencies: RequestHandlerDependencies): 
           payloadStore: dependencies.payloadStore,
           config: dependencies.maxConfig,
         });
+        return;
+      }
+      if (route.handler === "apple_skan_postback" || route.handler === "apple_aak_postback") {
+        if (!dependencies.applePostback) {
+          json(response, 503, { error: "apple_postback_receiver_unavailable" });
+          return;
+        }
+        await receiveApplePostback(
+          request,
+          response,
+          route.handler === "apple_skan_postback" ? "skadnetwork" : "adattributionkit",
+          dependencies.applePostback,
+        );
         return;
       }
       if (route.handler === "sdk_enrollment" && dependencies.sdk) return handleSdkEnrollment(request, response, dependencies.sdk);
@@ -477,11 +506,14 @@ export function createRequestHandler(dependencies: RequestHandlerDependencies): 
         if (route.handler === "admin_apps_create") {
           try {
             const body = await jsonBody(request);
+            const sdkPlatform = body.sdk_platform === undefined ? "android" : body.sdk_platform;
+            if (sdkPlatform !== "android" && sdkPlatform !== "ios") throw new Error("sdk_platform_invalid");
             const result = await registerApp({
               pool: dependencies.pool,
               payloadStore: dependencies.payloadStore,
               identity,
               appId: String(body.app_id ?? ""),
+              sdkPlatform,
               publicBaseUrl: dependencies.publicBaseUrl,
               redirectorBaseUrl: dependencies.redirectorBaseUrl,
             });
@@ -490,6 +522,35 @@ export function createRequestHandler(dependencies: RequestHandlerDependencies): 
             json(response, error instanceof Error && error.message === "app_already_registered" ? 409 : 400, {
               error: error instanceof Error ? error.message : "app_registration_failed",
             });
+          }
+          return;
+        }
+        if (route.handler === "admin_apple_registration" || route.handler === "admin_conversion_schema") {
+          try {
+            const appIdentity = await requireRegisteredApp(dependencies.pool, identity, adminAppId(target.pathname) ?? "");
+            const body = await jsonBody(request);
+            const result = route.handler === "admin_apple_registration"
+              ? await registerAppleApp({
+                  pool: dependencies.pool,
+                  identity: appIdentity,
+                  appleAppAdamId: body.apple_app_adam_id,
+                  appleBundleId: body.apple_bundle_id,
+                })
+              : await registerConversionSchema({
+                  pool: dependencies.pool,
+                  identity: appIdentity,
+                  schemaVersion: body.schema_version,
+                  definition: body.definition,
+                });
+            json(response, 201, result);
+          } catch (error) {
+            if (error instanceof AppNotFoundError) {
+              json(response, 404, { error: "app_not_found" });
+            } else {
+              const message = error instanceof Error ? error.message : "apple_configuration_invalid";
+              const status = message.endsWith("_already_registered") ? 409 : 400;
+              json(response, status, { error: message });
+            }
           }
           return;
         }

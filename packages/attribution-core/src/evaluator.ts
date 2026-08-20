@@ -586,6 +586,12 @@ function makeAttribution(
   if (payload.adservices_context?.status === "token_expired") {
     return result("unattributed", "apple_adservices", "last_click", "adservices_token_expired");
   }
+  if (payload.adservices_context?.status === "not_attributed") {
+    return result("unattributed", "apple_adservices", "last_click", "adservices_not_attributed");
+  }
+  if (payload.adservices_context?.status === "lookup_unavailable") {
+    return result("unattributed", "apple_adservices", "last_click", "adservices_lookup_unavailable");
+  }
   if (payload.referrer_status === "none") return result("organic", "none", "none", "no_referrer");
   if (payload.referrer_status === "third_party") {
     return payload.third_party_referrer_classification === "play_organic_marker"
@@ -594,6 +600,7 @@ function makeAttribution(
   }
   if (payload.referrer_status === "unsupported") return result("unattributed", "none", "none", "install_referrer_unsupported");
   if (payload.referrer_status === "unavailable") return result("unattributed", "none", "none", "install_referrer_unavailable");
+  if (payload.referrer_status === "not_applicable") return result("unattributed", "none", "none", "platform_referrer_not_available");
   const clicks = candidates.clickCandidates(server.tenant_id, server.app_id, payload.click_id).filter((candidate) =>
     decisionFor(decisions, candidate).ingestion_status === "accepted" &&
     decisionFor(decisions, candidate).duplicate_resolution === "unique",
@@ -719,9 +726,31 @@ function metricDefinitions(input: Any): MetricDefinition[] {
   const names = new Set<string>();
   for (const definition of definitions) {
     if (names.has(definition.metric_name)) throw new Error(`duplicate metric definition: ${definition.metric_name}`);
+    validateMetricDefinitionSeries(definition);
     names.add(definition.metric_name);
   }
   return sortByKey(definitions, (definition) => [definition.metric_name, definition.metric_definition_version]);
+}
+
+function validateMetricDefinitionSeries(definition: Any): void {
+  const aggregateNames = new Set([
+    "skan_attributed_installs", "skan_conversion_value_distribution", "aak_attributed_installs",
+  ]);
+  const aggregateEvents = new Set(["skan_postback", "adattributionkit_postback"]);
+  const eventNames = definition.event_names ?? [];
+  const grouping = definition.grouping_dimensions ?? [];
+  const fail = () => { throw new Error(`metric_definition_series_mismatch:${definition.metric_name}`); };
+  if (aggregateNames.has(definition.metric_name)) {
+    const expectedEvent = definition.metric_name === "aak_attributed_installs"
+      ? "adattributionkit_postback" : "skan_postback";
+    const expectedGrouping = definition.metric_name === "skan_conversion_value_distribution"
+      ? ["metric_date", "apple_conversion_bucket"] : ["metric_date"];
+    if (definition.definition?.calculation !== "event_count" || definition.definition?.numerator !== "events" ||
+        definition.aggregation_time_zone !== "UTC" || eventNames.length !== 1 || eventNames[0] !== expectedEvent ||
+        grouping.length !== expectedGrouping.length || expectedGrouping.some((value) => !grouping.includes(value))) fail();
+    return;
+  }
+  if (eventNames.some((value: string) => aggregateEvents.has(value)) || grouping.includes("apple_conversion_bucket")) fail();
 }
 
 function costRecords(input: Any): CostRecord[] {
@@ -891,19 +920,65 @@ function metricRuns(
         value = cohortSize;
       } else if (definition.definition.calculation === "event_count") {
         const eventNames = new Set<string>(definition.event_names ?? []);
+        const eventName = [...eventNames][0];
         const metricDate = evaluation.grouping?.metric_date;
         if (metricDate === undefined) throw new Error(`event_count requires metric_date grouping: ${metricName}`);
-        if (eventNames.size !== 1 || !["click", "install"].some((name) => eventNames.has(name))) {
+        if (eventNames.size !== 1 || !["click", "install", "skan_postback", "adattributionkit_postback"].includes(eventName)) {
           throw new Error(`event_count requires exactly one supported event name: ${metricName}`);
         }
-        if (evaluation.grouping?.attribution_status !== undefined && !eventNames.has("install")) {
-          throw new Error(`attribution_status event_count requires install events: ${metricName}`);
+        const aggregatePostback = eventName === "skan_postback" || eventName === "adattributionkit_postback";
+        if (aggregatePostback) {
+          if (definition.aggregation_time_zone !== "UTC") {
+            throw new Error(`aggregate event_count requires UTC aggregation: ${metricName}`);
+          }
+          if (evaluation.grouping?.attribution_status !== undefined) {
+            throw new Error(`aggregate event_count forbids attribution_status: ${metricName}`);
+          }
+          const expectedEventName = metricName === "aak_attributed_installs"
+            ? "adattributionkit_postback"
+            : "skan_postback";
+          if (!["skan_attributed_installs", "skan_conversion_value_distribution", "aak_attributed_installs"].includes(metricName) || eventName !== expectedEventName) {
+            throw new Error(`aggregate event_count metric and event mismatch: ${metricName}`);
+          }
+          const conversionBucket = evaluation.grouping?.apple_conversion_bucket;
+          if (metricName === "skan_conversion_value_distribution" && conversionBucket === undefined) {
+            throw new Error(`SKAN conversion distribution requires apple_conversion_bucket: ${metricName}`);
+          }
+          if (metricName !== "skan_conversion_value_distribution" && conversionBucket !== undefined) {
+            throw new Error(`apple_conversion_bucket is reserved for SKAN conversion distribution: ${metricName}`);
+          }
+          value = BigInt(visible.filter((attempt) => {
+            if (attempt.record.event_name !== eventName ||
+                dateAt(attempt.record.received_at, "UTC", "received_at") !== metricDate) return false;
+            const attribution = attributions.find((candidate) =>
+              candidate.tenant_id === attempt.server.tenant_id &&
+              candidate.app_id === attempt.server.app_id &&
+              candidate.subject_scope === "aggregate" &&
+              candidate.status === "non_organic" &&
+              candidate.evidence_refs.some((reference) => reference.ref === attempt.record.record_id));
+            if (!attribution) return false;
+            if (conversionBucket === undefined) return true;
+            const payload = attempt.record.payload;
+            const actualBucket = payload.conversion_value !== undefined
+              ? `fine:${payload.conversion_value}`
+              : payload.coarse_conversion_value !== undefined
+                ? `coarse:${payload.coarse_conversion_value}`
+                : undefined;
+            return actualBucket === conversionBucket;
+          }).length);
+        } else {
+          if (evaluation.grouping?.apple_conversion_bucket !== undefined) {
+            throw new Error(`apple_conversion_bucket requires aggregate SKAN events: ${metricName}`);
+          }
+          if (evaluation.grouping?.attribution_status !== undefined && eventName !== "install") {
+            throw new Error(`attribution_status event_count requires install events: ${metricName}`);
+          }
+          value = BigInt(visible.filter((attempt) =>
+            eventNames.has(attempt.record.event_name) &&
+            matchesGrouping(attempt, evaluation.grouping, attributionStatuses) &&
+            dateAt(attempt.record.occurred_at, definition.aggregation_time_zone, "occurred_at") === metricDate,
+          ).length);
         }
-        value = BigInt(visible.filter((attempt) =>
-          eventNames.has(attempt.record.event_name) &&
-          matchesGrouping(attempt, evaluation.grouping, attributionStatuses) &&
-          dateAt(attempt.record.occurred_at, definition.aggregation_time_zone, "occurred_at") === metricDate,
-        ).length);
       } else {
         throw new Error(`unsupported metric calculation: ${definition.definition.calculation}`);
       }

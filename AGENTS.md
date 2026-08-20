@@ -10,9 +10,9 @@
 
 ## Current state
 
-- M0.3 Contract v0.3, M1a Shadow ledger/import foundation, M1b cohort metrics/difference audit, and M2 Android/Unity measurement are implemented and locally validated with synthetic evidence. Runtime services, PostgreSQL, HTTP APIs, the Kotlin SDK, and the Unity bridge exist. Real-device, live-provider, Unity-export, and production-deployment evidence does not yet exist.
+- M0.3 Contract v0.3.4, M1a Shadow ledger/import foundation, M1b cohort metrics/difference audit, M2 Android/Unity measurement, M3 dashboard, and M4 Apple measurement are implemented and validated with synthetic evidence. Runtime services, PostgreSQL, HTTP APIs, Kotlin and Swift SDKs, Unity bridges, and separate deterministic/SKAdNetwork/AdAttributionKit reporting exist. Real-device, live-provider, Unity-export, App Store, and production-deployment evidence does not yet exist.
 - The active contract lives in `schemas/`, `schemas/events/`, `registries/`, `fixtures/v0.3/`, and `spec/event-metric-contract-v0.3.md`. The spec is normative for current contract behavior. Earlier complete contract lines remain at the `contract-v0.1` and `contract-v0.2.1` tags. Issue drafts are historical records, not live checklists.
-- The next implementation milestone is M3 Metrics dashboard after owner acceptance of M2. Do not start later scope out of order without checking `docs/roadmap.md` first.
+- The next implementation milestone is M5 Production and limited adapter boundary. Do not start later scope out of order without checking `docs/roadmap.md` first.
 
 ## Running validation
 
@@ -27,6 +27,7 @@
 - Full validation gate: `npm run validate`. It type-checks the TypeScript, compiles every schema, validates every registry and fixture, runs both the TypeScript and Python evaluators, and checks RFC 8785 canonical output. It normally completes in a few seconds. Run it after any change under `schemas/`, `registries/`, `fixtures/`, `spec/`, or `tools/`, and paste its final summary line into your report.
 - Type-check only (faster, partial signal): `npm run typecheck`.
 - Android/Unity synthetic gates: `./sdk/android/gradlew -p sdk/android androidAcceptance verifySdkSbom`, an API 36 emulator running `:sample:connectedDebugAndroidTest`, and `dotnet run --project sdk/unity/tests/UnityCompileProbe.csproj --configuration Release`.
+- iOS synthetic gates run on macOS: `swift test --package-path sdk/ios`, iOS Simulator builds of the shipping products and sample, the pinned AppLovin provider compile probe, `node tools/check-ios-sdk.mjs --built-root <DerivedData>`, and the Unity C# bridge probe. The pinned `sdk-ios` workflow is the Windows development environment's authoritative Xcode evidence.
 - `npm run validate` is strictly read-only: it never writes, regenerates, or reformats fixture files. If a change requires a new or updated golden fixture, follow the candidate and human-review workflow in `fixtures/v0.3/README.md`, hand-edit the `fixtures/v0.3/<NN-name>/expected_*.json` files, and explain in your report exactly how each expected value was derived.
 
 ## What must not change casually

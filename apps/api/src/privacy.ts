@@ -113,10 +113,51 @@ export async function executePrivacyRequest(
            ORDER BY inbox_seq`,
           [body.tenant_id, body.deletion_scope, body.app_id],
         );
+    const adServicesPayloads = body.deletion_scope === "installation"
+      ? await client.query<{ response_ref: string }>(
+          `SELECT response_ref FROM ledger.adservices_lookup_results
+           WHERE tenant_id=$1 AND app_id=$2 AND install_record_id=ANY($3::text[])
+           ORDER BY response_ref`,
+          [body.tenant_id, body.app_id, records],
+        )
+      : await client.query<{ response_ref: string }>(
+          `SELECT response_ref FROM ledger.adservices_lookup_results
+           WHERE tenant_id=$1 AND ($2='tenant' OR app_id=$3)
+           ORDER BY response_ref`,
+          [body.tenant_id, body.deletion_scope, body.app_id],
+        );
+    const pendingAdServicesPayloads = body.deletion_scope === "installation"
+      ? await client.query<{ token_ref: string }>(
+          `SELECT token_ref FROM ephemeral.adservices_lookups
+           WHERE tenant_id=$1 AND app_id=$2 AND install_record_id=ANY($3::text[])
+           ORDER BY token_ref`,
+          [body.tenant_id, body.app_id, records],
+        )
+      : await client.query<{ token_ref: string }>(
+          `SELECT token_ref FROM ephemeral.adservices_lookups
+           WHERE tenant_id=$1 AND ($2='tenant' OR app_id=$3)
+           ORDER BY token_ref`,
+          [body.tenant_id, body.deletion_scope, body.app_id],
+        );
     for (const reference of new Set([
       ...payloads.rows.map((payload) => payload.raw_query_ref),
       ...batchPayloads.rows.map((payload) => payload.body_ref),
+      ...adServicesPayloads.rows.map((payload) => payload.response_ref),
+      ...pendingAdServicesPayloads.rows.map((payload) => payload.token_ref),
     ])) await payloadStore.purge(reference);
+    if (body.deletion_scope === "installation") {
+      await client.query(
+        `DELETE FROM ephemeral.adservices_lookups
+         WHERE tenant_id=$1 AND app_id=$2 AND install_record_id=ANY($3::text[])`,
+        [body.tenant_id, body.app_id, records],
+      );
+    } else {
+      await client.query(
+        `DELETE FROM ephemeral.adservices_lookups
+         WHERE tenant_id=$1 AND ($2='tenant' OR app_id=$3)`,
+        [body.tenant_id, body.deletion_scope, body.app_id],
+      );
+    }
     const subjectDigest = "deletionSubjectDigest" in identity && identity.deletionSubjectDigest
       ? identity.deletionSubjectDigest
       : sha256([body.tenant_id, body.app_id, body.deletion_scope, body.deletion_subject_ref]);

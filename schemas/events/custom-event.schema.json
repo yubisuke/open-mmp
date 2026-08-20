@@ -8,7 +8,12 @@
   "properties": {
     "event_name": { "const": "custom_event" },
     "installation_id": { "$ref": "../common.schema.json#/$defs/id" },
-    "event_key": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" },
+    "event_key": {
+      "anyOf": [
+        { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" },
+        { "const": "openmmp.conversion_value_updated" }
+      ]
+    },
     "money": { "$ref": "../common.schema.json#/$defs/money" },
     "attributes": {
       "type": "object",

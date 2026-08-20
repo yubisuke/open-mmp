@@ -16,7 +16,7 @@ This project is licensed under the [Apache License 2.0](LICENSE); attribution is
 
 ## Current status
 
-This project contains the v0.3.1 contract, the M1a Shadow ledger/import foundation, the M1b cohort metric and difference-audit runtime, the M2 Android/Unity implementation, and the M3 operator dashboard. M3 adds tenant-scoped opaque sessions, a PostgreSQL read-only path, typed report filters, keyset pagination, aggregate raw-record counts, app registration, measurement-link creation and listing, CSV export, and dependency-free server-rendered HTML/SVG with no client JavaScript. Real provider connectivity, real-device and campaign validation, a production deployment, real-cardinality dashboard usability, and exact 4-vCPU/8-GB capacity validation have not been demonstrated. Immutable baselines are available at the `contract-v0.1` and `contract-v0.2.1` Git tags.
+This project contains the v0.3.4 contract, the M1a Shadow ledger/import foundation, the M1b cohort metric and difference-audit runtime, M2 Android/Unity measurement, the M3 operator dashboard, and M4 Apple measurement. M4 adds a Swift SDK, Unity iOS source bridge, AdServices lookup, verified SKAdNetwork and AdAttributionKit receiver paths, replay-resistant aggregate evidence, and separate deterministic and Apple aggregate reporting. Real provider connectivity, real-device and campaign validation, Unity Xcode export, App Store review, a production deployment, real-cardinality dashboard usability, and exact 4-vCPU/8-GB capacity validation have not been demonstrated. Immutable baselines are available at the `contract-v0.1` and `contract-v0.2.1` Git tags.
 
 The first product entry point is a Shadow MMP that runs alongside an existing provider. It normalizes first-party events, existing MMP exports, media cost, and revenue into a common contract, then explains neutral differences through candidate evidence, exclusion reasons, attribution windows, ID joins, and recalculation history. Difference reasons describe measurement semantics, not provider quality. It must not be treated as the primary MMP until a real shadow pilot has produced sufficient evidence.
 
@@ -54,11 +54,12 @@ packages/
   meta-install-referrer/ # Synthetic AES-GCM decryption core
 sdk/
   android/             # Kotlin SDK, optional provider modules, and native sample
-  unity/               # UPM package, Android bridge, sample, and compile probe
+  ios/                 # Swift Package, Apple adapters, native sample, and tests
+  unity/               # UPM package, Android/iOS bridges, samples, and compile probe
 docs/
 ```
 
-Implemented runtime code lives in `apps/api`, `apps/redirector`, `apps/worker`, `apps/runtime`, `packages/contracts`, `packages/attribution-core`, `packages/redirector-core`, `packages/meta-install-referrer`, `sdk/android`, and `sdk/unity`. The iOS SDK remains planned.
+Implemented runtime code lives in `apps/api`, `apps/redirector`, `apps/worker`, `apps/runtime`, `packages/contracts`, `packages/attribution-core`, `packages/redirector-core`, `packages/meta-install-referrer`, `sdk/android`, `sdk/ios`, and `sdk/unity`.
 
 ## Current layout (v0.3 contract artifacts)
 
@@ -85,6 +86,7 @@ Implemented runtime code lives in `apps/api`, `apps/redirector`, `apps/worker`, 
 - [Operator real-data validation checklist](docs/validation/real-data-checklist.md)
 - [M2 device and provider validation checklist](docs/validation/m2-device-checklist.md)
 - [M3 operator validation checklist](docs/validation/m3-operator-checklist.md)
+- [M4 device and Apple-provider validation checklist](docs/validation/m4-device-checklist.md)
 
 ## Five-minute synthetic quickstart
 
@@ -117,7 +119,7 @@ npm run verify:parity
 
 This quickstart uses synthetic inputs only. Do not place provider exports, credentials, real user data, campaign values, or validation results in this public repository.
 
-## Android and Unity SDK development
+## Android, iOS, and Unity SDK development
 
 Requirements: JDK 17 and Android SDK 36. The Android project uses a checksum-pinned Gradle 8.13 wrapper. From the repository root:
 
@@ -129,6 +131,17 @@ dotnet run --project sdk/unity/tests/UnityCompileProbe.csproj --configuration Re
 
 The second command requires a running API 36 emulator. The first command compiles every documented Install Referrer 2.2 accessor, tests queue/consent/Meta/MAX behavior, verifies the merged manifest and backup rules, builds the native sample, and writes `sbom/sdk-android.cdx.json`. The Unity command is a shim compile and callback-concurrency gate; an actual Unity export remains an operator procedure. M2 distributes source and local build instructions only, not Maven or UPM registry artifacts.
 
+On macOS, run the Swift and Simulator gates:
+
+```bash
+swift test --package-path sdk/ios
+cd sdk/ios
+xcodebuild -scheme OpenMmpObjC -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
+xcodebuild -scheme OpenMmpSample -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
+```
+
+The pinned `sdk-ios` workflow additionally compiles the adapter against the exact AppLovin MAX Swift Package, audits the built product and privacy manifest, emits a dependency-empty iOS SDK SBOM, and runs the Unity iOS bridge probe. See the [iOS SDK guide](sdk/ios/README.md). Real Apple/MAX accounts, real devices, and Unity exports remain operator procedures.
+
 ## Contract validation
 
 Use Node.js 22.18.0 from [`.nvmrc`](.nvmrc), npm 11.6.2 from `package.json#engines`, and Python 3.13.5 from [`.python-version`](.python-version). The repository enforces the Node.js and npm engines through [`.npmrc`](.npmrc). Then run:
@@ -139,4 +152,4 @@ python -m pip install --require-hashes --requirement requirements-contract.txt
 npm run validate
 ```
 
-Validation is read-only. It checks 27 schemas, 8 registries, 42 reviewed synthetic fixtures, 546 golden output artifacts across 13 classes, 42 scenario assertions, 26 acceptance criteria, semantic and metamorphic mutations, deterministic TypeScript output, independent Python output, and RFC 8785 conformance. See the [fixture provenance note](fixtures/v0.3/README.md).
+Validation is read-only. It checks 27 schemas, 8 registries, 45 reviewed synthetic fixtures, 585 golden output artifacts across 13 classes, 45 scenario assertions, 26 acceptance criteria, semantic and metamorphic mutations, deterministic TypeScript output, independent Python output, and RFC 8785 conformance. See the [fixture provenance note](fixtures/v0.3/README.md).

@@ -137,6 +137,10 @@ describe("M2a redirector HTTP shell", () => {
          FROM information_schema.columns
          WHERE table_schema IN ('control','ledger','ephemeral')
            AND data_type IN ('text','character varying','json','jsonb')
+           AND has_table_privilege(
+             quote_ident(table_schema) || '.' || quote_ident(table_name),
+             'SELECT'
+           )
          ORDER BY table_schema, table_name, ordinal_position`,
       );
       const identifier = (value: string) => `"${value.replaceAll('"', '""')}"`;

@@ -67,12 +67,23 @@ export type DifferenceAuditPage = {
 };
 
 export type RecordCountRow = {
-  readonly metric_name: "daily_click_count" | "daily_install_count";
+  readonly metric_name:
+    | "daily_click_count"
+    | "daily_install_count"
+    | "skan_attributed_installs"
+    | "skan_conversion_value_distribution"
+    | "aak_attributed_installs";
   readonly grouping: Readonly<Record<string, string>>;
   readonly count: string;
 };
 
-const recordCountMetricNames = new Set(["daily_click_count", "daily_install_count"]);
+const recordCountMetricNames = new Set([
+  "daily_click_count",
+  "daily_install_count",
+  "skan_attributed_installs",
+  "skan_conversion_value_distribution",
+  "aak_attributed_installs",
+]);
 
 export function supportsRecordCounts(query: MetricQuery): boolean {
   return query.metricNames === undefined
@@ -184,6 +195,7 @@ const dimensionSql: Readonly<Record<GroupingDimension, string>> = {
   cohort_date: "event.metric_date",
   metric_date: "event.metric_date",
   attribution_status: "event.attribution_status",
+  apple_conversion_bucket: "event.apple_conversion_bucket",
 };
 
 function bind(values: unknown[], value: unknown): string {
@@ -204,13 +216,11 @@ export async function recordCounts(
     "logical.app_id=$2",
     "raw.received_at <= $3",
     "raw.payload_lifecycle_status='available'",
-    "logical.event_name IN ('click','install')",
   ];
   const eventPredicates: string[] = [];
   const requestedMetricNames = query.metricNames;
   if (requestedMetricNames?.length) {
-    const events = requestedMetricNames.map((name) => name === "daily_click_count" ? "click" : "install");
-    basePredicates.push(`logical.event_name=ANY(${bind(values, events)}::text[])`);
+    eventPredicates.push(`event.metric_name=ANY(${bind(values, requestedMetricNames)}::text[])`);
   }
   for (const [dimension, value] of Object.entries(query.grouping ?? {}) as [GroupingDimension, string][]) {
     eventPredicates.push(`${dimensionSql[dimension]}=${bind(values, value)}`);
@@ -222,18 +232,25 @@ export async function recordCounts(
     "metric_date",
     ...Object.keys(query.grouping ?? {}) as GroupingDimension[],
   ]);
+  if (requestedMetricNames === undefined || requestedMetricNames.includes("skan_conversion_value_distribution")) {
+    requestedDimensions.add("apple_conversion_bucket");
+  }
   const groupingPairs: string[] = [];
   for (const dimension of requestedDimensions) {
     groupingPairs.push(`'${dimension}'`, dimensionSql[dimension]);
   }
   const groupingExpression = `jsonb_strip_nulls(jsonb_build_object(${groupingPairs.join(",")}))`;
-  const sql = `WITH event AS (
-    SELECT logical.event_name,
+  const sql = `WITH deterministic_event AS (
+    SELECT CASE logical.event_name
+        WHEN 'click' THEN 'daily_click_count'
+        ELSE 'daily_install_count'
+      END AS metric_name,
       timezone('UTC', control.canonical_timestamp_value(raw.occurred_at))::date::text AS metric_date,
       CASE WHEN logical.event_name='click' THEN click.campaign_id ELSE install.campaign_id END AS campaign_id,
       CASE WHEN logical.event_name='click' THEN click.network ELSE install.network END AS network,
       CASE WHEN logical.event_name='click' THEN click.country ELSE install.country END AS country,
-      CASE WHEN logical.event_name='install' THEN coalesce(attribution.status, 'unattributed') END AS attribution_status
+      CASE WHEN logical.event_name='install' THEN coalesce(attribution.status, 'unattributed') END AS attribution_status,
+      NULL::text AS apple_conversion_bucket
     FROM ledger.logical_events AS logical
     JOIN ledger.raw_records_current AS raw
       ON raw.tenant_id=logical.tenant_id AND raw.app_id=logical.app_id AND raw.record_id=logical.record_id
@@ -248,14 +265,63 @@ export async function recordCounts(
       ORDER BY candidate.decided_at DESC, candidate.attribution_id DESC LIMIT 1
     ) AS attribution ON logical.event_name='install'
     WHERE ${basePredicates.join("\n      AND ")}
+      AND logical.event_name IN ('click','install')
+  ), apple_event AS (
+    SELECT logical.event_name,
+      timezone('UTC', control.canonical_timestamp_value(fact.received_at))::date::text AS metric_date,
+      NULL::text AS campaign_id,
+      NULL::text AS network,
+      NULL::text AS country,
+      NULL::text AS attribution_status,
+      fact.conversion_bucket AS apple_conversion_bucket
+    FROM ledger.logical_events AS logical
+    JOIN ledger.raw_records_current AS raw
+      ON raw.tenant_id=logical.tenant_id AND raw.app_id=logical.app_id AND raw.record_id=logical.record_id
+    JOIN ledger.apple_postback_facts AS fact
+      ON fact.tenant_id=logical.tenant_id
+     AND fact.app_id=logical.app_id
+     AND fact.logical_event_id=logical.logical_event_id
+    JOIN LATERAL (
+      SELECT candidate.status FROM ledger.attribution_results AS candidate
+      WHERE candidate.tenant_id=logical.tenant_id AND candidate.app_id=logical.app_id
+        AND candidate.subject_scope='aggregate'
+        AND candidate.decided_at <= $3
+        AND candidate.artifact->'evidence_refs' @>
+          jsonb_build_array(jsonb_build_object('ref', raw.record_id))
+      ORDER BY candidate.decided_at DESC, candidate.attribution_id DESC LIMIT 1
+    ) AS attribution ON attribution.status='non_organic'
+    WHERE ${basePredicates.join("\n      AND ")}
+      AND logical.event_name IN ('skan_postback','adattributionkit_postback')
+      AND fact.signature_verified
+      AND fact.did_win
+      AND fact.source_identifier_present
+      AND fact.conversion_bucket IS NOT NULL
+  ), event AS (
+    SELECT * FROM deterministic_event
+    UNION ALL
+    SELECT series.metric_name, apple.metric_date, apple.campaign_id, apple.network,
+      apple.country, apple.attribution_status,
+      CASE WHEN series.metric_name='skan_conversion_value_distribution'
+        THEN apple.apple_conversion_bucket ELSE NULL END AS apple_conversion_bucket
+    FROM apple_event AS apple
+    CROSS JOIN LATERAL (
+      SELECT 'skan_attributed_installs'::text AS metric_name
+      WHERE apple.event_name='skan_postback'
+      UNION ALL
+      SELECT 'skan_conversion_value_distribution'::text
+      WHERE apple.event_name='skan_postback' AND apple.apple_conversion_bucket IS NOT NULL
+      UNION ALL
+      SELECT 'aak_attributed_installs'::text
+      WHERE apple.event_name='adattributionkit_postback'
+    ) AS series
   )
   , counts AS (
-    SELECT CASE event.event_name WHEN 'click' THEN 'daily_click_count' ELSE 'daily_install_count' END AS metric_name,
+    SELECT event.metric_name,
       ${groupingExpression} AS grouping,
       count(*)::text AS count
     FROM event
     WHERE ${eventPredicates.length ? eventPredicates.join("\n      AND ") : "true"}
-    GROUP BY event.event_name, ${groupingExpression}
+    GROUP BY event.metric_name, ${groupingExpression}
   )
   SELECT metric_name, grouping, count
   FROM counts

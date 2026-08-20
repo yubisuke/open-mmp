@@ -27,5 +27,11 @@ describe("declarative API route security", () => {
     assert.equal(matchRoute("POST", "/v1/admin/tracking-links")?.handler, "admin_tracking_links");
     assert.equal(matchRoute("GET", "/dashboard/apps/app-a/tracking-links")?.handler, "dashboard_tracking_links_list");
     assert.equal(matchRoute("POST", "/dashboard/apps/app-a/tracking-links")?.handler, "dashboard_tracking_links_create");
+    assert.equal(matchRoute("POST", "/.well-known/skadnetwork/report-attribution/")?.handler, "apple_skan_postback");
+    assert.equal(matchRoute("POST", "/.well-known/appattribution/report-attribution/")?.handler, "apple_aak_postback");
+    assert.equal(matchRoute("GET", "/.well-known/skadnetwork/report-attribution/"), undefined);
+    assert.equal(matchRoute("POST", "/.well-known/skadnetwork/report-attribution"), undefined);
+    assert.equal(matchRoute("POST", "/v1/admin/apps/app-a/apple-registration")?.handler, "admin_apple_registration");
+    assert.equal(matchRoute("POST", "/v1/admin/apps/app-a/conversion-schemas")?.handler, "admin_conversion_schema");
   });
 });

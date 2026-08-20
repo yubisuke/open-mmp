@@ -1,8 +1,32 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, it } from "node:test";
 import { sdkCanonicalString, signSdkRequest } from "./sdk-auth.js";
 
 describe("SDK request signing", () => {
+  it("M4-A20 matches the shared Android, Swift, and TypeScript vectors", () => {
+    const fixture = JSON.parse(readFileSync(join(process.cwd(), "sdk", "signing-vectors.json"), "utf8")) as {
+      vectors: Array<{
+        body: string; canonical: string; installation_key_id: string; method: string; nonce: string;
+        path: string; sdk_key_id: string; secret: string; signature: string; timestamp_ms: number;
+      }>;
+    };
+    for (const vector of fixture.vectors) {
+      const input = {
+        method: vector.method,
+        path: vector.path,
+        sdkKeyId: vector.sdk_key_id,
+        installationKeyId: vector.installation_key_id === "-" ? undefined : vector.installation_key_id,
+        timestampMs: vector.timestamp_ms,
+        nonce: vector.nonce,
+        body: Buffer.from(vector.body, "utf8"),
+      };
+      assert.equal(sdkCanonicalString(input), vector.canonical);
+      assert.equal(signSdkRequest(vector.secret, input), vector.signature);
+    }
+  });
+
   it("binds method, path, both key identifiers, timestamp, nonce, and raw body digest", () => {
     const input = {
       method: "POST", path: "/v1/events/batch", sdkKeyId: "sdk-key-synthetic",

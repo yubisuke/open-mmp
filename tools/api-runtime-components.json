@@ -1,5 +1,6 @@
 [
   "api",
+  "apple-postback",
   "pg",
   "pg-connection-string",
   "pg-int8",

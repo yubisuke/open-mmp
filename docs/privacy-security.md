@@ -41,6 +41,11 @@ The initial MVP does not collect them. A future adapter may handle one only when
 - AdAttributionKit is modeled as privacy-preserving platform attribution, not deterministic installation-level attribution.
 - Device fingerprinting is prohibited by project policy.
 - Verify postback signatures and transaction IDs and reject replayed postbacks.
+- The M4 SDK does not import `AdSupport` or `AppTrackingTransparency`, read IDFA or `identifierForVendor`, or use pasteboard/location signals. These prohibitions are checked in source and built symbols.
+- All SDK state is below one Application Support subtree that is re-excluded from backup after every write. iOS files use `completeUntilFirstUserAuthentication`; SQLite uses WAL, `synchronous=NORMAL`, and `secure_delete=ON`.
+- The Privacy Manifest declares tracking disabled and no tracking domains. It declares linked Device ID for analytics/app functionality, Product Interaction and Purchase History for analytics, and Advertising Data for analytics/developer advertising. Operators must narrow or extend their final application declaration to match enabled features.
+- The built-symbol audit is authoritative for Required Reason APIs. M4 currently declares none and fails CI if a listed API appears without an exact category/reason mapping.
+- AdServices raw tokens are protected evidence, never public claims or logs. SKAdNetwork and AdAttributionKit postbacks are aggregate evidence and cannot carry an installation identity.
 
 ## Android
 

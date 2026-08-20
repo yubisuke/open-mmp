@@ -3,6 +3,7 @@ import type { Pool } from "pg";
 import { sha256, type CandidateAttempt } from "@open-mmp/attribution-core";
 import { decryptMetaInstallReferrer, type MetaKey } from "@open-mmp/meta-install-referrer";
 import { withTenant, type PayloadStore } from "@open-mmp/runtime";
+import { queueAdServicesLookup, type PendingAdServicesLookup } from "./adservices-worker.js";
 import { ingestRuntimeBatch } from "./ingestion.js";
 
 type Any = Record<string, any>;
@@ -26,6 +27,8 @@ type Withdrawal = {
 };
 
 function serverContext(row: InboxRow, record: Any, withdrawals: Withdrawal[]): Any {
+  const aggregatePostback = row.producer === "postback:skadnetwork"
+    || row.producer === "postback:adattributionkit";
   return {
     tenant_id: row.tenant_id,
     app_id: row.app_id,
@@ -33,13 +36,20 @@ function serverContext(row: InboxRow, record: Any, withdrawals: Withdrawal[]): A
     policy_digest: "sdk-runtime-policy-v0.3",
     processing_purposes: [{
       processing_purpose_id: record.processing_purpose_id ?? "analytics",
-      consent_required: record.processing_purpose_id !== "fraud_prevention",
+      consent_required: !aggregatePostback && record.processing_purpose_id !== "fraud_prevention",
       policy_version: "sdk-runtime-consent-v0.3",
     }],
     withdrawals,
     alternative_legal_bases: [],
     click_injection_threshold_ms: 2_000,
   };
+}
+
+export async function listRuntimeWorkTenants(pool: Pool): Promise<readonly string[]> {
+  const result = await pool.query<{ tenant_id: string }>(
+    "SELECT tenant_id::text FROM control.list_m4_work_tenants() AS tenants(tenant_id)",
+  );
+  return result.rows.map((row) => row.tenant_id);
 }
 
 function metaSource(value: unknown): { data_hex?: string; nonce_hex?: string } | undefined {
@@ -92,25 +102,61 @@ function prepareMetaRecord(row: InboxRow, sourceRecord: Any, keys: readonly Meta
   return record;
 }
 
+function prepareAdServicesRecord(
+  row: InboxRow,
+  sourceRecord: Any,
+): { readonly record: Any; readonly lookup?: PendingAdServicesLookup } {
+  const record = structuredClone(sourceRecord);
+  if (record.event_name !== "install") return { record };
+  const extensions = record.payload?.extensions;
+  const token = extensions?.adservices_attribution_token_protected;
+  if (token === undefined) return { record };
+  if (row.producer !== "sdk-ios" || typeof token !== "string" || token.length < 1) {
+    throw new Error("adservices_token_scope_invalid");
+  }
+  const sanitizedExtensions = { ...extensions };
+  delete sanitizedExtensions.adservices_attribution_token_protected;
+  sanitizedExtensions.adservices_token_evidence_ref = row.body_ref;
+  record.payload.extensions = sanitizedExtensions;
+  return {
+    record,
+    lookup: {
+      tenantId: row.tenant_id,
+      appId: row.app_id,
+      installRecordId: record.record_id,
+      tokenRef: row.body_ref,
+      tokenCreatedAt: row.received_at,
+    },
+  };
+}
+
 function authoritativeSequence(row: InboxRow, index: number): number {
   const sequence = Number(row.inbox_seq) * 1_000 + index;
   if (!Number.isSafeInteger(sequence)) throw new Error("sdk_processing_sequence_out_of_range");
   return sequence;
 }
 
-async function recordsFor(row: InboxRow, payloadStore: PayloadStore, metaKeys: readonly MetaKey[]): Promise<Any[]> {
+async function recordsFor(
+  row: InboxRow,
+  payloadStore: PayloadStore,
+  metaKeys: readonly MetaKey[],
+): Promise<{ readonly records: Any[]; readonly adServicesLookups: PendingAdServicesLookup[] }> {
   const body = await payloadStore.read(row.body_ref);
   if (createHash("sha256").update(body).digest("hex") !== row.body_digest) throw new Error("ingest_batch_digest_mismatch");
   const parsed = JSON.parse(body.toString("utf8")) as Any;
   if (!Array.isArray(parsed.records) || parsed.records.length < 1) throw new Error("ingest_batch_records_invalid");
-  return parsed.records.map((sourceRecord: Any, index: number) => {
-    const record = prepareMetaRecord(row, sourceRecord, metaKeys);
+  const adServicesLookups: PendingAdServicesLookup[] = [];
+  const records = parsed.records.map((sourceRecord: Any, index: number) => {
+    const prepared = prepareAdServicesRecord(row, prepareMetaRecord(row, sourceRecord, metaKeys));
+    const record = prepared.record;
+    if (prepared.lookup) adServicesLookups.push(prepared.lookup);
     if (record.tenant_id !== row.tenant_id || record.app_id !== row.app_id || record.producer !== row.producer) {
       throw new Error("ingest_batch_scope_mismatch");
     }
     record.processing_sequence = authoritativeSequence(row, index);
     return record;
   });
+  return { records, adServicesLookups };
 }
 
 function withdrawalsFor(rows: Array<{ row: InboxRow; records: Any[] }>): Map<string, Withdrawal[]> {
@@ -187,10 +233,14 @@ export async function processSdkInbox(
   const historical: CandidateAttempt[] = [];
   const pending: CandidateAttempt[] = [];
   const validPendingRows: InboxRow[] = [];
-  const decoded: Array<{ row: InboxRow; records: Any[] }> = [];
+  const decoded: Array<{
+    row: InboxRow;
+    records: Any[];
+    adServicesLookups: PendingAdServicesLookup[];
+  }> = [];
   for (const row of rows.rows) {
     try {
-      decoded.push({ row, records: await recordsFor(row, payloadStore, options.metaKeys ?? []) });
+      decoded.push({ row, ...await recordsFor(row, payloadStore, options.metaKeys ?? []) });
     } catch (error) {
       if (row.status === "pending") await appendState(pool, row, "failed", error instanceof Error ? error.message : "batch_invalid");
     }
@@ -209,6 +259,15 @@ export async function processSdkInbox(
   try {
     const output = await ingestRuntimeBatch(pending, pool, historical);
     for (const attribution of output.attributions) await persistLateAttribution(pool, attribution);
+    const acceptedInstallIds = new Set(output.logical_events
+      .filter((logical) => logical.event_name === "install")
+      .map((logical) => logical.record_id));
+    for (const entry of decoded) {
+      if (entry.row.status !== "pending") continue;
+      for (const lookup of entry.adServicesLookups) {
+        if (acceptedInstallIds.has(lookup.installRecordId)) await queueAdServicesLookup(pool, lookup);
+      }
+    }
     const recordsByBatch = new Map<string, string[]>();
     for (const attempt of pending) {
       const list = recordsByBatch.get(attempt.batch_id) ?? [];

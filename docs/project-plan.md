@@ -95,11 +95,18 @@ Phase 3 is implemented on synthetic evidence. The dashboard is served by the exi
 
 ### Phase 4a: iOS first-party measurement
 
+Implemented with synthetic Swift, Simulator, server-ingestion, privacy-manifest,
+Unity bridge, and SBOM gates. Real-device and live-provider evidence remains
+operator-owned.
+
 - Swift SDK and Unity iOS bridge
 - First-party events, advertising revenue, persistent delivery, and consent controls
 - Apple AdServices evidence and required privacy disclosures
 
 ### Phase 4b: Apple aggregate attribution
+
+Implemented with generated signature vectors, replay/conflict tests, protected
+AdServices lookup, fixed-watermark metrics, and separate dashboard/API series.
 
 - SKAdNetwork and AdAttributionKit developer postback-copy receipt
 - Verification, replay rejection, versioned conversion-value policy, and aggregate reporting
@@ -121,6 +128,7 @@ A phase completes through measurable evidence, not code completion alone.
 - A fixed policy version reproduces a historical decision
 - Duplicate, conflict, delay, deletion, import, aggregate, and platform fixtures pass automatically
 - Runtime fixture reproduction, operator-run validation, device validation, platform approval, and production validation remain distinct states
+- The next implementation phase is Phase 5; M4 operator evidence remains open without blocking the synthetic code milestone
 - Platform approval, device validation, and campaign validation remain labeled unverified until actually completed
 
 ## Rough estimate

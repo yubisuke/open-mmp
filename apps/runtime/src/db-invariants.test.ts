@@ -52,6 +52,21 @@ try {
     reader_can_create: boolean;
     reader_can_select_sessions: boolean;
     reader_can_insert_sessions: boolean;
+    app_can_insert_public_postback_audit: boolean;
+    app_can_select_public_postback_audit: boolean;
+    reader_can_select_public_postback_audit: boolean;
+    app_can_resolve_apple_adam: boolean;
+    app_can_list_apple_tenants: boolean;
+    apple_registration_rls_forced: boolean;
+    conversion_schema_rls_forced: boolean;
+    adservices_lookup_rls_forced: boolean;
+    app_can_select_adservices_results: boolean;
+    reader_can_select_adservices_results: boolean;
+    adservices_result_rls_forced: boolean;
+    app_can_list_m4_work_tenants: boolean;
+    app_can_select_apple_postback_facts: boolean;
+    reader_can_select_apple_postback_facts: boolean;
+    apple_postback_fact_rls_forced: boolean;
   }>(`
     SELECT
       rolbypassrls AS bypass,
@@ -83,7 +98,22 @@ try {
       ) AS reader_owns_ledger,
       has_database_privilege('openmmp_reader', current_database(), 'CREATE') AS reader_can_create,
       has_table_privilege('openmmp_reader', 'ephemeral.dashboard_sessions', 'SELECT') AS reader_can_select_sessions,
-      has_table_privilege('openmmp_reader', 'ephemeral.dashboard_sessions', 'INSERT') AS reader_can_insert_sessions
+      has_table_privilege('openmmp_reader', 'ephemeral.dashboard_sessions', 'INSERT') AS reader_can_insert_sessions,
+      has_table_privilege('openmmp_app', 'control.public_postback_audits', 'INSERT') AS app_can_insert_public_postback_audit,
+      has_table_privilege('openmmp_app', 'control.public_postback_audits', 'SELECT') AS app_can_select_public_postback_audit,
+      has_table_privilege('openmmp_reader', 'control.public_postback_audits', 'SELECT') AS reader_can_select_public_postback_audit,
+      has_function_privilege('openmmp_app', 'control.resolve_apple_app_adam_id(bigint)', 'EXECUTE') AS app_can_resolve_apple_adam,
+      has_function_privilege('openmmp_app', 'control.list_apple_postback_tenants()', 'EXECUTE') AS app_can_list_apple_tenants,
+      (SELECT relforcerowsecurity FROM pg_class WHERE oid='control.apple_app_registrations'::regclass) AS apple_registration_rls_forced,
+      (SELECT relforcerowsecurity FROM pg_class WHERE oid='control.conversion_schemas'::regclass) AS conversion_schema_rls_forced,
+      (SELECT relforcerowsecurity FROM pg_class WHERE oid='ephemeral.adservices_lookups'::regclass) AS adservices_lookup_rls_forced,
+      has_table_privilege('openmmp_app', 'ledger.adservices_lookup_results', 'SELECT') AS app_can_select_adservices_results,
+      has_table_privilege('openmmp_reader', 'ledger.adservices_lookup_results', 'SELECT') AS reader_can_select_adservices_results,
+      (SELECT relforcerowsecurity FROM pg_class WHERE oid='ledger.adservices_lookup_results'::regclass) AS adservices_result_rls_forced,
+      has_function_privilege('openmmp_app', 'control.list_m4_work_tenants()', 'EXECUTE') AS app_can_list_m4_work_tenants,
+      has_table_privilege('openmmp_app', 'ledger.apple_postback_facts', 'SELECT') AS app_can_select_apple_postback_facts,
+      has_table_privilege('openmmp_reader', 'ledger.apple_postback_facts', 'SELECT') AS reader_can_select_apple_postback_facts,
+      (SELECT relforcerowsecurity FROM pg_class WHERE oid='ledger.apple_postback_facts'::regclass) AS apple_postback_fact_rls_forced
     FROM pg_roles r
     WHERE rolname = 'openmmp_app'
   `);
@@ -102,6 +132,21 @@ try {
   assert.equal(role.rows[0].reader_can_create, false);
   assert.equal(role.rows[0].reader_can_select_sessions, true);
   assert.equal(role.rows[0].reader_can_insert_sessions, false);
+  assert.equal(role.rows[0].app_can_insert_public_postback_audit, true);
+  assert.equal(role.rows[0].app_can_select_public_postback_audit, false);
+  assert.equal(role.rows[0].reader_can_select_public_postback_audit, false);
+  assert.equal(role.rows[0].app_can_resolve_apple_adam, true);
+  assert.equal(role.rows[0].app_can_list_apple_tenants, true);
+  assert.equal(role.rows[0].apple_registration_rls_forced, true);
+  assert.equal(role.rows[0].conversion_schema_rls_forced, true);
+  assert.equal(role.rows[0].adservices_lookup_rls_forced, true);
+  assert.equal(role.rows[0].app_can_select_adservices_results, true);
+  assert.equal(role.rows[0].reader_can_select_adservices_results, false);
+  assert.equal(role.rows[0].adservices_result_rls_forced, true);
+  assert.equal(role.rows[0].app_can_list_m4_work_tenants, true);
+  assert.equal(role.rows[0].app_can_select_apple_postback_facts, true);
+  assert.equal(role.rows[0].reader_can_select_apple_postback_facts, true);
+  assert.equal(role.rows[0].apple_postback_fact_rls_forced, true);
 
   await withTenant(appPool, tenantA, (client) => client.query(
     "INSERT INTO control.apps (tenant_id, app_id, created_at) VALUES ($1,$2,$3)",

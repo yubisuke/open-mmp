@@ -6,6 +6,7 @@ import dev.openmmp.sdk.OpenMmpSdk
 import org.json.JSONObject
 import java.math.BigDecimal
 import java.math.RoundingMode
+import java.security.SecureRandom
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 
@@ -16,9 +17,13 @@ data class MaxRevenueObservation(
   val adUnitId: String,
   val placement: String? = null,
   val networkPlacement: String? = null,
+  val format: String = "unknown",
 )
 
-class MaxRevenueMapper(private val installationId: () -> String) {
+class MaxRevenueMapper(
+  private val installationId: () -> String,
+  private val impressionId: () -> String = { "impression:${UuidV7.generate()}" },
+) {
   val errorCount = AtomicLong(0)
 
   fun map(observation: MaxRevenueObservation): JSONObject? {
@@ -39,7 +44,7 @@ class MaxRevenueMapper(private val installationId: () -> String) {
       .put("event_name", "ad_revenue")
       .put("subject_scope", "installation_level")
       .put("installation_id", installationId())
-      .put("impression_id", "impression:${UUID.randomUUID()}")
+      .put("impression_id", impressionId())
       .put("ad_unit_id", observation.adUnitId)
       .put("ad_network", observation.networkName)
       .put("mediation_provider", "applovin-max")
@@ -50,6 +55,7 @@ class MaxRevenueMapper(private val installationId: () -> String) {
       .put("revenue_source", "client_estimated")
       .put("revenue_precision", precision)
       .put("extensions", JSONObject().apply {
+        put("ad_format", observation.format)
         observation.placement?.let { put("placement", it) }
         observation.networkPlacement?.let { put("network_placement", it) }
       })
@@ -73,8 +79,9 @@ class OpenMmpMaxRevenueListener(
         adUnitId = ad.adUnitId,
         placement = ad.placement,
         networkPlacement = ad.networkPlacement,
+        format = ad.format.label,
       ),
-    )?.let(sdk::enqueueAdRevenue)
+    )?.let { payload -> sdk.enqueueAdRevenue(payload, payload.getString("impression_id")) }
   }
 }
 
@@ -96,7 +103,23 @@ object OpenMmpMaxBridge {
     val payload = MaxRevenueMapper(sdk::installationIdForMeasurement).map(
       MaxRevenueObservation(revenue, precision, networkName, adUnitId, placement, networkPlacement),
     ) ?: return false
-    sdk.enqueueAdRevenue(payload)
+    sdk.enqueueAdRevenue(payload, payload.getString("impression_id"))
     return true
+  }
+}
+
+private object UuidV7 {
+  private val random = SecureRandom()
+
+  fun generate(nowMs: Long = System.currentTimeMillis()): UUID {
+    val bytes = ByteArray(16).also(random::nextBytes)
+    for (index in 0 until 6) bytes[index] = ((nowMs ushr ((5 - index) * 8)) and 0xff).toByte()
+    bytes[6] = ((bytes[6].toInt() and 0x0f) or 0x70).toByte()
+    bytes[8] = ((bytes[8].toInt() and 0x3f) or 0x80).toByte()
+    var most = 0L
+    var least = 0L
+    for (index in 0 until 8) most = (most shl 8) or (bytes[index].toLong() and 0xff)
+    for (index in 8 until 16) least = (least shl 8) or (bytes[index].toLong() and 0xff)
+    return UUID(most, least)
   }
 }

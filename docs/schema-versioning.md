@@ -7,7 +7,7 @@ Contract v0.3 is a breaking minor line relative to v0.2.1. Consumers must migrat
 ## Version identifiers
 
 - A schema `$id` ends in the contract minor line, for example `urn:open-mmp:schema:raw-record:v0.3`.
-- `contract_version` is the exact SemVer contract release implemented by an artifact. Existing v0.3 event artifacts declare `0.3.0`; the active package release is `0.3.1` and does not rewrite those conforming artifacts.
+- `contract_version` is the exact SemVer contract release implemented by an artifact. Existing v0.3 event artifacts declare `0.3.0`; the active package release is `0.3.4` and does not rewrite those conforming artifacts.
 - `schema_version` is the exact SemVer version of an input record's event schema. The v0.3 fixtures use `0.3.0`.
 - Registry filenames carry the contract minor line. Their `contract_version` field identifies the exact release.
 - Policy, producer, and rule-bundle versions are independent deployment or fixture identifiers unless a schema explicitly binds them.
@@ -36,6 +36,12 @@ Patch releases may correct validation defects only when every existing conformin
 R-23 is an explicit patch exception authorized to close two already documented M1 audit outcomes without changing existing artifact meaning. In `0.2.1`, metric-run adds optional `value_state` and `undefined_reason`; omission remains equivalent to a present v0.2.0 value. The difference-reason registry advances to `0.2.1`, and only the added `provider_modeled_conversion` reconciliation reason uses `difference_reason_version=0.2.1`; older reasons remain `0.2.0`. Schema `$id` values and registry filenames continue to identify the `v0.2` minor line. Existing event `contract_version`, event `schema_version`, metric-definition versions, rule-bundle versions, and conforming v0.2.0 goldens do not change merely because the release package advances to `0.2.1`.
 
 R-27 is the corresponding v0.3 patch exception for M3. In `0.3.1`, metric definition, metric run, and fixture evaluation schemas add the optional `metric_date` grouping dimension. The metric-definition calculation and numerator enums add `event_count` and `events`, with an explicit optional `event_names` set used only by new daily definitions. Existing v0.3.0 artifacts retain the same meaning, schema `$id` values remain on the `v0.3` minor line, and no existing golden output changes.
+
+R-27 also authorizes the additive M4 handoff in `0.3.2`. The install event adds the optional iOS first-launch origin, the not-applicable platform-referrer state, and two non-attributed AdServices outcomes. AdAttributionKit adds an optional signing-key environment and SKAdNetwork accepts later minor versions within supported majors 3 and 4. The new enum values and optional field are each exercised by synthetic fixture 43. Existing v0.3.0 and v0.3.1 artifacts retain their meaning, schema `$id` values remain on the `v0.3` minor line, and no existing golden output changes.
+
+The same R-27 patch authority covers `0.3.3`, which adds only new Apple aggregate metric definitions and an optional `apple_conversion_bucket` grouping dimension. Existing event-count definitions retain their click/install and `occurred_at` semantics. The new SKAN/AdAttributionKit definitions use UTC server `received_at`, the new bucket is required only for the SKAN distribution definition, and synthetic fixture 44 exercises every added value. Existing schema `$id` values remain on the `v0.3` minor line and no earlier golden changes.
+
+R-27 also covers the additive iOS conversion-schema handoff in `0.3.4`. The closed custom-event vocabulary admits the reserved `openmmp.conversion_value_updated` lifecycle event. M4-D-20 deliberately makes no typed install-schema change: synthetic fixture 45 carries the deployment-private conversion-schema version and SHA-256 digest in the existing `install.extensions` evidence surface. Existing schema `$id` values remain on the `v0.3` minor line, existing event-version constants retain `0.3.0`, and no earlier golden changes.
 
 ## Compatibility registry
 

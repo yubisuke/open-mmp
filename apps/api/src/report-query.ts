@@ -10,6 +10,7 @@ export const groupingDimensionAllowlist: Readonly<Record<GroupingDimension, true
   cohort_date: true,
   metric_date: true,
   attribution_status: true,
+  apple_conversion_bucket: true,
 };
 
 export type MetricCursor = {
@@ -122,6 +123,8 @@ function validateGrouping(dimension: GroupingDimension, value: string): void {
       ? canonicalDate(value)
       : dimension === "attribution_status"
         ? new Set(["organic", "non_organic", "unattributed"]).has(value)
+        : dimension === "apple_conversion_bucket"
+          ? /^(fine:([0-9]|[1-5][0-9]|6[0-3])|coarse:(low|medium|high))$/.test(value)
         : identifierPattern.test(value);
   if (!valid) throw new ReportQueryError("grouping_value_invalid");
 }
@@ -170,6 +173,23 @@ export function parseMetricQuery(input: {
     if (value === undefined) continue;
     validateGrouping(dimension, value);
     grouping[dimension] = value;
+  }
+  const aggregateMetricNames = new Set([
+    "skan_attributed_installs", "skan_conversion_value_distribution", "aak_attributed_installs",
+  ]);
+  const selectedAggregate = metricNames.filter((name) => aggregateMetricNames.has(name));
+  const selectedDeterministic = metricNames.filter((name) => !aggregateMetricNames.has(name));
+  const deterministicOnlyDimensions: GroupingDimension[] = [
+    "campaign_id", "network", "country", "cohort_date", "attribution_status",
+  ];
+  if (selectedAggregate.length > 0 && deterministicOnlyDimensions.some((dimension) => grouping[dimension] !== undefined)) {
+    throw new ReportQueryError("metric_series_mismatch");
+  }
+  if (grouping.apple_conversion_bucket !== undefined && (
+    selectedAggregate.length !== 1 || selectedAggregate[0] !== "skan_conversion_value_distribution" ||
+    selectedDeterministic.length > 0
+  )) {
+    throw new ReportQueryError("metric_series_mismatch");
   }
 
   const dateFrom = one(input.searchParams, "date_from");

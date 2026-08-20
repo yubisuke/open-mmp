@@ -31,10 +31,14 @@ export type DashboardView = {
   readonly selectedAppId?: string;
   readonly query?: MetricQuery;
   readonly rows: readonly MetricReportRow[];
+  readonly deterministicRows: readonly MetricReportRow[];
+  readonly appleAggregateRows: readonly MetricReportRow[];
   readonly records: readonly RecordCountRow[];
   readonly differences: readonly Record<string, unknown>[];
   readonly undefinedCount: number;
   readonly charts: readonly DashboardChart[];
+  readonly deterministicCharts: readonly DashboardChart[];
+  readonly appleAggregateCharts: readonly DashboardChart[];
   readonly trackingLinks: readonly DashboardTrackingLink[];
   readonly csrfToken: string;
   readonly nextCursor?: string;
@@ -70,6 +74,11 @@ export function buildDashboardView(input: {
   readonly csrfToken: string;
 }): DashboardView {
   const rows = [...(input.metrics?.data ?? [])].sort(compare);
+  const aggregateNames = new Set([
+    "skan_attributed_installs", "skan_conversion_value_distribution", "aak_attributed_installs",
+  ]);
+  const deterministicRows = rows.filter((row) => !aggregateNames.has(row.metric_name));
+  const appleAggregateRows = rows.filter((row) => aggregateNames.has(row.metric_name));
   const byMetric = new Map<string, (number | undefined)[]>();
   for (const row of rows) {
     const series = byMetric.get(row.metric_name) ?? [];
@@ -78,15 +87,20 @@ export function buildDashboardView(input: {
       : undefined);
     byMetric.set(row.metric_name, series);
   }
+  const charts = [...byMetric].map(([metric_name, series]) => ({ metric_name, series }));
   return {
     apps: [...input.apps].sort((left, right) => left.app_id.localeCompare(right.app_id, "en")),
     ...(input.selectedAppId ? { selectedAppId: input.selectedAppId } : {}),
     ...(input.query ? { query: input.query } : {}),
     rows,
+    deterministicRows,
+    appleAggregateRows,
     records: input.records ?? [],
     differences: input.differences?.data ?? [],
     undefinedCount: rows.filter((row) => row.value_state === "undefined").length,
-    charts: [...byMetric].map(([metric_name, series]) => ({ metric_name, series })),
+    charts,
+    deterministicCharts: charts.filter((chart) => !aggregateNames.has(chart.metric_name)),
+    appleAggregateCharts: charts.filter((chart) => aggregateNames.has(chart.metric_name)),
     trackingLinks: [...(input.trackingLinks ?? [])].sort((left, right) =>
       right.created_at.localeCompare(left.created_at, "en")
       || left.tracking_link_id.localeCompare(right.tracking_link_id, "en")),

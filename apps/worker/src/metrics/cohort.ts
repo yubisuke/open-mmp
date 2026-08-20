@@ -165,13 +165,84 @@ async function eventCountValue(
   privacyState: "before" | "after",
 ): Promise<{ value_state: "present"; value_unscaled: string }> {
   const eventNames = definition.event_names ?? [];
-  if (eventNames.length !== 1 || !["click", "install"].includes(eventNames[0])) {
-    throw new Error("SQL event_count requires exactly one click or install event");
+  const eventName = eventNames[0];
+  if (eventNames.length !== 1 || ![
+    "click", "install", "skan_postback", "adattributionkit_postback",
+  ].includes(eventName)) {
+    throw new Error("SQL event_count requires exactly one supported event");
   }
   if (typeof grouping?.metric_date !== "string") {
     throw new Error("SQL event_count requires grouping.metric_date");
   }
-  if (grouping.attribution_status !== undefined && eventNames[0] !== "install") {
+  const aggregatePostback = eventName === "skan_postback" || eventName === "adattributionkit_postback";
+  if (aggregatePostback) {
+    if (definition.aggregation_time_zone !== "UTC") {
+      throw new Error(`SQL aggregate event_count requires UTC aggregation: ${definition.metric_name}`);
+    }
+    if (grouping.attribution_status !== undefined) {
+      throw new Error(`SQL aggregate event_count forbids attribution_status: ${definition.metric_name}`);
+    }
+    const expectedEventName = definition.metric_name === "aak_attributed_installs"
+      ? "adattributionkit_postback"
+      : "skan_postback";
+    if (![
+      "skan_attributed_installs", "skan_conversion_value_distribution", "aak_attributed_installs",
+    ].includes(definition.metric_name) || eventName !== expectedEventName) {
+      throw new Error(`SQL aggregate metric and event mismatch: ${definition.metric_name}`);
+    }
+    const conversionBucket = grouping.apple_conversion_bucket;
+    if (definition.metric_name === "skan_conversion_value_distribution" && conversionBucket === undefined) {
+      throw new Error("SQL SKAN conversion distribution requires apple_conversion_bucket");
+    }
+    if (definition.metric_name !== "skan_conversion_value_distribution" && conversionBucket !== undefined) {
+      throw new Error("SQL apple_conversion_bucket is reserved for SKAN conversion distribution");
+    }
+    const aggregate = await client.query<{ value_unscaled: string }>(
+      `SELECT count(*)::text AS value_unscaled
+       FROM ledger.logical_events AS logical
+       JOIN ledger.raw_records_current AS raw
+         ON raw.tenant_id=logical.tenant_id
+        AND raw.app_id=logical.app_id
+        AND raw.record_id=logical.record_id
+       JOIN ledger.apple_postback_facts AS fact
+         ON fact.tenant_id=logical.tenant_id
+        AND fact.app_id=logical.app_id
+        AND fact.logical_event_id=logical.logical_event_id
+       JOIN LATERAL (
+         SELECT candidate.status
+         FROM ledger.attribution_results AS candidate
+         WHERE candidate.tenant_id=logical.tenant_id
+           AND candidate.app_id=logical.app_id
+           AND candidate.subject_scope='aggregate'
+           AND candidate.decided_at <= $3
+           AND candidate.artifact->'evidence_refs' @>
+             jsonb_build_array(jsonb_build_object('ref', raw.record_id))
+         ORDER BY candidate.decided_at DESC, candidate.attribution_id DESC
+         LIMIT 1
+       ) AS attribution ON attribution.status='non_organic'
+       WHERE logical.tenant_id=$1 AND logical.app_id=$2
+         AND raw.received_at <= $3
+         AND ($4='before' OR raw.payload_lifecycle_status='available')
+         AND logical.event_name=$5
+         AND fact.signature_verified
+         AND fact.did_win
+         AND fact.source_identifier_present
+         AND fact.conversion_bucket IS NOT NULL
+         AND timezone('UTC', control.canonical_timestamp_value(fact.received_at))::date=$6::date
+         AND ($7::text IS NULL OR fact.conversion_bucket=$7)`,
+      [
+        scope.tenant_id,
+        scope.app_id,
+        watermark,
+        privacyState,
+        eventName,
+        grouping.metric_date,
+        conversionBucket ?? null,
+      ],
+    );
+    return { value_state: "present", value_unscaled: aggregate.rows[0].value_unscaled };
+  }
+  if (grouping.attribution_status !== undefined && eventName !== "install") {
     throw new Error("SQL event_count attribution_status applies only to install");
   }
   const result = await client.query<{ value_unscaled: string }>(
@@ -219,7 +290,7 @@ async function eventCountValue(
       scope.app_id,
       watermark,
       privacyState,
-      eventNames[0],
+      eventName,
       grouping.metric_date,
       definition.aggregation_time_zone,
       grouping.campaign_id ?? null,
@@ -466,6 +537,7 @@ export async function computeSqlMetricRunsWithClient(
   for (const definition of input.metric_definitions ?? []) {
     definitions.set(definition.metric_name, definition);
   }
+  for (const definition of definitions.values()) assertMetricDefinitionSeries(definition);
   const output: Any[] = [];
 
   for (const evaluation of input.metric_evaluations ?? []) {
@@ -568,6 +640,27 @@ export async function computeSqlMetricRunsWithClient(
     }
   }
   return output.sort((left, right) => compareText(left.metric_run_id, right.metric_run_id));
+}
+
+function assertMetricDefinitionSeries(definition: Any): void {
+  const aggregateNames = new Set([
+    "skan_attributed_installs", "skan_conversion_value_distribution", "aak_attributed_installs",
+  ]);
+  const eventNames = definition.event_names ?? [];
+  const grouping = definition.grouping_dimensions ?? [];
+  const fail = () => { throw new Error(`metric_definition_series_mismatch:${definition.metric_name}`); };
+  if (aggregateNames.has(definition.metric_name)) {
+    const expectedEvent = definition.metric_name === "aak_attributed_installs"
+      ? "adattributionkit_postback" : "skan_postback";
+    const expectedGrouping = definition.metric_name === "skan_conversion_value_distribution"
+      ? ["metric_date", "apple_conversion_bucket"] : ["metric_date"];
+    if (definition.definition?.calculation !== "event_count" || definition.definition?.numerator !== "events" ||
+        definition.aggregation_time_zone !== "UTC" || eventNames.length !== 1 || eventNames[0] !== expectedEvent ||
+        grouping.length !== expectedGrouping.length || expectedGrouping.some((value) => !grouping.includes(value))) fail();
+    return;
+  }
+  if (eventNames.some((value: string) => value === "skan_postback" || value === "adattributionkit_postback") ||
+      grouping.includes("apple_conversion_bucket")) fail();
 }
 
 export async function computeSqlMetricRuns(pool: Pool, input: Any, persist = true): Promise<Any[]> {

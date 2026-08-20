@@ -338,6 +338,33 @@ async function persistProjection(appPool: Pool, logical: Any, input: Any): Promi
           payload.installation_id, payload.event_key,
           projected({ installation_id: payload.installation_id, event_key: payload.event_key })],
       );
+    } else if (["skan_postback", "adattributionkit_postback"].includes(logical.event_name)) {
+      const conversionBucket = payload.conversion_value !== undefined
+        ? `fine:${payload.conversion_value}`
+        : payload.coarse_conversion_value !== undefined
+          ? `coarse:${payload.coarse_conversion_value}`
+          : null;
+      const aggregateFact = {
+        event_name: logical.event_name,
+        signature_verified: payload.signature_verified === true,
+        did_win: payload.did_win === true,
+        source_identifier_present: payload.source_identifier !== undefined,
+        conversion_bucket: conversionBucket,
+        received_at: attempt.record.received_at,
+      };
+      await client.query(
+        `INSERT INTO ledger.apple_postback_facts (
+          logical_event_id, tenant_id, app_id, event_name, signature_verified,
+          did_win, source_identifier_present, conversion_bucket, received_at, artifact
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb)
+        ON CONFLICT (logical_event_id) DO NOTHING`,
+        [
+          logical.logical_event_id, logical.tenant_id, logical.app_id,
+          logical.event_name, aggregateFact.signature_verified, aggregateFact.did_win,
+          aggregateFact.source_identifier_present, conversionBucket,
+          attempt.record.received_at, projected(aggregateFact),
+        ],
+      );
     }
   });
 }

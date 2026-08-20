@@ -92,6 +92,7 @@ export type OpenMMPAttributionResultV03 = {
     | "authoritative_time_invalid"
     | "install_referrer_unsupported"
     | "install_referrer_unavailable"
+    | "platform_referrer_not_available"
     | "ambiguous_click_id"
     | "bot_prefetch"
     | "provider_attributed"
@@ -103,6 +104,8 @@ export type OpenMMPAttributionResultV03 = {
     | "meta_referrer_decrypt_failed"
     | "adservices_attributed"
     | "adservices_token_expired"
+    | "adservices_not_attributed"
+    | "adservices_lookup_unavailable"
     | "skan_postback_verified"
     | "skan_signature_invalid"
     | "postback_not_winner"
@@ -171,12 +174,18 @@ export type OpenMMPMetricDefinitionV03 = {
   /**
    * @minItems 1
    */
-  event_names?: string[];
+  event_names?: ("click" | "install" | "skan_postback" | "adattributionkit_postback")[];
   /**
    * @minItems 1
    */
   grouping_dimensions?: (
-    "campaign_id" | "network" | "country" | "cohort_date" | "metric_date" | "attribution_status"
+    | "campaign_id"
+    | "network"
+    | "country"
+    | "cohort_date"
+    | "metric_date"
+    | "attribution_status"
+    | "apple_conversion_bucket"
   )[];
   rule_bundle_id: string;
   rule_bundle_version: string;
@@ -223,6 +232,7 @@ export type OpenMMPMetricRunV03 = {
       cohort_date?: string;
       metric_date?: string;
       attribution_status?: "organic" | "non_organic" | "unattributed";
+      apple_conversion_bucket?: string;
     };
     dimension_digest: string;
   };

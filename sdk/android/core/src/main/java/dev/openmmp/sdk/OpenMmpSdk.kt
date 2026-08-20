@@ -72,9 +72,10 @@ class OpenMmpSdk private constructor(
     }
   }
 
-  fun enqueueAdRevenue(payload: JSONObject) {
+  @JvmOverloads
+  fun enqueueAdRevenue(payload: JSONObject, eventId: String? = null) {
     if (!isCollectionEnabled()) return
-    executor.execute { enqueueJson("ad_revenue", "revenue_measurement", payload); drain() }
+    executor.execute { enqueueJson("ad_revenue", "revenue_measurement", payload, eventId); drain() }
   }
 
   fun installationIdForMeasurement(): String = storage.installationId()
@@ -154,11 +155,11 @@ class OpenMmpSdk private constructor(
   private fun ensureCredential(installationId: String): InstallationCredential = storage.credential()
     ?: transport.enroll(installationId).also { storage.setCredential(it) }
 
-  private fun enqueueJson(eventName: String, purpose: String, payload: JSONObject) {
+  private fun enqueueJson(eventName: String, purpose: String, payload: JSONObject, eventId: String? = null) {
     if (!isCollectionEnabled() && eventName != "consent_changed") return
     val now = EventFactory.canonicalNow()
     database.queue().insert(
-      QueuedEvent(EventFactory.newEventId(), eventName, purpose, payload.toString(), now, storage.nextSequence(), System.currentTimeMillis()),
+      QueuedEvent(eventId ?: EventFactory.newEventId(), eventName, purpose, payload.toString(), now, storage.nextSequence(), System.currentTimeMillis()),
     )
   }
 

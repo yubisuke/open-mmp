@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import { createAppPool, createReaderPool, EncryptedFilePayloadStore, EnvironmentSecretStore } from "@open-mmp/runtime";
 import { assertSafeMaxTemplate, receiveMax, type MaxReceiverConfig } from "./max-receiver.js";
 import { ensureAdminKeys } from "./admin-auth.js";
+import { HourlyLedgerQuota } from "./apple-postback-receiver.js";
 import { createRequestHandler } from "./router.js";
 import { KeyedTokenBucket, TokenBucket } from "./rate-limit.js";
 import { ensureSdkKeys } from "./sdk-auth.js";
@@ -80,6 +81,23 @@ const server = createServer(createRequestHandler({
   reportMaximumExportRows: Number(process.env.OPENMMP_REPORT_EXPORT_MAX_ROWS ?? "200000"),
   trackingDestinationAllowlist: (process.env.OPENMMP_REDIRECTOR_DESTINATION_ALLOWLIST ?? "")
     .split(",").map((value) => value.trim()).filter(Boolean),
+  applePostback: {
+    pool,
+    payloadStore,
+    maximumBytes: Number(process.env.OPENMMP_POSTBACK_MAX_BYTES ?? String(16 * 1024)),
+    acceptDevelopmentPostbacks: process.env.OPENMMP_APPLE_ACCEPT_DEVELOPMENT_POSTBACKS === "1",
+    sourceBucket: new KeyedTokenBucket(
+      Number(process.env.OPENMMP_POSTBACK_RATE_RPS ?? "20"),
+      Number(process.env.OPENMMP_POSTBACK_RATE_BURST ?? "100"),
+    ),
+    appBucket: new KeyedTokenBucket(
+      Number(process.env.OPENMMP_POSTBACK_APP_RATE_RPS ?? "200"),
+      Number(process.env.OPENMMP_POSTBACK_APP_RATE_BURST ?? "1000"),
+    ),
+    invalidLedgerQuota: new HourlyLedgerQuota(
+      Number(process.env.OPENMMP_POSTBACK_INVALID_LEDGER_QUOTA_PER_HOUR ?? "100"),
+    ),
+  },
   sdk: {
     pool,
     payloadStore,

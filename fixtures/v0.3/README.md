@@ -1,6 +1,6 @@
 # Contract v0.3 fixture provenance
 
-The JSON files in the 42 numbered directories are reviewed, immutable golden contract examples. They are committed as source artifacts; the validation command never creates, updates, or regenerates them.
+The JSON files in the 45 numbered directories are reviewed, immutable golden contract examples. They are committed as source artifacts; the validation command never creates, updates, or regenerates them.
 
 Each fixture has one synthetic input and 13 independently asserted output classes:
 
@@ -70,6 +70,18 @@ The cost dimension object `{campaign_id:"provider-campaign-33",country:"JP",netw
 
 The fixture contains fifteen synthetic records and no metric, cost, privacy, fraud, correction, or reconciliation input. Eight Android records cover a resolvable first-party click, Meta last-click, Meta view-through, decrypt failure, no campaign data, provider unavailable, unsupported app version, and authentication failure. Typed Meta fields use synthetic IDs only; free-form campaign names are absent. The two AdServices paths map to attributed and expired-token outcomes. The five aggregate postbacks cover verified SKAdNetwork, invalid SKAdNetwork signature, AdAttributionKit non-winner, source suppression, and null conversion value. Every output cites only its same-scope source record. Public producer suffixes are synthetic; the values are not provider or campaign exports.
 
+### Fixture 43: M4 iOS contract handoffs
+
+Four synthetic accepted records exercise only the additive v0.3.2 vocabulary. Two iOS first launches use `install_origin=ios_first_launch` and `referrer_status=not_applicable`; their explicit AdServices results produce distinct `adservices_not_attributed` and `adservices_lookup_unavailable` outcomes. One verified AdAttributionKit envelope records the development signing-key environment, and one verified SKAdNetwork envelope proves that version 4.1 retains the version-4 field rules. The fixture has no metric, cost, privacy, fraud, correction, or reconciliation input. Its thirteen golden classes were reviewed after the TypeScript and Python evaluators produced RFC 8785-identical outputs.
+
+### Fixture 44: Apple aggregate metrics
+
+Three accepted, deduplicated synthetic postbacks qualify because their aggregate attributions are `non_organic`: two SKAN records carry source identifiers plus fine 21 and coarse low conversion evidence, and one AAK record carries source identifier plus fine 7 evidence. Therefore the manually reviewed scalar counts are `skan_attributed_installs=2`, `aak_attributed_installs=1`, `skan_conversion_value_distribution[fine:21]=1`, and `skan_conversion_value_distribution[coarse:low]=1`. All three server `received_at` timestamps fall on `2026-08-20` UTC, which is the aggregate `metric_date`; changing device or synthetic `occurred_at` evidence cannot move these rows. The grouping digests are SHA-256 over the RFC 8785 canonical dimension objects, and the input snapshot digest is SHA-256 over the three ordered record snapshot rows.
+
+### Fixture 45: iOS conversion-schema provenance
+
+The synthetic iOS install fixes the bundled conversion policy to version `openmmp-default-v1` and SHA-256 `905cc3a69e7b7e0a2da55439444aed7e67087c1e96c5e958c5650f04606197b5` inside the existing `extensions` evidence surface. Independently reviewed RFC 8785 payload digests are `db1c5fa5ca40a9731b531021f0c34d540fb9f14d2d1836a33fecb7fc36757c87` for the install and `05479c420b0300de0ab0d0d0c50a247e88a6123a6c29f947c1a4f687162ccfc4` for the reserved update. The schema metadata is evidence only: the iOS install remains `unattributed/platform_referrer_not_available`, and the opt-in lifecycle event emits no metric run.
+
 ### Processing-purpose coverage
 
 The public purpose catalog is exercised without adding real data: fixture 25 uses `fraud_prevention`, fixture 33 uses `analytics` and `revenue_measurement`, and fixture 34 uses `analytics` and `attribution`. The server contexts deliberately demonstrate deployment overrides of the illustrative registry defaults. Raw and delivery goldens preserve the selected purpose and policy version.
@@ -105,6 +117,9 @@ Each fixture contains the same 13 `expected_*.json` artifacts listed above. Empt
 | `40-custom-event-wrapper` | One accepted `custom_event` uses the synthetic key `level_complete`, four typed scalar attributes, optional USD money, `producer_variant=unity`, and a separate wrapper version. Its raw and logical outputs preserve the closed payload and wrapper provenance; no attribution or metric is inferred. Bounds and nested-value mutations fail schema validation. |
 | `41-click-injection-suspected` | The redirector server time is `02:00:00.000Z` and the authoritative install time is `02:00:09.999Z`, so CTIT is 9.999 seconds. The 10-second fixture policy emits one public `suspected/flag/click_injection_suspected` decision while the valid paid attribution remains intact. The 10.000-second boundary does not emit the category. |
 | `42-daily-metric-date` | One synthetic redirector click and one organic Android install occur on `2026-08-20` UTC. Human review fixes each daily `event_count` at one, with `metric_date` in both groupings and `attribution_status=organic` on the install series. The input snapshot is SHA-256 over the two ordered record rows, and each grouping digest is SHA-256 over its RFC 8785 canonical dimensions object. |
+| `43-m4-ios-contract-handoffs` | Two iOS installs prove the platform-specific first-launch and neutral AdServices outcomes; one development-key AAK envelope and one SKAN 4.1 envelope prove the new optional/environment and minor-version surfaces. All values, identifiers, and signatures are synthetic. |
+| `44-apple-aggregate-metrics` | Two qualified SKAN postbacks and one qualified AAK postback produce distinct receipt-date aggregate counts. Fine and coarse SKAN conversions remain separate scalar rows through the closed `apple_conversion_bucket` grouping. |
+| `45-ios-conversion-schema` | One iOS install carries a synthetic bundled conversion-policy version and digest in `extensions`; one reserved custom event records an opt-in conversion-value update without changing attribution or metric meaning. |
 
 ## Adding a fixture
 
