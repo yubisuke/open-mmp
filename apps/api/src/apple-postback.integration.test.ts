@@ -13,7 +13,7 @@ import {
   createReaderPool,
   EncryptedFilePayloadStore,
   withTenant,
-} from "@open-mmp/runtime";
+} from "@openmasu/runtime";
 import { processSdkInbox } from "../../worker/src/sdk-worker.js";
 import { registerAppleApp } from "./apple-admin.js";
 import { ensureAdminKeys } from "./admin-auth.js";
@@ -30,7 +30,7 @@ const adamA = 410_000_000 + Number.parseInt(run.slice(0, 5), 16) % 10_000_000;
 const adamUnknown = adamA + 20_000_000;
 const adminSecret = `m4-admin-${randomBytes(32).toString("base64url")}`;
 const fixedNow = new Date("2026-08-20T12:00:00.000Z");
-const root = mkdtempSync(join(tmpdir(), "open-mmp-m4-postback-"));
+const root = mkdtempSync(join(tmpdir(), "openmasu-m4-postback-"));
 const pool = createAppPool();
 const readerPool = createReaderPool();
 const ownerPool = createMigrationPool();
@@ -193,7 +193,7 @@ describe("M4 Apple aggregate postback receiver", () => {
     const registration = await fetch(`${baseUrl}/v1/admin/apps/${appA}/apple-registration`, {
       method: "POST",
       headers: { authorization: `Bearer ${adminSecret}`, "content-type": "application/json" },
-      body: JSON.stringify({ apple_app_adam_id: adamA, apple_bundle_id: "dev.openmmp.synthetic" }),
+      body: JSON.stringify({ apple_app_adam_id: adamA, apple_bundle_id: "dev.openmasu.synthetic" }),
     });
     assert.equal(registration.status, 201);
     assert.equal((await registration.json() as { apple_app_adam_id: string }).apple_app_adam_id, String(adamA));

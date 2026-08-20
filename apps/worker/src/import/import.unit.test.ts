@@ -20,7 +20,7 @@ describe("runtime import mapping", () => {
   });
 
   it("parses quoted CSV and enforces row byte limits", () => {
-    const directory = mkdtempSync(join(tmpdir(), "openmmp-import-"));
+    const directory = mkdtempSync(join(tmpdir(), "openmasu-import-"));
     try {
       const file = join(directory, "synthetic.csv");
       writeFileSync(file, 'network,campaign_id,country,date,cost_micros,currency\n"network, one",campaign-1,us,2026-08-18,1000000,USD\n');

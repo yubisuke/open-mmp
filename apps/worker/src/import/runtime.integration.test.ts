@@ -6,8 +6,8 @@ import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createServer } from "node:http";
-import { createAppPool, createMigrationPool, EncryptedFilePayloadStore, withTenant } from "@open-mmp/runtime";
-import { sha256 } from "@open-mmp/attribution-core";
+import { createAppPool, createMigrationPool, EncryptedFilePayloadStore, withTenant } from "@openmasu/runtime";
+import { sha256 } from "@openmasu/attribution-core";
 import { runMmpImport } from "./runner.js";
 import { persistCostImport } from "./cost.js";
 import { runCostImportFile } from "./cost-cli.js";
@@ -20,7 +20,7 @@ import { TokenBucket } from "../../../api/src/rate-limit.js";
 
 const appPool = createAppPool();
 const ownerPool = createMigrationPool();
-const temporary = mkdtempSync(join(tmpdir(), "openmmp-runtime-test-"));
+const temporary = mkdtempSync(join(tmpdir(), "openmasu-runtime-test-"));
 const payloadStore = new EncryptedFilePayloadStore(
   join(temporary, "payloads"),
   "synthetic-payload-master-key-000000000000000000000000000001",
