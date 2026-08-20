@@ -179,27 +179,40 @@ public actor OpenMmpSDK {
   }
 
   public func resetInstallationId() async throws {
+    if try storage.isResetPending() {
+      try await completePendingReset(installationId: storage.installationId())
+      return
+    }
     let oldInstallationId = try storage.installationId()
     guard let credential = try storage.credential() else { throw OpenMmpError.resetRequiresEnrollment }
     try await transport.deleteInstallation(credential: credential, installationId: oldInstallationId)
     try storage.clearForReset()
     let newInstallationId = try storage.replaceInstallationId()
-    let newCredential = try await transport.enroll(installationId: newInstallationId)
-    try storage.setCredential(newCredential)
-    try enqueue(
-      eventName: "install",
-      purpose: "attribution",
-      payloadJson: EventFactory.install(
-        installationId: newInstallationId,
-        sdkVersion: configuration.wrapperVersion ?? configuration.sdkVersion,
-        origin: "identifier_reset",
-        adServicesToken: nil,
-        conversionSchemaVersion: configuration.conversionSchemaVersion,
-        conversionSchemaSha256: configuration.conversionSchemaSha256
+    try storage.markResetPending()
+    try await completePendingReset(installationId: newInstallationId)
+  }
+
+  private func completePendingReset(installationId: String) async throws {
+    if try storage.credential() == nil {
+      try storage.setCredential(try await transport.enroll(installationId: installationId))
+    }
+    if try !storage.isInstallRecorded() {
+      try enqueue(
+        eventName: "install",
+        purpose: "attribution",
+        payloadJson: EventFactory.install(
+          installationId: installationId,
+          sdkVersion: configuration.wrapperVersion ?? configuration.sdkVersion,
+          origin: "identifier_reset",
+          adServicesToken: nil,
+          conversionSchemaVersion: configuration.conversionSchemaVersion,
+          conversionSchemaSha256: configuration.conversionSchemaSha256
+        )
       )
-    )
-    try storage.markInstallRecorded()
+      try storage.markInstallRecorded()
+    }
     try await flush()
+    try storage.clearResetPending()
   }
 
   public func flush() async throws {

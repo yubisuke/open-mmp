@@ -39,10 +39,10 @@ public final class MaxRevenueMapper: @unchecked Sendable {
 
   public init(
     installationId: @escaping @Sendable () throws -> String,
-    impressionId: @escaping @Sendable () -> String = { "impression:\(UuidV7.generate().uuidString.lowercased())" }
+    impressionId: (@Sendable () -> String)? = nil
   ) {
     self.installationId = installationId
-    self.impressionId = impressionId
+    self.impressionId = impressionId ?? { "impression:\(UuidV7.generate().uuidString.lowercased())" }
   }
 
   public var errorCount: Int {

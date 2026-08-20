@@ -142,9 +142,11 @@ final class OpenMmpCoreTests: XCTestCase {
     )
     try await sdk.setCollectionEnabled(false)
     try await sdk.initialize()
-    XCTAssertEqual(await transport.callCount(), 0)
+    let callCount = await transport.callCount()
+    XCTAssertEqual(callCount, 0)
     XCTAssertEqual(token.count, 0)
-    XCTAssertEqual(try await sdk.pendingCount(), 0)
+    let pendingCount = try await sdk.pendingCount()
+    XCTAssertEqual(pendingCount, 0)
   }
 
   func testM4A22InfoPlistDefaultDisabledWinsBeforeInitialize() throws {
@@ -197,6 +199,29 @@ final class OpenMmpCoreTests: XCTestCase {
     XCTAssertTrue(resetPayloads.contains { $0.contains("\"referrer_status\":\"not_applicable\"") })
   }
 
+  func testM4A22ResetResumesAfterEnrollmentFailureWithoutASecondDeletion() async throws {
+    let transport = RecordingTransport(deliveryFailure: false)
+    let sdk = try OpenMmpSDK(
+      configuration: configuration(defaultEnabled: true),
+      storageRoot: temporaryDirectory("reset-retry"),
+      transport: transport
+    )
+    try await sdk.initialize()
+    await transport.failNextEnrollment()
+    do {
+      try await sdk.resetInstallationId()
+      XCTFail("the synthetic enrollment failure must leave a resumable reset")
+    } catch { XCTAssertEqual(error as? OpenMmpError, .transport(503)) }
+    let pendingInstallationId = try await sdk.installationIdForMeasurement()
+    let deleteCountAfterFailure = await transport.deleteCount()
+    XCTAssertEqual(deleteCountAfterFailure, 1)
+    try await sdk.resetInstallationId()
+    let deleteCountAfterRetry = await transport.deleteCount()
+    let resumedInstallationId = try await sdk.installationIdForMeasurement()
+    XCTAssertEqual(deleteCountAfterRetry, 1)
+    XCTAssertEqual(resumedInstallationId, pendingInstallationId)
+  }
+
   func testM4A29RevenueReusesImpressionIdentifierAsEventIdentifier() async throws {
     let transport = RecordingTransport(deliveryFailure: true)
     let sdk = try OpenMmpSDK(
@@ -238,8 +263,9 @@ final class OpenMmpCoreTests: XCTestCase {
         payloadJson: "{\"event_name\":\"session_start\",\"installation_id\":\"installation:synthetic\",\"session_id\":\"session:\(index)\"}",
         occurredAt: "2026-08-20T00:00:00.000Z", processingSequence: Int64(index + 1), enqueuedAtMs: Int64(index)
       ))
-      try storage.reassertBackupExclusion()
+      try storage.rotateQueueSegment()
     }
+    try storage.setCredential(.init(keyId: "installation-key:synthetic-rewritten", secret: "synthetic-secret-rewritten"))
     XCTAssertEqual(try root.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup, true)
     XCTAssertTrue(try storage.writtenFiles().allSatisfy { $0.path.hasPrefix(root.path + "/") })
 
@@ -304,11 +330,16 @@ private actor RecordingTransport: OpenMmpTransport {
   private var calls = 0
   private var deletes = 0
   private var failDelivery: Bool
+  private var enrollmentFailures = 0
   private var payloads: [[QueuedEvent]] = []
 
   init(deliveryFailure: Bool) { self.failDelivery = deliveryFailure }
   func enroll(installationId: String) async throws -> InstallationCredential {
     calls += 1
+    if enrollmentFailures > 0 {
+      enrollmentFailures -= 1
+      throw OpenMmpError.transport(503)
+    }
     return .init(keyId: "installation-key:synthetic", secret: "synthetic-installation-secret-32-bytes")
   }
   func deliver(credential: InstallationCredential, events: [QueuedEvent]) async throws {
@@ -321,6 +352,7 @@ private actor RecordingTransport: OpenMmpTransport {
   func deleteCount() -> Int { deletes }
   func deliveredPayloads() -> [[QueuedEvent]] { payloads }
   func setDeliveryFailure(_ value: Bool) { failDelivery = value }
+  func failNextEnrollment() { enrollmentFailures += 1 }
 }
 
 private final class CountingTokenProvider: AdServicesTokenProviding, @unchecked Sendable {

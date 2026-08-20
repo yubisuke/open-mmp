@@ -74,6 +74,15 @@ public final class OpenMmpStorage: @unchecked Sendable {
 
   public func isInstallRecorded() throws -> Bool { try metadata("install_recorded") == "1" }
   public func markInstallRecorded() throws { try setMetadata("install_recorded", value: "1") }
+  public func isResetPending() throws -> Bool { try metadata("reset_pending") == "1" }
+  public func markResetPending() throws { try setMetadata("reset_pending", value: "1") }
+  public func clearResetPending() throws {
+    try lock.withLock {
+      let statement = try prepare("DELETE FROM metadata WHERE key='reset_pending'")
+      defer { sqlite3_finalize(statement) }
+      guard sqlite3_step(statement) == SQLITE_DONE else { throw databaseError("reset_pending_clear_failed") }
+    }
+  }
 
   public func collectionEnabled(default defaultValue: Bool) throws -> Bool {
     guard let value = try metadata("collection_enabled") else { return defaultValue }
@@ -201,6 +210,11 @@ public final class OpenMmpStorage: @unchecked Sendable {
       )
     }
     #endif
+  }
+
+  public func rotateQueueSegment() throws {
+    try lock.withLock { try execute("PRAGMA wal_checkpoint(TRUNCATE)") }
+    try reassertBackupExclusion()
   }
 
   public func writtenFiles() throws -> [URL] {

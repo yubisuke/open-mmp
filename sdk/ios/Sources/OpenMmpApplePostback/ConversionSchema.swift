@@ -176,7 +176,7 @@ public struct SystemAppleConversionUpdater: AppleConversionUpdating {
 
   public func update(_ value: ConversionUpdate) async throws {
     var firstFailure: Error?
-    #if canImport(StoreKit)
+    #if canImport(StoreKit) && os(iOS)
     if #available(iOS 16.1, *) {
       do {
         let coarse: SKAdNetwork.CoarseConversionValue
@@ -199,7 +199,7 @@ public struct SystemAppleConversionUpdater: AppleConversionUpdating {
     }
     #endif
 
-    #if canImport(AdAttributionKit)
+    #if canImport(AdAttributionKit) && os(iOS)
     if #available(iOS 17.4, *) {
       do {
         let coarse: AdAttributionKit.CoarseConversionValue

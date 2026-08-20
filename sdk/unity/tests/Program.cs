@@ -32,6 +32,8 @@ internal static class Program
         ExerciseIosCallbackPath(mainThread);
         Require(OpenMmpiOSPlatform.ActiveCallbackCount == 0, "iOS function-pointer callback leaked");
         Require(MaxRevenueSubscriptions.Formats.SequenceEqual(new[] { "Interstitial", "Rewarded", "Banner", "MRec" }), "MAX format subscription table is incomplete");
+        OpenMmpMaxUnityAdapter.Subscribe();
+        OpenMmpMaxUnityAdapter.Unsubscribe();
         var plist = OpenMmp.Unity.Editor.OpenMmpIosPlistSettings.Apply(
             "<?xml version=\"1.0\" encoding=\"UTF-8\"?><plist version=\"1.0\"><dict/></plist>",
             "https://synthetic.example", "https://copy.synthetic.example");

@@ -32,3 +32,26 @@ namespace UnityEngine
         public static int AttachCurrentThread() => 0;
     }
 }
+
+public static class MaxSdk
+{
+    public sealed class AdInfo
+    {
+        public double Revenue { get; set; }
+        public string RevenuePrecision { get; set; }
+        public string NetworkName { get; set; }
+        public string AdUnitIdentifier { get; set; }
+        public string Placement { get; set; }
+        public string NetworkPlacement { get; set; }
+    }
+}
+
+public static class MaxSdkCallbacks
+{
+    public delegate void RevenuePaid(string adUnitId, MaxSdk.AdInfo adInfo);
+
+    public static class Interstitial { public static event RevenuePaid OnAdRevenuePaidEvent; }
+    public static class Rewarded { public static event RevenuePaid OnAdRevenuePaidEvent; }
+    public static class Banner { public static event RevenuePaid OnAdRevenuePaidEvent; }
+    public static class MRec { public static event RevenuePaid OnAdRevenuePaidEvent; }
+}

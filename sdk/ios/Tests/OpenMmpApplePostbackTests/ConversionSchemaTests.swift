@@ -21,6 +21,11 @@ final class ConversionSchemaTests: XCTestCase {
     XCTAssertThrowsError(try ConversionSchemaRegistry(registeredDigests: [:]).load(data: data)) { error in
       XCTAssertEqual(error as? OpenMmpError, .conversionSchema("conversion_schema_version_unregistered"))
     }
+    XCTAssertThrowsError(try ConversionSchemaRegistry(registeredDigests: [
+      provisional.schemaVersion: String(repeating: "0", count: 64),
+    ]).load(data: data)) { error in
+      XCTAssertEqual(error as? OpenMmpError, .conversionSchema("conversion_schema_digest_mismatch"))
+    }
   }
 
   func testM4A31LoggingIsOptIn() async throws {

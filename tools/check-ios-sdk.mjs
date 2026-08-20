@@ -44,6 +44,11 @@ for (const value of [
 const symbols = JSON.parse(readFileSync(join(root, "sdk", "ios", "privacy-symbols.json"), "utf8"));
 const packageText = readFileSync(join(root, "sdk", "ios", "Package.swift"), "utf8");
 check(!packageText.includes(".package("), "shipping iOS package gained a third-party dependency");
+const resolvedPath = join(root, "sdk", "ios", "Package.resolved");
+if (existsSync(resolvedPath)) {
+  const resolved = JSON.parse(readFileSync(resolvedPath, "utf8"));
+  check(Array.isArray(resolved.pins) && resolved.pins.length === 0, "shipping iOS package resolved a runtime dependency");
+}
 check(!packageText.includes("AdSupport") && !packageText.includes("AppTrackingTransparency"), "shipping iOS package links a forbidden tracking framework");
 check(packageText.includes('.process("PrivacyInfo.xcprivacy")'), "privacy manifest is not declared as a Swift package resource");
 
@@ -86,6 +91,11 @@ check(Array.isArray(sbom.dependencies) && sbom.dependencies.every((entry) => Arr
 let builtObjectCount = 0;
 if (builtRoot) {
   check(existsSync(builtRoot), `built root does not exist: ${builtRoot}`);
+  const builtManifests = filesUnder(builtRoot, (path) => path.endsWith("PrivacyInfo.xcprivacy"));
+  check(builtManifests.length > 0, "PrivacyInfo.xcprivacy is absent from the built product");
+  for (const builtManifest of builtManifests) {
+    check(digest(readFileSync(builtManifest)) === digest(readFileSync(manifestPath)), `built privacy manifest differs: ${builtManifest}`);
+  }
   const targetMarkers = ["OpenMmpCore.build", "OpenMmpAppleAds.build", "OpenMmpApplePostback.build", "OpenMmpMax.build", "OpenMmpObjC.build"];
   const objects = filesUnder(builtRoot, (path) => path.endsWith(".o") && targetMarkers.some((marker) => path.includes(marker)));
   check(objects.length > 0, "no shipping iOS object files found for symbol audit");

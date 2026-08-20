@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const workspaces = [
@@ -34,6 +34,19 @@ for (const workspace of workspaces) {
   JSON.parse(readFileSync(join(root, `${name}.cdx.json`), "utf8"));
 }
 const iosRef = "pkg:swift/dev.openmmp/OpenMmpIOS@0.1.0";
+const iosPackage = readFileSync(join(process.cwd(), "sdk", "ios", "Package.swift"), "utf8");
+if (iosPackage.includes(".package(")) {
+  throw new Error("shipping iOS Package.swift gained a runtime dependency");
+}
+const iosResolvedPath = join(process.cwd(), "sdk", "ios", "Package.resolved");
+const iosPins = existsSync(iosResolvedPath)
+  ? (JSON.parse(readFileSync(iosResolvedPath, "utf8")) as { pins?: Array<{ identity: string; state?: { version?: string } }> }).pins ?? []
+  : [];
+const iosComponents = iosPins.map((pin) => ({
+  type: "library",
+  name: pin.identity,
+  version: pin.state?.version ?? "unversioned",
+}));
 const ios = {
   bomFormat: "CycloneDX",
   specVersion: "1.5",
@@ -44,9 +57,9 @@ const ios = {
       type: "library", "bom-ref": iosRef, group: "dev.openmmp", name: "OpenMmpIOS", version: "0.1.0",
     },
   },
-  components: [],
-  dependencies: [{ ref: iosRef, dependsOn: [] }],
+  components: iosComponents,
+  dependencies: [{ ref: iosRef, dependsOn: iosComponents.map((component) => component.name) }],
 };
 writeFileSync(join(root, "sdk-ios.cdx.json"), `${JSON.stringify(ios, null, 2)}\n`);
 JSON.parse(readFileSync(join(root, "sdk-ios.cdx.json"), "utf8"));
-console.log(`Generated ${workspaces.length} CycloneDX workspace SBOMs and the dependency-empty iOS SDK SBOM.`);
+console.log(`Generated ${workspaces.length} CycloneDX workspace SBOMs and the resolved iOS SDK SBOM (${iosPins.length} runtime dependencies).`);

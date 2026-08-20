@@ -7,21 +7,33 @@ namespace OpenMmp.Unity
     {
         public static void Subscribe()
         {
-            MaxSdkCallbacks.Interstitial.OnAdRevenuePaidEvent += OnAdRevenuePaid;
-            MaxSdkCallbacks.Rewarded.OnAdRevenuePaidEvent += OnAdRevenuePaid;
-            MaxSdkCallbacks.Banner.OnAdRevenuePaidEvent += OnAdRevenuePaid;
-            MaxSdkCallbacks.MRec.OnAdRevenuePaidEvent += OnAdRevenuePaid;
+            MaxSdkCallbacks.Interstitial.OnAdRevenuePaidEvent += OnInterstitialRevenuePaid;
+            MaxSdkCallbacks.Rewarded.OnAdRevenuePaidEvent += OnRewardedRevenuePaid;
+            MaxSdkCallbacks.Banner.OnAdRevenuePaidEvent += OnBannerRevenuePaid;
+            MaxSdkCallbacks.MRec.OnAdRevenuePaidEvent += OnMRecRevenuePaid;
         }
 
         public static void Unsubscribe()
         {
-            MaxSdkCallbacks.Interstitial.OnAdRevenuePaidEvent -= OnAdRevenuePaid;
-            MaxSdkCallbacks.Rewarded.OnAdRevenuePaidEvent -= OnAdRevenuePaid;
-            MaxSdkCallbacks.Banner.OnAdRevenuePaidEvent -= OnAdRevenuePaid;
-            MaxSdkCallbacks.MRec.OnAdRevenuePaidEvent -= OnAdRevenuePaid;
+            MaxSdkCallbacks.Interstitial.OnAdRevenuePaidEvent -= OnInterstitialRevenuePaid;
+            MaxSdkCallbacks.Rewarded.OnAdRevenuePaidEvent -= OnRewardedRevenuePaid;
+            MaxSdkCallbacks.Banner.OnAdRevenuePaidEvent -= OnBannerRevenuePaid;
+            MaxSdkCallbacks.MRec.OnAdRevenuePaidEvent -= OnMRecRevenuePaid;
         }
 
-        private static void OnAdRevenuePaid(string adUnitId, MaxSdk.AdInfo adInfo)
+        private static void OnInterstitialRevenuePaid(string adUnitId, MaxSdk.AdInfo adInfo) =>
+            OnAdRevenuePaid(adUnitId, adInfo, "interstitial");
+
+        private static void OnRewardedRevenuePaid(string adUnitId, MaxSdk.AdInfo adInfo) =>
+            OnAdRevenuePaid(adUnitId, adInfo, "rewarded");
+
+        private static void OnBannerRevenuePaid(string adUnitId, MaxSdk.AdInfo adInfo) =>
+            OnAdRevenuePaid(adUnitId, adInfo, "banner");
+
+        private static void OnMRecRevenuePaid(string adUnitId, MaxSdk.AdInfo adInfo) =>
+            OnAdRevenuePaid(adUnitId, adInfo, "mrec");
+
+        private static void OnAdRevenuePaid(string adUnitId, MaxSdk.AdInfo adInfo, string format)
         {
 #if UNITY_IOS && !UNITY_EDITOR
             OpenMmpiOSPlatform.TrackMaxRevenue(
@@ -29,7 +41,7 @@ namespace OpenMmp.Unity
                 adInfo.RevenuePrecision,
                 adInfo.NetworkName,
                 adInfo.AdUnitIdentifier,
-                "unknown",
+                format,
                 adInfo.Placement,
                 adInfo.NetworkPlacement,
                 _ => { });

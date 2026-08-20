@@ -280,18 +280,20 @@ describe("M4 Apple aggregate postback receiver", () => {
     assert.equal(await scopedCount("ledger.ingest_batches"), before + 3);
     assert.equal(await scopedCount("ledger.audit_logs"), auditBefore + 97);
     assert.equal(quota.count(tenantA, appA, fixedNow), 100);
-    const last = await withTenant(pool, tenantA, (client) => client.query<{ target_ref: string }>(
+    const finalCounter = await withTenant(pool, tenantA, (client) => client.query<{ target_ref: string }>(
       `SELECT target_ref FROM ledger.audit_logs
        WHERE tenant_id=$1 AND app_id=$2 AND action='apple_postback_invalid'
-       ORDER BY target_ref DESC LIMIT 1`,
+         AND target_ref='postback:skadnetwork:invalid:100'`,
       [tenantA, appA],
     ));
-    assert.equal(last.rows[0].target_ref, "postback:skadnetwork:invalid:100");
+    assert.deepEqual(finalCounter.rows, [{ target_ref: "postback:skadnetwork:invalid:100" }]);
   });
 
   it("A05 uses permanent event idempotency for retries, windows, and conflicts", async () => {
-    for (let index = 0; index < 8; index += 1) {
-      assert.equal((await post("/.well-known/skadnetwork/report-attribution/", skanBody())).response.status, 200);
+    const retryTransactionId = `00000000-0000-4000-8003-${run.padEnd(12, "3").slice(0, 12)}`;
+    const retryBody = skanBody({ transactionId: retryTransactionId });
+    for (let index = 0; index < 9; index += 1) {
+      assert.equal((await post("/.well-known/skadnetwork/report-attribution/", retryBody)).response.status, 200);
     }
     for (let sequence = 0; sequence < 3; sequence += 1) {
       assert.equal((await post("/.well-known/skadnetwork/report-attribution/", skanBody({
@@ -300,7 +302,7 @@ describe("M4 Apple aggregate postback receiver", () => {
       }))).response.status, 200);
     }
     await processSdkInbox(pool, payloadStore, tenantA);
-    const eventId = `skan:${String(skanBody()["transaction-id"])}`;
+    const eventId = `skan:${retryTransactionId}`;
     const deliveries = await withTenant(pool, tenantA, (client) => client.query<{
       duplicate_resolution: string;
       count: number;
@@ -325,7 +327,7 @@ describe("M4 Apple aggregate postback receiver", () => {
     ));
     assert.equal(windowEvents.rows[0].count, 3);
 
-    const changed = skanBody({ sourceIdentifier: "1234" });
+    const changed = skanBody({ transactionId: retryTransactionId, sourceIdentifier: "1234" });
     assert.equal((await post("/.well-known/skadnetwork/report-attribution/", changed)).response.status, 200);
     await processSdkInbox(pool, payloadStore, tenantA);
     const conflicts = await withTenant(pool, tenantA, (client) => client.query<{ count: number }>(
