@@ -87,7 +87,7 @@
           "additionalProperties": false,
           "required": ["scale"],
           "properties": {
-            "input": { "const": "integer" },
+            "input": { "enum": ["integer", "decimal"] },
             "scale": { "type": "integer", "minimum": 0, "maximum": 18 },
             "currency_source": { "type": "string", "minLength": 1 },
             "currency_default": { "type": "string", "pattern": "^[A-Z]{3}$" }

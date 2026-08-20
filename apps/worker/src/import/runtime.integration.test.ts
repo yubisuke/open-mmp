@@ -126,6 +126,28 @@ describe("M1a import integration", () => {
     });
   });
 
+  it("WO12 imports an exact synthetic decimal cost CSV without rounding", async () => {
+    const file = join(temporary, "synthetic-decimal-cost.csv");
+    writeFileSync(file, [
+      "network,campaign_id,country,date,cost_decimal,currency,as_of",
+      "synthetic-decimal-network,synthetic-decimal-campaign,us,2026-08-20,1.23,USD,2026-08-20T12:30:00.000Z",
+      "",
+    ].join("\n"));
+    const imported = await runCostImportFile({
+      pool: appPool,
+      mappingPath: "examples/mappings/synthetic-decimal-cost.json",
+      filePath: file,
+    });
+    assert.equal(imported.inserted, 1);
+    assert.equal(imported.rows, 1);
+    await withTenant(appPool, "tenant-local", async (client) => {
+      const result = await client.query(`SELECT spend_unscaled, amount_scale, currency
+        FROM ledger.cost_records_current
+        WHERE campaign_id='synthetic-decimal-campaign'`);
+      assert.deepEqual(result.rows, [{ spend_unscaled: "1230000", amount_scale: 6, currency: "USD" }]);
+    });
+  });
+
   it("WO11 rolls back raw, delivery, logical event, and facts as one record unit", async () => {
     const row = { ...JSON.parse(source)[0], event_id: "synthetic-atomic-event-11", click_id: "synthetic-click-atomicity" };
     const text = JSON.stringify([row]);
