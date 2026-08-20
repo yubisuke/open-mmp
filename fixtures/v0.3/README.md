@@ -1,6 +1,6 @@
 # Contract v0.3 fixture provenance
 
-The JSON files in the 41 numbered directories are reviewed, immutable golden contract examples. They are committed as source artifacts; the validation command never creates, updates, or regenerates them.
+The JSON files in the 42 numbered directories are reviewed, immutable golden contract examples. They are committed as source artifacts; the validation command never creates, updates, or regenerates them.
 
 Each fixture has one synthetic input and 13 independently asserted output classes:
 
@@ -104,6 +104,7 @@ Each fixture contains the same 13 `expected_*.json` artifacts listed above. Empt
 | `39-foreign-referrer-unresolved` | One accepted install has `referrer_status=third_party` and the normalized classification `foreign`. It cannot claim a first-party click or an organic marker, so it yields `unattributed/foreign_referrer_unresolved` with same-scope install evidence. |
 | `40-custom-event-wrapper` | One accepted `custom_event` uses the synthetic key `level_complete`, four typed scalar attributes, optional USD money, `producer_variant=unity`, and a separate wrapper version. Its raw and logical outputs preserve the closed payload and wrapper provenance; no attribution or metric is inferred. Bounds and nested-value mutations fail schema validation. |
 | `41-click-injection-suspected` | The redirector server time is `02:00:00.000Z` and the authoritative install time is `02:00:09.999Z`, so CTIT is 9.999 seconds. The 10-second fixture policy emits one public `suspected/flag/click_injection_suspected` decision while the valid paid attribution remains intact. The 10.000-second boundary does not emit the category. |
+| `42-daily-metric-date` | One synthetic redirector click and one organic Android install occur on `2026-08-20` UTC. Human review fixes each daily `event_count` at one, with `metric_date` in both groupings and `attribution_status=organic` on the install series. The input snapshot is SHA-256 over the two ordered record rows, and each grouping digest is SHA-256 over its RFC 8785 canonical dimensions object. |
 
 ## Adding a fixture
 
