@@ -232,13 +232,13 @@ describe("M5 RBAC and rule-bundle production controls", { concurrency: false }, 
     ]), (error: any) => error?.code === "23505");
     await assert.rejects(() => invalidInsert([
       "rule-bundle:cross-bundle", tenantId, appId, "fraud-default", "1.0.0",
-      "5".repeat(64), first.rule_bundle_revision_id, "2026-08-20T01:03:00.000Z", "admin_key:synthetic",
+      "5".repeat(64), second.rule_bundle_revision_id, "2026-08-20T01:03:00.000Z", "admin_key:synthetic",
       JSON.stringify({
         rule_bundle_revision_id: "rule-bundle:cross-bundle",
         rule_bundle_id: "fraud-default",
         rule_bundle_version: "1.0.0",
         rule_bundle_hash: "5".repeat(64),
-        supersedes_rule_bundle_revision_id: first.rule_bundle_revision_id,
+        supersedes_rule_bundle_revision_id: second.rule_bundle_revision_id,
         activated_at: "2026-08-20T01:03:00.000Z",
       }),
     ]), (error: any) => error?.code === "23503");
