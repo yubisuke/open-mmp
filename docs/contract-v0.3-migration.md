@@ -205,6 +205,33 @@ Fixture 45 adds one synthetic input plus the following 13 human-reviewed golden 
 | `45-ios-conversion-schema/expected_rejections.json` | Empty; both synthetic records conform. |
 | `45-ios-conversion-schema/expected_reconciliation.json` | Empty; no external import row exists. |
 
+## v0.3.5 patch ledger (R-27)
+
+The active package advances from `0.3.4` to `0.3.5`. Schema `$id` values, registry filenames, and event `contract_version` / `schema_version` constants retain the `v0.3` identity. All 585 pre-existing golden files remain byte-for-byte unchanged.
+
+| Surface | v0.3.5 change | Compatibility |
+| --- | --- | --- |
+| Raw record and fixture ingress record | Adds optional, server-assigned `integrity_verdict` with closed platform/verdict vocabulary, evaluated time, policy version, and a protected opaque evidence reference when evidence exists | Additive evidence only; existing artifacts and attribution, fraud, and metric semantics are unchanged. |
+| Reference evaluators | Copies the optional evidence envelope into the raw-record artifact without consuming it in any decision | New field only; absence preserves every earlier output. |
+
+Fixture 46 adds one synthetic input plus the following 13 human-reviewed golden artifacts. It changes no existing golden:
+
+| Golden artifact | Derivation |
+| --- | --- |
+| `46-integrity-verdict-reservation/expected_raw_records.json` | Three accepted records preserve verified and failed Play Integrity evidence plus unavailable App Attest evidence; protected references contain no provider token or device identifier. |
+| `46-integrity-verdict-reservation/expected_deliveries.json` | Three unique, on-time protected deliveries. |
+| `46-integrity-verdict-reservation/expected_logical_events.json` | Three independent installation logical events. |
+| `46-integrity-verdict-reservation/expected_corrections.json` | Empty; no correction input exists. |
+| `46-integrity-verdict-reservation/expected_privacy_requests.json` | Empty; no privacy request exists. |
+| `46-integrity-verdict-reservation/expected_privacy_tombstones.json` | Empty; no lifecycle transition exists. |
+| `46-integrity-verdict-reservation/expected_attributions.json` | The installs remain organic or unattributed solely from their platform-referrer evidence; integrity evidence does not determine attribution. |
+| `46-integrity-verdict-reservation/expected_cost_records.json` | Empty; no cost input exists. |
+| `46-integrity-verdict-reservation/expected_metric_definitions.json` | The three unchanged base metric definitions. |
+| `46-integrity-verdict-reservation/expected_metric_runs.json` | Empty; integrity evidence is not a metric input. |
+| `46-integrity-verdict-reservation/expected_fraud_decisions.json` | Empty; integrity evidence is not a public fraud decision by itself. |
+| `46-integrity-verdict-reservation/expected_rejections.json` | Empty; every synthetic record conforms. |
+| `46-integrity-verdict-reservation/expected_reconciliation.json` | Empty; no external import row exists. |
+
 ## Inventory reconciliation
 
 The final migration must reconcile this ledger against:
@@ -214,7 +241,7 @@ git diff --name-status --find-renames contract-v0.2.1..HEAD -- fixtures/
 git diff --stat contract-v0.2.1..HEAD -- fixtures/
 ```
 
-The expected new-side inventory is 45 `input.json` files, `45 * 13 = 585` golden files, and one README. The first 38 fixture directories correspond to the v0.2.1 set; fixtures 39-41 add the v0.3 minor-line inputs and 39 goldens, fixture 42 adds the v0.3.1 patch input and 13 goldens, fixture 43 adds the v0.3.2 M4 handoff input and 13 goldens, fixture 44 adds the v0.3.3 aggregate-metric input and 13 goldens, and fixture 45 adds the v0.3.4 iOS conversion-schema input and 13 goldens. Git rename detection may pair identical metric-definition files across fixture numbers, so reconciliation uses the destination inventory plus the semantic ledger rather than rename similarity alone.
+The expected new-side inventory is 46 `input.json` files, `46 * 13 = 598` golden files, and one README. The first 38 fixture directories correspond to the v0.2.1 set; fixtures 39-41 add the v0.3 minor-line inputs and 39 goldens, fixture 42 adds the v0.3.1 patch input and 13 goldens, fixture 43 adds the v0.3.2 M4 handoff input and 13 goldens, fixture 44 adds the v0.3.3 aggregate-metric input and 13 goldens, fixture 45 adds the v0.3.4 iOS conversion-schema input and 13 goldens, and fixture 46 adds the v0.3.5 integrity-evidence reservation and 13 goldens. Git rename detection may pair identical metric-definition files across fixture numbers, so reconciliation uses the destination inventory plus the semantic ledger rather than rename similarity alone.
 
 ## Consumer migration
 

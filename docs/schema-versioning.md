@@ -7,7 +7,7 @@ Contract v0.3 is a breaking minor line relative to v0.2.1. Consumers must migrat
 ## Version identifiers
 
 - A schema `$id` ends in the contract minor line, for example `urn:open-mmp:schema:raw-record:v0.3`.
-- `contract_version` is the exact SemVer contract release implemented by an artifact. Existing v0.3 event artifacts declare `0.3.0`; the active package release is `0.3.4` and does not rewrite those conforming artifacts.
+- `contract_version` is the exact SemVer contract release implemented by an artifact. Existing v0.3 event artifacts declare `0.3.0`; the active package release is `0.3.5` and does not rewrite those conforming artifacts.
 - `schema_version` is the exact SemVer version of an input record's event schema. The v0.3 fixtures use `0.3.0`.
 - Registry filenames carry the contract minor line. Their `contract_version` field identifies the exact release.
 - Policy, producer, and rule-bundle versions are independent deployment or fixture identifiers unless a schema explicitly binds them.
@@ -42,6 +42,8 @@ R-27 also authorizes the additive M4 handoff in `0.3.2`. The install event adds 
 The same R-27 patch authority covers `0.3.3`, which adds only new Apple aggregate metric definitions and an optional `apple_conversion_bucket` grouping dimension. Existing event-count definitions retain their click/install and `occurred_at` semantics. The new SKAN/AdAttributionKit definitions use UTC server `received_at`, the new bucket is required only for the SKAN distribution definition, and synthetic fixture 44 exercises every added value. Existing schema `$id` values remain on the `v0.3` minor line and no earlier golden changes.
 
 R-27 also covers the additive iOS conversion-schema handoff in `0.3.4`. The closed custom-event vocabulary admits the reserved `openmmp.conversion_value_updated` lifecycle event. M4-D-20 deliberately makes no typed install-schema change: synthetic fixture 45 carries the deployment-private conversion-schema version and SHA-256 digest in the existing `install.extensions` evidence surface. Existing schema `$id` values remain on the `v0.3` minor line, existing event-version constants retain `0.3.0`, and no earlier golden changes.
+
+R-27 also covers the additive platform-integrity reservation in `0.3.5`. Raw records and fixture ingress records add an optional, server-assigned `integrity_verdict` evidence object. Its closed provider/verdict vocabulary is exercised by synthetic fixture 46; it carries no raw provider assertion or identifying value and does not change attribution, fraud, or metric semantics. Existing schema `$id` values remain on the `v0.3` minor line, existing event-version constants retain `0.3.0`, and no earlier golden changes.
 
 ## Compatibility registry
 
