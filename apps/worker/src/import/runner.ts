@@ -157,15 +157,6 @@ export async function runMmpImport(options: {
       failures.push({ ordinal, reason: mappingError.message.includes("timestamp") ? "timestamp_invalid" : "mapping_validation_failed", fields: mappingError.fields });
     }
   }
-  await withTenant(options.pool, mapping.tenant_id, async (client) => {
-    await client.query(
-      `INSERT INTO control.import_runs (
-        import_run_id, tenant_id, app_id, source_id, source_snapshot_digest,
-        status, started_at, completed_at
-      ) VALUES ($1,$2,$3,$4,$5,'running',$6,NULL)`,
-      [runId, mapping.tenant_id, mapping.app_id, mapping.source_id, fileDigest, now],
-    );
-  });
   try {
     const history = await historicalAttempts(options.pool, mapping);
     const output = await ingestRuntimeBatch(attemptRows.map(({ attempt }) => attempt), options.pool, history);
@@ -183,37 +174,41 @@ export async function runMmpImport(options: {
         fields: [...failure.fields],
       })),
     ];
+    // import_runs is append-only: publish the terminal state in the same transaction as
+    // the file, attempt, and row-rejection artifacts instead of mutating a running row.
     await withTenant(options.pool, mapping.tenant_id, async (client) => {
-    await client.query(
-      `INSERT INTO control.import_files (
-        import_file_id, tenant_id, app_id, source_id, file_digest, file_bytes,
-        row_count, first_seen_at, import_run_id
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-      [uuidV7(options.now?.valueOf()), mapping.tenant_id, mapping.app_id, mapping.source_id, fileDigest, loaded.bytes, loaded.rows.length, now, runId],
-    );
-    for (const { ordinal, attempt } of acceptedRows) {
       await client.query(
-        `INSERT INTO control.import_attempts (
-          import_attempt_id, import_run_id, tenant_id, app_id, source_id,
-          row_ordinal, server_context, record, created_at
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9)`,
-        [uuidV7(), runId, mapping.tenant_id, mapping.app_id, mapping.source_id, ordinal, JSON.stringify(attempt.server), JSON.stringify(attempt.record), now],
+        `INSERT INTO control.import_runs (
+          import_run_id, tenant_id, app_id, source_id, source_snapshot_digest,
+          status, started_at, completed_at
+        ) VALUES ($1,$2,$3,$4,$5,'completed',$6,$6)`,
+        [runId, mapping.tenant_id, mapping.app_id, mapping.source_id, fileDigest, now],
       );
-    }
-    for (const failure of allFailures) {
       await client.query(
-        `INSERT INTO control.import_row_rejections (
-          import_rejection_id, import_run_id, tenant_id, app_id, source_id,
-          row_ordinal, reason_code, field_names, occurred_at
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9)`,
-        [uuidV7(), runId, mapping.tenant_id, mapping.app_id, mapping.source_id, failure.ordinal, failure.reason, JSON.stringify(failure.fields), now],
+        `INSERT INTO control.import_files (
+          import_file_id, tenant_id, app_id, source_id, file_digest, file_bytes,
+          row_count, first_seen_at, import_run_id
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+        [uuidV7(options.now?.valueOf()), mapping.tenant_id, mapping.app_id, mapping.source_id, fileDigest, loaded.bytes, loaded.rows.length, now, runId],
       );
-    }
-      await client.query(
-        `UPDATE control.import_runs SET status='completed', completed_at=$2
-         WHERE import_run_id=$1 AND status='running'`,
-        [runId, now],
-      );
+      for (const { ordinal, attempt } of acceptedRows) {
+        await client.query(
+          `INSERT INTO control.import_attempts (
+            import_attempt_id, import_run_id, tenant_id, app_id, source_id,
+            row_ordinal, server_context, record, created_at
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9)`,
+          [uuidV7(), runId, mapping.tenant_id, mapping.app_id, mapping.source_id, ordinal, JSON.stringify(attempt.server), JSON.stringify(attempt.record), now],
+        );
+      }
+      for (const failure of allFailures) {
+        await client.query(
+          `INSERT INTO control.import_row_rejections (
+            import_rejection_id, import_run_id, tenant_id, app_id, source_id,
+            row_ordinal, reason_code, field_names, occurred_at
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9)`,
+          [uuidV7(), runId, mapping.tenant_id, mapping.app_id, mapping.source_id, failure.ordinal, failure.reason, JSON.stringify(failure.fields), now],
+        );
+      }
     });
     console.log(`Import ${basename(options.filePath)}: rows=${loaded.rows.length} accepted=${acceptedRows.length} rejected=${allFailures.length}`);
     return {
@@ -222,10 +217,14 @@ export async function runMmpImport(options: {
       deliveries: output.deliveries.length, logical_events: output.logical_events.length,
     };
   } catch (error) {
+    // Projection writes are transaction-scoped per logical record. A terminal failed run
+    // still records the source snapshot without requiring UPDATE permission.
     await withTenant(options.pool, mapping.tenant_id, (client) => client.query(
-      `UPDATE control.import_runs SET status='failed', completed_at=$2
-       WHERE import_run_id=$1 AND status='running'`,
-      [runId, now],
+      `INSERT INTO control.import_runs (
+        import_run_id, tenant_id, app_id, source_id, source_snapshot_digest,
+        status, started_at, completed_at
+      ) VALUES ($1,$2,$3,$4,$5,'failed',$6,$6)`,
+      [runId, mapping.tenant_id, mapping.app_id, mapping.source_id, fileDigest, now],
     ).then(() => undefined));
     throw error;
   }
