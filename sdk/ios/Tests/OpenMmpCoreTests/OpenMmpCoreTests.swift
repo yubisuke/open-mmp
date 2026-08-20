@@ -55,56 +55,21 @@ final class OpenMmpCoreTests: XCTestCase {
 
   #if os(macOS)
   func testM4A21QueueSurvivesSigkillAndInterruptedWriter() throws {
-    let stableRoot = temporaryDirectory("sigkill-stable")
-    let stablePipe = try makePipe()
-    let stablePid = fork()
-    XCTAssertGreaterThan(stablePid, 0)
-    if stablePid == 0 {
-      close(stablePipe.read)
-      do {
-        let storage = try OpenMmpStorage(root: stableRoot)
-        for index in 0..<1_000 { try storage.enqueue(syntheticEvent(index)) }
-        var ready: UInt8 = 1
-        _ = Darwin.write(stablePipe.write, &ready, 1)
-        pause()
-      } catch { _exit(2) }
-      _exit(0)
+    guard let probePath = ProcessInfo.processInfo.environment["OPENMMP_QUEUE_CRASH_PROBE"] else {
+      throw XCTSkip("OPENMMP_QUEUE_CRASH_PROBE is supplied by the pinned macOS CI gate")
     }
-    close(stablePipe.write)
-    try waitForByte(stablePipe.read)
-    close(stablePipe.read)
-    XCTAssertEqual(kill(stablePid, SIGKILL), 0)
-    var stableStatus: Int32 = 0
-    XCTAssertEqual(waitpid(stablePid, &stableStatus, 0), stablePid)
+    let stableRoot = temporaryDirectory("sigkill-stable")
+    let stable = try startCrashProbe(executable: probePath, mode: "stable", root: stableRoot)
+    XCTAssertEqual(kill(stable.processIdentifier, SIGKILL), 0)
+    stable.waitUntilExit()
     let stableEvents = try OpenMmpStorage(root: stableRoot).pending(limit: 2_000)
     XCTAssertEqual(stableEvents.count, 1_000)
     XCTAssertEqual(Set(stableEvents.map(\.eventId)).count, 1_000)
 
     let interruptedRoot = temporaryDirectory("sigkill-write")
-    let interruptedPipe = try makePipe()
-    let interruptedPid = fork()
-    XCTAssertGreaterThan(interruptedPid, 0)
-    if interruptedPid == 0 {
-      close(interruptedPipe.read)
-      do {
-        let storage = try OpenMmpStorage(root: interruptedRoot)
-        for index in 0..<10_000 {
-          try storage.enqueue(syntheticEvent(index))
-          if index == 99 {
-            var committedPrefix: UInt8 = 1
-            _ = Darwin.write(interruptedPipe.write, &committedPrefix, 1)
-          }
-        }
-        pause()
-      } catch { _exit(3) }
-      _exit(0)
-    }
-    close(interruptedPipe.write)
-    try waitForByte(interruptedPipe.read)
-    close(interruptedPipe.read)
-    XCTAssertEqual(kill(interruptedPid, SIGKILL), 0)
-    var interruptedStatus: Int32 = 0
-    XCTAssertEqual(waitpid(interruptedPid, &interruptedStatus, 0), interruptedPid)
+    let interrupted = try startCrashProbe(executable: probePath, mode: "interrupted", root: interruptedRoot)
+    XCTAssertEqual(kill(interrupted.processIdentifier, SIGKILL), 0)
+    interrupted.waitUntilExit()
     let interruptedEvents = try OpenMmpStorage(root: interruptedRoot).pending(limit: 20_000)
     XCTAssertGreaterThanOrEqual(interruptedEvents.count, 100)
     XCTAssertLessThanOrEqual(interruptedEvents.count, 10_000)
@@ -302,26 +267,23 @@ final class OpenMmpCoreTests: XCTestCase {
     return URL(fileURLWithPath: relativePath)
   }
 
-  private func syntheticEvent(_ index: Int) -> QueuedEvent {
-    QueuedEvent(
-      eventId: "event:\(index)", eventName: "custom_event", processingPurposeId: "analytics",
-      payloadJson: "{\"event_name\":\"custom_event\",\"event_key\":\"synthetic\",\"installation_id\":\"installation:synthetic\"}",
-      occurredAt: "2026-08-20T00:00:00.000Z", processingSequence: Int64(index + 1), enqueuedAtMs: Int64(index)
-    )
-  }
-
   #if os(macOS)
-  private func makePipe() throws -> (read: Int32, write: Int32) {
-    var descriptors: [Int32] = [0, 0]
-    guard Darwin.pipe(&descriptors) == 0 else { throw OpenMmpError.storage("pipe_failed") }
-    return (descriptors[0], descriptors[1])
-  }
-
-  private func waitForByte(_ descriptor: Int32) throws {
-    var value: UInt8 = 0
-    guard Darwin.read(descriptor, &value, 1) == 1, value == 1 else {
-      throw OpenMmpError.storage("child_ready_failed")
+  private func startCrashProbe(executable: String, mode: String, root: URL) throws -> Process {
+    let ready = root.appendingPathComponent("probe-ready")
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: executable)
+    process.arguments = [mode, root.path, ready.path]
+    try process.run()
+    let deadline = Date().addingTimeInterval(30)
+    while !FileManager.default.fileExists(atPath: ready.path) && Date() < deadline {
+      if !process.isRunning { throw OpenMmpError.storage("crash_probe_exited_early") }
+      Thread.sleep(forTimeInterval: 0.01)
     }
+    guard FileManager.default.fileExists(atPath: ready.path) else {
+      if process.isRunning { process.terminate() }
+      throw OpenMmpError.storage("crash_probe_ready_timeout")
+    }
+    return process
   }
   #endif
 }

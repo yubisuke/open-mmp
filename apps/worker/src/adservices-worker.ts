@@ -170,7 +170,7 @@ async function installAttribution(client: PoolClient, row: LookupRow): Promise<J
        FROM ledger.attribution_results AS candidate
        WHERE candidate.tenant_id=raw.tenant_id AND candidate.app_id=raw.app_id
          AND candidate.subject_scope='installation_level'
-         AND candidate.subject_ref='installation:' || install.installation_id
+         AND candidate.subject_ref=install.installation_id
        ORDER BY candidate.decided_at DESC, candidate.attribution_id DESC
        LIMIT 1
      ) AS attribution ON true

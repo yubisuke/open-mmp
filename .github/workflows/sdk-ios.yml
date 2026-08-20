@@ -32,7 +32,10 @@ jobs:
       - name: Run Swift package tests
         run: |
           swift package --package-path sdk/ios resolve
-          swift test --package-path sdk/ios
+          swift build --package-path sdk/ios/CrashProbe --product OpenMmpQueueCrashProbe
+          crash_probe_bin="$(swift build --package-path sdk/ios/CrashProbe --show-bin-path)/OpenMmpQueueCrashProbe"
+          test -x "$crash_probe_bin"
+          OPENMMP_QUEUE_CRASH_PROBE="$crash_probe_bin" swift test --package-path sdk/ios
       - name: Run the package tests on an iOS Simulator
         working-directory: sdk/ios
         run: |
