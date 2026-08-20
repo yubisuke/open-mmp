@@ -1,0 +1,16 @@
+{
+  "name": "com.openmmp.sdk",
+  "version": "0.1.0",
+  "displayName": "Open MMP SDK",
+  "description": "Auditable Open MMP Android bridge for Unity.",
+  "unity": "2022.3",
+  "license": "Apache-2.0",
+  "keywords": ["analytics", "attribution", "android"],
+  "samples": [
+    {
+      "displayName": "Android measurement sample",
+      "description": "Initialises the Android bridge and sends one synthetic custom event.",
+      "path": "Samples~/AndroidMeasurement"
+    }
+  ]
+}
