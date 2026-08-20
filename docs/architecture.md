@@ -10,16 +10,16 @@ Proposed stack:
 - Schemas: JSON Schema Draft 2020-12 with generated runtime types
 - Database: PostgreSQL
 - Android SDK: Kotlin
-- Unity integration: C# API with an Android Kotlin bridge
-- iOS SDK: Swift, Phase 4a
+- Unity integration: C# API with Android Kotlin and iOS Swift/C ABI bridges
+- iOS SDK: Swift Package with first-party, Apple, and provider-neutral MAX products
 - Dashboard: dependency-free, server-rendered TypeScript HTML with no client JavaScript
 - Local runtime: Docker Compose
 
 ## Reference deployment boundary
 
-M1 through M3 use one portable deployment path: Docker Compose, Node.js services, and PostgreSQL. They do not adopt Cloudflare Queues, R2, or D1. M2 may offer a Cloudflare Workers redirector as an optional edge adapter, but the same redirector behavior must remain available through the portable Node.js interface. The ingestion API, worker, authoritative ledger, protected evidence, and dashboard do not require Cloudflare. No public contract depends on a Cloudflare-specific API.
+M1 through M4 use one portable deployment path: Docker Compose, Node.js services, and PostgreSQL. They do not adopt Cloudflare Queues, R2, or D1. M2 may offer a Cloudflare Workers redirector as an optional edge adapter, but the same redirector behavior must remain available through the portable Node.js interface. The ingestion API, worker, authoritative ledger, protected evidence, Apple postback receiver, and dashboard do not require Cloudflare. No public contract depends on a Cloudflare-specific API.
 
-The decided M1 implementation baseline is documented in [M1 Design Baseline](design/m1-baseline.md). R-22 resolves every option set in that document to its recorded recommendation. The Android, Unity, redirector, and SDK-ingestion design is fixed by R-24 in [M2 Design Baseline](design/m2-baseline.md). The dependency-free server-rendered dashboard, tenant-scoped session, reader-role, and typed reporting design is fixed by R-25 in [M3 Design Baseline](design/m3-baseline.md).
+The decided M1 implementation baseline is documented in [M1 Design Baseline](design/m1-baseline.md). R-22 resolves every option set in that document to its recorded recommendation. The Android, Unity, redirector, and SDK-ingestion design is fixed by R-24 in [M2 Design Baseline](design/m2-baseline.md). The dependency-free server-rendered dashboard, tenant-scoped session, reader-role, and typed reporting design is fixed by R-25 in [M3 Design Baseline](design/m3-baseline.md). The Swift SDK, Apple receiver, AdServices, conversion schema, and aggregate-series design is fixed by R-28 in [M4 Design Baseline](design/m4-baseline.md).
 
 ## Android M2 flow
 
@@ -48,7 +48,7 @@ sequenceDiagram
 
 ### M1a runtime component inventory
 
-The following six component identifiers are mechanically matched to the M1a threat table.
+The following component identifiers are mechanically matched to the threat tables.
 
 <!-- m1-component:import-worker -->
 - `import-worker`: file-driven existing-MMP imports, cost adapters, MAX inbox processing, and contract evaluation.
@@ -65,21 +65,28 @@ The following six component identifiers are mechanically matched to the M1a thre
 
 ### M2 component inventory
 
-The following four identifiers are covered mechanically. The two device components remain implementation-pending until M2b; listing their boundary here does not claim that the SDKs exist yet.
+The following four identifiers are covered mechanically.
 
 <!-- m1-component:redirector -->
 - `redirector`: portable Node HTTP shell and shared deterministic core for stored measurement links, Play referrers, click evidence, safe fallback, and memory-only source-IP rate limiting.
 <!-- m1-component:sdk-ingestion -->
 - `sdk-ingestion`: app-key enrollment, per-installation credentials, HMAC request integrity, ephemeral nonce replay defence, durable batch inbox, ordered worker drain, and on-device deletion authorization.
 <!-- m1-component:sdk-android -->
-- `sdk-android`: planned M2b Kotlin client boundary for Install Referrer, Meta evidence, durable delivery, consent, and collection lifecycle.
+- `sdk-android`: Kotlin client boundary for Install Referrer, Meta evidence, durable delivery, consent, collection lifecycle, and MAX revenue mapping.
 <!-- m1-component:unity-bridge -->
-- `unity-bridge`: planned M2b C# to Kotlin boundary for Unity lifecycle and MAX impression-revenue callbacks.
+- `unity-bridge`: C# bridge to Kotlin/Swift for Unity lifecycle, main-thread callbacks, and Android/iOS MAX impression-revenue callbacks.
 
 ### M3 component inventory
 
 <!-- m1-component:dashboard -->
 - `dashboard`: tenant-scoped opaque sessions, strict credential separation, a read-only PostgreSQL role, shared typed report filters, aggregate exports, and dependency-free server-rendered HTML/SVG.
+
+### M4 component inventory
+
+<!-- m1-component:apple-postback-receiver -->
+- `apple-postback-receiver`: API routes for SKAdNetwork and AdAttributionKit developer copies, Apple signature/JWS verification, non-enumerating app lookup, replay/conflict handling, and protected AdServices follow-up.
+<!-- m1-component:sdk-ios -->
+- `sdk-ios`: Swift first-party client with one excluded storage subtree, durable SQLite queue, HMAC delivery, consent/reset lifecycle, AdServices, conversion-value updates, MAX mapping, Unity C ABI, privacy manifest, symbol audit, and dependency-empty runtime SBOM.
 
 ### Redirector
 
@@ -221,7 +228,7 @@ Aggregate subjects must not contain an `installation_id`.
 
 - M1a implements the ledger and three portable import paths; M1b adds cohort metrics and difference audit.
 - M2 adds the Android and Unity SDKs plus the portable redirector and optional Workers adapter.
-- M4a adds first-party iOS measurement; M4b adds AdAttributionKit and SKAdNetwork postback receipt and verification.
+- M4a adds first-party iOS measurement; M4b adds AdAttributionKit and SKAdNetwork postback receipt, verification, and separate fixed-watermark aggregate reporting.
 - M5 adds production controls and only the adapter scope approved in the roadmap.
 - Google announced the retirement of Attribution Reporting (Android) on 2025-10-17 and no longer accepts enrollment; this project does not adopt it.
 - A second analytical store is considered only when the measured thresholds above are crossed.

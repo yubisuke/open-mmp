@@ -18,6 +18,9 @@ Primary M4 verification recorded on 2026-08-20:
 - [AdServices attribution token](https://developer.apple.com/documentation/AdServices/AAAttribution/attributionToken%28%29) defines raw token acquisition; the server sends that token to Apple's attribution endpoint.
 - [Adding a privacy manifest to an SDK](https://developer.apple.com/documentation/bundleresources/adding-a-privacy-manifest-to-your-app-or-third-party-sdk) defines Swift Package placement and resource declaration.
 - [Optimizing data for iCloud backup](https://developer.apple.com/documentation/foundation/optimizing-your-app-s-data-for-icloud-backup) defines the backup-exclusion resource value used by the iOS SDK storage subtree.
+- [AdAttributionKit Postback](https://developer.apple.com/documentation/adattributionkit/postback) and its [conversion-value update method](https://developer.apple.com/documentation/adattributionkit/postback/updateconversionvalue%28_%3Acoarseconversionvalue%3Alockpostback%3A%29) define the exact async Swift API used by the SDK.
+- [Privacy collected-data type](https://developer.apple.com/documentation/bundleresources/app-privacy-configuration/nsprivacycollecteddatatypes/nsprivacycollecteddatatype) and [collection purposes](https://developer.apple.com/documentation/bundleresources/app-privacy-configuration/nsprivacycollecteddatatypes/nsprivacycollecteddatatypepurposes) define the exact manifest vocabulary used by the SDK.
+- [AppLovin MAX iOS advanced settings](https://developers.applovin.com/en/max/ios/overview/advanced-settings/) and the [pinned 13.6.4 Swift Package manifest](https://raw.githubusercontent.com/AppLovin/AppLovin-MAX-Swift-Package/13.6.4/Package.swift) define the impression-revenue fields and exact compile-only provider dependency.
 
 Design implications:
 

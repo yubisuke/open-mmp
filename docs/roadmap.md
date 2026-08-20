@@ -96,21 +96,34 @@ Evidence gate: `npm run verify:consistency` compares raw aggregate counts, repor
 
 ## M4a iOS first-party measurement
 
+M4a is implemented with synthetic evidence. The Swift Package, excluded SQLite
+queue, HMAC delivery, consent/reset lifecycle, AdServices token handoff, MAX
+mapping, Unity C ABI, Privacy Manifest, built-symbol audit, and dependency-empty
+iOS SDK SBOM are executable gates in the pinned macOS workflow. Real-device,
+live Apple/MAX, Unity-export, and App Store evidence remains in the
+[M4 checklist](validation/m4-device-checklist.md).
+
 - Swift SDK and Unity iOS bridge
 - First-party events, persistent delivery queue, consent controls, and advertising-revenue evidence
 - Apple AdServices token collection and server lookup after current primary-source verification
 - Apple Privacy Manifest and App Privacy Details mapping
 
-Evidence gate: An iOS test application delivers synthetic install, event, and revenue evidence to the ledger; real-device and Apple Ads validation remain separately labeled until performed.
+Evidence gate: The macOS CI sample compiles and synthetic install, event, conversion-value, and revenue paths reproduce the shared contract vectors. Real-device and Apple Ads validation remain separately labeled until performed.
 
 ## M4b Apple aggregate attribution
+
+M4b is implemented with synthetic evidence. SKAdNetwork and AdAttributionKit
+receivers verify generated signatures, reject replay/conflict, resolve tenancy
+without enumeration, drive protected AdServices lookup, and persist separate
+aggregate metric series. Historical aggregate metrics respect their fixed
+watermark.
 
 - SKAdNetwork and AdAttributionKit developer postback-copy receipt
 - Signature and transaction-ID verification and replay rejection
 - Versioned conversion-tag and value policy
 - Aggregate reporting that never mixes the aggregate series with deterministic installation-level attribution
 
-Evidence gate: Apple test procedures produce verified, replay-resistant postbacks and aggregate results.
+Evidence gate: Runtime CI produces verified, replay-resistant synthetic postbacks and aggregate results; live Apple delivery remains an operator procedure.
 
 ## M5 Production and limited adapter boundary
 
@@ -127,4 +140,4 @@ Evidence gate: A production pilot completes backup restoration, deletion, replay
 
 ## Immediate next step
 
-Implement M2 Android, Unity, and redirector against the accepted v0.3 contract. Real provider connectivity, operator-run validation, device validation, platform approval, and production evidence remain separate states.
+Implement M5 production controls against the accepted v0.3.4 contract and the completed synthetic M1-M4 evidence. Real provider connectivity, operator-run validation, device validation, platform approval, and production evidence remain separate states.
