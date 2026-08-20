@@ -533,6 +533,10 @@ def attribution(
         return result("non_organic", "apple_adservices", "last_click", "adservices_attributed")
     if payload.get("adservices_context", {}).get("status") == "token_expired":
         return result("unattributed", "apple_adservices", "last_click", "adservices_token_expired")
+    if payload.get("adservices_context", {}).get("status") == "not_attributed":
+        return result("unattributed", "apple_adservices", "last_click", "adservices_not_attributed")
+    if payload.get("adservices_context", {}).get("status") == "lookup_unavailable":
+        return result("unattributed", "apple_adservices", "last_click", "adservices_lookup_unavailable")
 
     if payload["referrer_status"] == "none":
         return result("organic", "none", "none", "no_referrer")
@@ -544,6 +548,8 @@ def attribution(
         return result("unattributed", "none", "none", "install_referrer_unsupported")
     if payload["referrer_status"] == "unavailable":
         return result("unattributed", "none", "none", "install_referrer_unavailable")
+    if payload["referrer_status"] == "not_applicable":
+        return result("unattributed", "none", "none", "platform_referrer_not_available")
     clicks = [
         candidate for candidate in attempts
         if candidate["server"]["tenant_id"] == server["tenant_id"]

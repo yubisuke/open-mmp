@@ -10,9 +10,9 @@
     "installation_id": { "$ref": "../common.schema.json#/$defs/id" },
     "prior_installation_id": { "$ref": "../common.schema.json#/$defs/id" },
     "install_type": { "enum": ["first_install", "reinstall", "redownload"] },
-    "install_origin": { "enum": ["play_first_launch", "identifier_reset"], "default": "play_first_launch" },
+    "install_origin": { "enum": ["play_first_launch", "ios_first_launch", "identifier_reset"], "default": "play_first_launch" },
     "click_id": { "$ref": "../common.schema.json#/$defs/clickId" },
-    "referrer_status": { "enum": ["available", "third_party", "none", "unsupported", "unavailable"] },
+    "referrer_status": { "enum": ["available", "third_party", "none", "unsupported", "unavailable", "not_applicable"] },
     "third_party_referrer_classification": { "enum": ["play_organic_marker", "foreign"] },
     "referrer_client_response": { "enum": ["ok", "service_unavailable", "feature_not_supported", "developer_error", "service_disconnected", "permission_error"] },
     "protected_referrer_evidence_ref": { "type": "string" },
@@ -54,7 +54,7 @@
       "additionalProperties": false,
       "required": ["status", "attribution"],
       "properties": {
-        "status": { "enum": ["attributed", "token_expired"] },
+        "status": { "enum": ["attributed", "token_expired", "not_attributed", "lookup_unavailable"] },
         "attribution": { "type": "boolean" },
         "org_id": { "type": "string", "pattern": "^[0-9]+$" },
         "campaign_id": { "type": "string", "pattern": "^[0-9]+$" },
@@ -75,6 +75,10 @@
         },
         {
           "if": { "properties": { "status": { "const": "token_expired" } }, "required": ["status"] },
+          "then": { "properties": { "attribution": { "const": false } } }
+        },
+        {
+          "if": { "properties": { "status": { "enum": ["not_attributed", "lookup_unavailable"] } }, "required": ["status"] },
           "then": { "properties": { "attribution": { "const": false } } }
         }
       ]

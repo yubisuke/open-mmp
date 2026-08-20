@@ -586,6 +586,12 @@ function makeAttribution(
   if (payload.adservices_context?.status === "token_expired") {
     return result("unattributed", "apple_adservices", "last_click", "adservices_token_expired");
   }
+  if (payload.adservices_context?.status === "not_attributed") {
+    return result("unattributed", "apple_adservices", "last_click", "adservices_not_attributed");
+  }
+  if (payload.adservices_context?.status === "lookup_unavailable") {
+    return result("unattributed", "apple_adservices", "last_click", "adservices_lookup_unavailable");
+  }
   if (payload.referrer_status === "none") return result("organic", "none", "none", "no_referrer");
   if (payload.referrer_status === "third_party") {
     return payload.third_party_referrer_classification === "play_organic_marker"
@@ -594,6 +600,7 @@ function makeAttribution(
   }
   if (payload.referrer_status === "unsupported") return result("unattributed", "none", "none", "install_referrer_unsupported");
   if (payload.referrer_status === "unavailable") return result("unattributed", "none", "none", "install_referrer_unavailable");
+  if (payload.referrer_status === "not_applicable") return result("unattributed", "none", "none", "platform_referrer_not_available");
   const clicks = candidates.clickCandidates(server.tenant_id, server.app_id, payload.click_id).filter((candidate) =>
     decisionFor(decisions, candidate).ingestion_status === "accepted" &&
     decisionFor(decisions, candidate).duplicate_resolution === "unique",

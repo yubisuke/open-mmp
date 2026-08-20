@@ -1,6 +1,6 @@
 # Contract v0.3 fixture provenance
 
-The JSON files in the 42 numbered directories are reviewed, immutable golden contract examples. They are committed as source artifacts; the validation command never creates, updates, or regenerates them.
+The JSON files in the 43 numbered directories are reviewed, immutable golden contract examples. They are committed as source artifacts; the validation command never creates, updates, or regenerates them.
 
 Each fixture has one synthetic input and 13 independently asserted output classes:
 
@@ -70,6 +70,10 @@ The cost dimension object `{campaign_id:"provider-campaign-33",country:"JP",netw
 
 The fixture contains fifteen synthetic records and no metric, cost, privacy, fraud, correction, or reconciliation input. Eight Android records cover a resolvable first-party click, Meta last-click, Meta view-through, decrypt failure, no campaign data, provider unavailable, unsupported app version, and authentication failure. Typed Meta fields use synthetic IDs only; free-form campaign names are absent. The two AdServices paths map to attributed and expired-token outcomes. The five aggregate postbacks cover verified SKAdNetwork, invalid SKAdNetwork signature, AdAttributionKit non-winner, source suppression, and null conversion value. Every output cites only its same-scope source record. Public producer suffixes are synthetic; the values are not provider or campaign exports.
 
+### Fixture 43: M4 iOS contract handoffs
+
+Four synthetic accepted records exercise only the additive v0.3.2 vocabulary. Two iOS first launches use `install_origin=ios_first_launch` and `referrer_status=not_applicable`; their explicit AdServices results produce distinct `adservices_not_attributed` and `adservices_lookup_unavailable` outcomes. One verified AdAttributionKit envelope records the development signing-key environment, and one verified SKAdNetwork envelope proves that version 4.1 retains the version-4 field rules. The fixture has no metric, cost, privacy, fraud, correction, or reconciliation input. Its thirteen golden classes were reviewed after the TypeScript and Python evaluators produced RFC 8785-identical outputs.
+
 ### Processing-purpose coverage
 
 The public purpose catalog is exercised without adding real data: fixture 25 uses `fraud_prevention`, fixture 33 uses `analytics` and `revenue_measurement`, and fixture 34 uses `analytics` and `attribution`. The server contexts deliberately demonstrate deployment overrides of the illustrative registry defaults. Raw and delivery goldens preserve the selected purpose and policy version.
@@ -105,6 +109,7 @@ Each fixture contains the same 13 `expected_*.json` artifacts listed above. Empt
 | `40-custom-event-wrapper` | One accepted `custom_event` uses the synthetic key `level_complete`, four typed scalar attributes, optional USD money, `producer_variant=unity`, and a separate wrapper version. Its raw and logical outputs preserve the closed payload and wrapper provenance; no attribution or metric is inferred. Bounds and nested-value mutations fail schema validation. |
 | `41-click-injection-suspected` | The redirector server time is `02:00:00.000Z` and the authoritative install time is `02:00:09.999Z`, so CTIT is 9.999 seconds. The 10-second fixture policy emits one public `suspected/flag/click_injection_suspected` decision while the valid paid attribution remains intact. The 10.000-second boundary does not emit the category. |
 | `42-daily-metric-date` | One synthetic redirector click and one organic Android install occur on `2026-08-20` UTC. Human review fixes each daily `event_count` at one, with `metric_date` in both groupings and `attribution_status=organic` on the install series. The input snapshot is SHA-256 over the two ordered record rows, and each grouping digest is SHA-256 over its RFC 8785 canonical dimensions object. |
+| `43-m4-ios-contract-handoffs` | Two iOS installs prove the platform-specific first-launch and neutral AdServices outcomes; one development-key AAK envelope and one SKAN 4.1 envelope prove the new optional/environment and minor-version surfaces. All values, identifiers, and signatures are synthetic. |
 
 ## Adding a fixture
 

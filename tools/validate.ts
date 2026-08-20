@@ -554,8 +554,8 @@ if (!summaryOnly) {
         }
       });
     }
-    it("contains 42 fixture directories", () => {
-      check(fixtureDirs.length === 42, `expected 42 fixture directories, found ${fixtureDirs.length}`);
+    it("contains 43 fixture directories", () => {
+      check(fixtureDirs.length === 43, `expected 43 fixture directories, found ${fixtureDirs.length}`);
     });
   });
 
@@ -847,12 +847,20 @@ const scenarios: Array<[string, () => void]> = [
     check(runs.daily_install_count.value_unscaled === "1" && runs.daily_install_count.grouping.dimensions.attribution_status === "organic", "scenario 42 install count");
     check(value.metric_definitions.some((definition: Any) => definition.definition.calculation === "event_count" && definition.metric_definition_version === "0.3.1"), "scenario 42 definition version");
   }],
+  ["43 M4 iOS contract handoffs", () => {
+    const value = fixture("43-m4-ios-contract-handoffs");
+    const reasons = new Set(value.output.attributions.map((item: Any) => item.reason_code));
+    check(reasons.has("adservices_not_attributed") && reasons.has("adservices_lookup_unavailable"), "scenario 43 AdServices states");
+    check(value.input.records.filter((record: Any) => record.event_name === "install").every((record: Any) => record.payload.install_origin === "ios_first_launch" && record.payload.referrer_status === "not_applicable"), "scenario 43 iOS install semantics");
+    check(value.input.records.some((record: Any) => record.event_name === "adattributionkit_postback" && record.payload.signing_key_environment === "development"), "scenario 43 AAK signing environment");
+    check(value.input.records.some((record: Any) => record.event_name === "skan_postback" && record.payload.version === "4.1"), "scenario 43 SKAN minor version");
+  }],
 ];
 if (!summaryOnly) {
   describe("reviewed scenarios", () => {
     for (const [name, assertion] of scenarios) it(name, assertion);
-    it("contains 42 scenario assertions", () => {
-      check(scenarios.length === 42, "scenario assertion inventory must contain 42 entries");
+    it("contains 43 scenario assertions", () => {
+      check(scenarios.length === 43, "scenario assertion inventory must contain 43 entries");
     });
   });
 
@@ -1169,6 +1177,26 @@ if (!summaryOnly) {
       check(!installValidator({ event_name: "install", ...unknownConversion }), "Stage C accepted an unknown AdServices conversion type");
       check(value.output.attributions.filter((item: Any) => item.subject_scope === "aggregate").every((item: Any) => item.subject_ref.startsWith(`aggregate:${item.method}:`)), "Stage C aggregate subject namespace");
     });
+    it("validates the additive M4 iOS handoff vocabulary", () => {
+      const value = fixture("43-m4-ios-contract-handoffs");
+      const installValidator = validatorFor("urn:open-mmp:schema:event-install:v0.3");
+      const skanValidator = validatorFor("urn:open-mmp:schema:event-skan-postback:v0.3");
+      const aakValidator = validatorFor("urn:open-mmp:schema:event-adattributionkit-postback:v0.3");
+      const notAttributed = structuredClone(value.input.records.find((item: Any) => item.record_id === "ios-not-attributed-43").payload);
+      check(installValidator({ event_name: "install", ...notAttributed }), `M4 iOS install baseline: ${ajv.errorsText(installValidator.errors)}`);
+      notAttributed.adservices_context.attribution = true;
+      check(!installValidator({ event_name: "install", ...notAttributed }), "M4 accepted attribution=true for not_attributed");
+
+      const skan = structuredClone(value.input.records.find((item: Any) => item.record_id === "skan-minor-43").payload);
+      check(skanValidator({ event_name: "skan_postback", ...skan }), `M4 SKAN 4.x baseline: ${ajv.errorsText(skanValidator.errors)}`);
+      skan.version = "5.0";
+      check(!skanValidator({ event_name: "skan_postback", ...skan }), "M4 accepted unsupported SKAN major version");
+
+      const aak = structuredClone(value.input.records.find((item: Any) => item.record_id === "aak-development-key-43").payload);
+      check(aakValidator({ event_name: "adattributionkit_postback", ...aak }), `M4 AAK key environment baseline: ${ajv.errorsText(aakValidator.errors)}`);
+      aak.signing_key_environment = "synthetic";
+      check(!aakValidator({ event_name: "adattributionkit_postback", ...aak }), "M4 accepted an unknown AAK signing key environment");
+    });
   });
 
   describe("WO-5.5 Stage 1 attribution vocabulary", () => {
@@ -1393,7 +1421,7 @@ const acceptance: Array<[string, () => void]> = [
     check(corrections.some((item: Any) => item.correction_type === "retraction"), "AC15 retraction");
     check(fixture("17-redaction-recalculation").output.metric_runs.some((item: Any) => item.supersedes_metric_run_id), "AC15 redaction");
   }],
-  ["AC16 clock referrer prefetch and withdrawal fixtures pass", () => check(scenarios.length === 42 && fixture("11-clock-skew").output.deliveries.some((item: Any) => item.clock_skew_suspected) && fixture("13-referrer-unsupported").output.attributions.length === 2 && fixture("19-bot-prefetch").output.fraud_decisions.length === 1 && fixture("41-click-injection-suspected").output.fraud_decisions.length === 1 && fixture("20-timestamp-invalid").output.rejections.some((item: Any) => item.reason_code === "timestamp_invalid"), "AC16")],
+  ["AC16 clock referrer prefetch and withdrawal fixtures pass", () => check(scenarios.length === 43 && fixture("11-clock-skew").output.deliveries.some((item: Any) => item.clock_skew_suspected) && fixture("13-referrer-unsupported").output.attributions.length === 2 && fixture("19-bot-prefetch").output.fraud_decisions.length === 1 && fixture("41-click-injection-suspected").output.fraud_decisions.length === 1 && fixture("20-timestamp-invalid").output.rejections.some((item: Any) => item.reason_code === "timestamp_invalid"), "AC16")],
   ["AC17 server-recognized withdrawal rejects and redacts payload", () => {
     for (const name of ["14-withdrawal-after-occurrence", "15-event-after-withdrawal"]) {
       const value = fixture(name).output;
@@ -1433,7 +1461,7 @@ const acceptance: Array<[string, () => void]> = [
     for (const forbidden of ["threshold", "model_weight", "watchlist", "ip_address", "user_agent", "response_timing"]) check(!schemaText.includes(forbidden), `AC20 ${forbidden}`);
     check(specText.includes("remain private"), "AC20 private boundary");
   }],
-  ["AC21 one command validates every schema registry fixture and golden", () => check(schemaPaths.length === 27 && Object.keys(registries).length === 8 && fixtureDirs.length === 42 && outputArtifactCount === 42 * 13, "AC21")],
+  ["AC21 one command validates every schema registry fixture and golden", () => check(schemaPaths.length === 27 && Object.keys(registries).length === 8 && fixtureDirs.length === 43 && outputArtifactCount === 43 * 13, "AC21")],
   ["AC22 repeated and independent evaluators produce identical JCS", () => {
     for (const { output, python } of results.values()) check(equal(output, python), "AC22 evaluator mismatch");
     const vector = { numbers: [333333333.33333329, 1e30, 4.50, 2e-3, 1e-27, -0], string: "€$\u000f\nA'B\"\\\"/" };

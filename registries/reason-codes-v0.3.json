@@ -3,11 +3,11 @@
   "attribution": [
     "valid_install_referrer", "no_referrer", "no_first_party_referrer", "foreign_referrer_unresolved", "unknown_click_id", "window_expired",
     "authoritative_time_missing", "authoritative_time_invalid", "install_referrer_unsupported",
-    "install_referrer_unavailable", "ambiguous_click_id", "bot_prefetch",
+    "install_referrer_unavailable", "platform_referrer_not_available", "ambiguous_click_id", "bot_prefetch",
     "provider_attributed", "provider_organic", "provider_unattributed",
     "provider_time_authority_unavailable", "provider_modeled_conversion",
     "meta_referrer_decrypted", "meta_referrer_decrypt_failed",
-    "adservices_attributed", "adservices_token_expired",
+    "adservices_attributed", "adservices_token_expired", "adservices_not_attributed", "adservices_lookup_unavailable",
     "skan_postback_verified", "skan_signature_invalid", "postback_not_winner",
     "crowd_anonymity_suppressed", "conversion_value_null"
   ],

@@ -9,12 +9,23 @@ Checked on 2026-08-17.
 - [SKAdNetwork](https://developer.apple.com/documentation/storekit/skadnetwork)
 - [App Tracking Transparency](https://developer.apple.com/documentation/apptrackingtransparency)
 
+Primary M4 verification recorded on 2026-08-20:
+
+- [Verifying an SKAdNetwork install-validation postback](https://developer.apple.com/documentation/StoreKit/verifying-an-install-validation-postback) defines the P-256 signature check and signed field order.
+- [Identifying SKAdNetwork postback parameters](https://developer.apple.com/documentation/storekit/identifying-the-parameters-in-install-validation-postbacks) defines version 3 and 4 fields.
+- [Verifying an AdAttributionKit postback](https://developer.apple.com/documentation/adattributionkit/verifying-a-postback) defines ES256 compact JWS verification, production/development `kid` values, permanent postback identifiers, success/retry behavior, and the literal `AttributionCopyEndpoint` configuration property.
+- [Configuring an AdAttributionKit advertised app](https://developer.apple.com/documentation/adattributionkit/configuring-an-advertised-app) defines the advertised-app developer copy endpoint.
+- [AdServices attribution token](https://developer.apple.com/documentation/AdServices/AAAttribution/attributionToken%28%29) defines raw token acquisition; the server sends that token to Apple's attribution endpoint.
+- [Adding a privacy manifest to an SDK](https://developer.apple.com/documentation/bundleresources/adding-a-privacy-manifest-to-your-app-or-third-party-sdk) defines Swift Package placement and resource declaration.
+- [Optimizing data for iCloud backup](https://developer.apple.com/documentation/foundation/optimizing-your-app-s-data-for-icloud-backup) defines the backup-exclusion resource value used by the iOS SDK storage subtree.
+
 Design implications:
 
 - Use AdAttributionKit as the primary direction for Apple privacy-preserving app attribution while accounting for SKAdNetwork interoperability.
 - Never present privacy-preserving aggregate results as deterministic installation-level attribution.
 - Distinguish tracking that requires ATT from AdAttributionKit measurement that does not require ATT by itself.
 - Device fingerprinting is outside the project scope.
+- M4 does not collect IDFA, request ATT permission, or infer an identifier from device signals.
 
 ## Google
 
