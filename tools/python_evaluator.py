@@ -935,6 +935,18 @@ def metric_runs(
                     amount = round_half_even(revenue_value, cohort_size)
             elif calculation == "cohort_size":
                 amount = cohort_size
+            elif calculation == "event_count":
+                event_names = set(definition.get("event_names", []))
+                metric_date = evaluation.get("grouping", {}).get("metric_date")
+                amount = sum(
+                    1 for item in visible
+                    if item["record"]["event_name"] in event_names
+                    and matches_grouping(item, evaluation.get("grouping"), attribution_statuses)
+                    and (
+                        metric_date is None
+                        or day(item["record"]["occurred_at"], definition["aggregation_time_zone"], "occurred_at") == metric_date
+                    )
+                )
             else:
                 raise ValueError(f"unsupported metric calculation: {calculation}")
             run = {

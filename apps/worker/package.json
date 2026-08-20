@@ -12,8 +12,8 @@
     "verify:parity": "cd ../.. && node --env-file-if-exists=.env --import tsx apps/worker/src/verify-parity.ts"
   },
   "dependencies": {
-    "@open-mmp/attribution-core": "0.3.0",
-    "@open-mmp/contracts": "0.3.0",
+    "@open-mmp/attribution-core": "0.3.1",
+    "@open-mmp/contracts": "0.3.1",
     "@open-mmp/meta-install-referrer": "0.1.0",
     "@open-mmp/runtime": "0.1.0",
     "ajv": "8.20.0",

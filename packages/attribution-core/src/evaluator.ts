@@ -889,6 +889,14 @@ function metricRuns(
         }
       } else if (definition.definition.calculation === "cohort_size") {
         value = cohortSize;
+      } else if (definition.definition.calculation === "event_count") {
+        const eventNames = new Set<string>(definition.event_names ?? []);
+        const metricDate = evaluation.grouping?.metric_date;
+        value = BigInt(visible.filter((attempt) =>
+          eventNames.has(attempt.record.event_name) &&
+          matchesGrouping(attempt, evaluation.grouping, attributionStatuses) &&
+          (metricDate === undefined || dateAt(attempt.record.occurred_at, definition.aggregation_time_zone, "occurred_at") === metricDate),
+        ).length);
       } else {
         throw new Error(`unsupported metric calculation: ${definition.definition.calculation}`);
       }
