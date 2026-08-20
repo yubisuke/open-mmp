@@ -114,10 +114,15 @@ AdServices lookup, fixed-watermark metrics, and separate dashboard/API series.
 
 ### Phase 5: Production and limited adapter boundary
 
-- Tenant isolation, RBAC, rate limits, observability, load tests, backup and restore, and deletion exercises
-- Play Integrity, App Attest, rule-bundle versioning, and production security evidence
-- Signed, least-privilege adapters limited to first-party links, Meta, and Apple Ads
-- Other media-network adapters remain outside the roadmap unless a later owner decision and current primary-source evidence explicitly add them
+Implemented as a synthetic code/CI phase: tenant-wide minimum RBAC, existing
+rate controls, closed structured logging, authenticated Prometheus metrics,
+informational load measurement, privacy-safe backup restoration, deletion
+recalculation/export evidence, rule-bundle history, and release runbooks.
+
+- Play Integrity and App Attest are reserved as optional evidence and remain operator-configured; they are not live integrations.
+- Supported attribution evidence is limited to first-party links, Meta Install Referrer, and Apple Ads/Apple aggregate paths.
+- AppLovin MAX remains revenue evidence. TikTok, AppLovin, Unity Ads, and Mintegral user-level attribution is unsupported where partner-MMP or non-public evidence is required.
+- Production TLS, real backup recovery, real load, provider/device delivery, integrity projects, incident response, and trademark clearance remain operator-owned gates.
 
 ## Evidence gates
 
@@ -128,7 +133,7 @@ A phase completes through measurable evidence, not code completion alone.
 - A fixed policy version reproduces a historical decision
 - Duplicate, conflict, delay, deletion, import, aggregate, and platform fixtures pass automatically
 - Runtime fixture reproduction, operator-run validation, device validation, platform approval, and production validation remain distinct states
-- The next implementation phase is Phase 5; M4 operator evidence remains open without blocking the synthetic code milestone
+- All planned synthetic code phases are implemented; M2-M5 operator evidence remains open and must not be inferred from CI
 - Platform approval, device validation, and campaign validation remain labeled unverified until actually completed
 
 ## Rough estimate

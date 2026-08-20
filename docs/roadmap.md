@@ -35,7 +35,7 @@ Evidence gate: Independently implemented evaluators reproduce the same reviewed 
 
 Contract v0.3 is complete and locally validated. It preserves the M0.2 audit model while adding only the vocabulary and closed evidence shapes required by M2: third-party referrer classification, typed Meta Install Referrer evidence and precedence, imported click evidence, attribution-status metric grouping, a closed custom event, public click-injection classification, revenue precision, and wrapper provenance. The immutable v0.2.1 baseline is the `contract-v0.2.1` Git tag.
 
-Evidence gate: 27 schemas, 8 registries, 41 reviewed synthetic fixtures, both independent evaluators, registry/schema equality, and CTIT boundary mutations pass without real data or credentials.
+Evidence gate: 27 schemas, 8 registries, 46 reviewed synthetic fixtures, both independent evaluators, registry/schema equality, CTIT boundary mutations, and the optional integrity-evidence reservation pass without real data or credentials.
 
 ## M1a Shadow ledger and import foundation
 
@@ -127,17 +127,29 @@ Evidence gate: Runtime CI produces verified, replay-resistant synthetic postback
 
 ## M5 Production and limited adapter boundary
 
-- Tenant isolation and RBAC
-- Full production rate policy, backup and restore, and deletion-request end-to-end flow
-- OpenTelemetry, load tests, SDK distribution, and compatibility policy
-- Play Integrity and App Attest integration
-- Rule-bundle versions, digests, and supersession history
-- Signed, least-privilege adapters limited to first-party links, Meta, and Apple Ads, with primary-source revalidation and fixture certification before implementation
-- Other media-network adapters are outside the current roadmap unless a later owner decision and primary-source evidence explicitly add them
-- Final threat-model review, production SBOM, and tenant-isolation, replay, deletion, and backup/restore evidence
+M5 is implemented as a synthetic code and CI milestone. It adds minimum
+tenant-wide RBAC, authenticated Prometheus text metrics, closed structured
+logging, backup/restore privacy reapplication, deletion/recalculation/export
+evidence, append-only rule-bundle history, and an integrity-evidence contract
+reservation. It does not claim a production deployment or live integrity
+integration.
 
-Evidence gate: A production pilot completes backup restoration, deletion, replay, failure, and shadow-reconciliation exercises with documented evidence.
+- Tenant isolation and minimum `admin | operator | read_only` RBAC
+- Existing rate controls plus an informational 100,000-event and 10,000-postback synthetic load record
+- PostgreSQL custom-format backup/restore procedure and completed-privacy-request reapplication
+- Authenticated dependency-free operational metrics; full OpenTelemetry is deferred until operational cardinality or tracing needs justify it
+- Play Integrity and App Attest evidence fields and operator procedures only; no live project configuration
+- Rule-bundle identifiers, versions, hashes, supersession history, and audit rows
+- Adapter boundary limited to first-party evidence, Meta Install Referrer, and Apple Ads/Apple aggregate evidence
+- User-level attribution for TikTok, AppLovin, Unity Ads, and Mintegral remains unsupported when it requires a partner MMP or non-public provider evidence
+- Final threat-model review, all existing workspace/SDK SBOMs, and tenant-isolation, replay, deletion, and backup/restore CI evidence
+
+Evidence gate: CI restores a synthetic PostgreSQL 17 custom-format dump into a
+new database, reapplies completed privacy requests, proves restored encrypted
+payloads remain unreadable, and verifies recalculated exports. CI also records
+synthetic HTTP load and retains all prior replay, isolation, dashboard, SDK, and
+contract gates. A production pilot remains an operator gate.
 
 ## Immediate next step
 
-Implement M5 production controls against the accepted v0.3.4 contract and the completed synthetic M1-M4 evidence. Real provider connectivity, operator-run validation, device validation, platform approval, and production evidence remain separate states.
+Run the operator checklists and a controlled shadow pilot. Real provider connectivity, device validation, platform approval, production TLS, backup operations, capacity, integrity-service configuration, and incident response remain separate states.
