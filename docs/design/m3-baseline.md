@@ -750,15 +750,20 @@ Repository facts used as premises, read on 2026-08-20 from `review/wo-6-m2`:
 - `.env.example` and `apps/runtime/src/bootstrap.ts` — `OPENMMP_READER_DATABASE_URL` already exists and a reader password is already generated, but the variable is not exported into the container runtime environment.
 - No HTML, CSS, or bundler exists anywhere in the repository today.
 
+## Verified during WO-7
+
+Checked in the PostgreSQL-backed Runtime workflow on **2026-08-20**.
+
+1. `openmmp_reader` executes the reporting and session lookups under forced RLS with `SET LOCAL open_mmp.tenant_id`. An unset tenant sees no app rows, the selected tenant sees its row, and a deliberate `INSERT` fails with SQLSTATE `42501`. No fallback to `openmmp_app` is used.
+2. `cohort_install_count` groups organic, non-organic, and unattributed installs into disjoint rows whose counts sum to the ungrouped count. An install with no attribution row is classified as unattributed. The SQL result remains JCS-identical to the contract evaluator.
+
 ## Not verified
 
 Stated as unverified rather than assumed.
 
 1. Whether browsers accept the `__Host-` cookie name prefix on `http://localhost`. MDN states the prefix requirement in terms of HTTPS and does not mention the localhost exemption that it does state for `Secure`. **M3-D-05 removes the dependency** by using the prefix only under HTTPS.
-2. Whether `openmmp_reader` can execute the reporting queries unchanged under forced RLS with `SET LOCAL open_mmp.tenant_id`. The grants and policies suggest yes; it has not been run. WO-7 must confirm it on the first day, because M3-D-13 and M3-D-04 both depend on it. If it fails, the read pool falls back to `openmmp_app` and the "GET cannot write" property becomes a route-table assertion instead of a database permission — a weaker but still testable claim.
-3. Query performance of the supersession predicate and the keyset order at real cardinality. The indexes in [Data model additions](#data-model-additions) are proposed from the query shape, not from `EXPLAIN` output on realistic data.
-4. Whether `cohort_install_count` grouped by `attribution_status` produces rows that sum exactly to the ungrouped count in every case, or whether an install with no attribution row yet is excluded from all three buckets. C-13 asserts it; the answer is not established here by reading.
-5. Whether the existing CSV consumer set is empty. The CSV header is treated as a consumed interface (M3-D-21) on the assumption that someone may already be parsing it; no consumer has been surveyed.
-6. Every rate and size default in M3-S-6 and M3-D-20 is a proposal, not a measurement.
-7. Whether five working days of V-1 is enough to judge "usable". It is a proposal; the owner may want a different observation period, as `docs/review/2026-08-17-review.md` §6-7 did for the shadow pilot.
-8. Whether any operator wants multiple humans on one deployment during M3. If they do, M3-D-09's single authority level becomes a real operational problem sooner than M5, and the ordering of RBAC should be revisited rather than absorbed.
+2. Query performance of the supersession predicate and the keyset order at real cardinality. The indexes in [Data model additions](#data-model-additions) are proposed from the query shape, not from `EXPLAIN` output on realistic data.
+3. Whether the existing CSV consumer set is empty. The CSV header is treated as a consumed interface (M3-D-21) on the assumption that someone may already be parsing it; no consumer has been surveyed.
+4. Every rate and size default in M3-S-6 and M3-D-20 is a proposal, not a measurement.
+5. Whether five working days of V-1 is enough to judge "usable". It is a proposal; the owner may want a different observation period, as `docs/review/2026-08-17-review.md` §6-7 did for the shadow pilot.
+6. Whether any operator wants multiple humans on one deployment during M3. If they do, M3-D-09's single authority level becomes a real operational problem sooner than M5, and the ordering of RBAC should be revisited rather than absorbed.
