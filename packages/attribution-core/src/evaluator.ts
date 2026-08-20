@@ -726,9 +726,31 @@ function metricDefinitions(input: Any): MetricDefinition[] {
   const names = new Set<string>();
   for (const definition of definitions) {
     if (names.has(definition.metric_name)) throw new Error(`duplicate metric definition: ${definition.metric_name}`);
+    validateMetricDefinitionSeries(definition);
     names.add(definition.metric_name);
   }
   return sortByKey(definitions, (definition) => [definition.metric_name, definition.metric_definition_version]);
+}
+
+function validateMetricDefinitionSeries(definition: Any): void {
+  const aggregateNames = new Set([
+    "skan_attributed_installs", "skan_conversion_value_distribution", "aak_attributed_installs",
+  ]);
+  const aggregateEvents = new Set(["skan_postback", "adattributionkit_postback"]);
+  const eventNames = definition.event_names ?? [];
+  const grouping = definition.grouping_dimensions ?? [];
+  const fail = () => { throw new Error(`metric_definition_series_mismatch:${definition.metric_name}`); };
+  if (aggregateNames.has(definition.metric_name)) {
+    const expectedEvent = definition.metric_name === "aak_attributed_installs"
+      ? "adattributionkit_postback" : "skan_postback";
+    const expectedGrouping = definition.metric_name === "skan_conversion_value_distribution"
+      ? ["metric_date", "apple_conversion_bucket"] : ["metric_date"];
+    if (definition.definition?.calculation !== "event_count" || definition.definition?.numerator !== "events" ||
+        definition.aggregation_time_zone !== "UTC" || eventNames.length !== 1 || eventNames[0] !== expectedEvent ||
+        grouping.length !== expectedGrouping.length || expectedGrouping.some((value) => !grouping.includes(value))) fail();
+    return;
+  }
+  if (eventNames.some((value: string) => aggregateEvents.has(value)) || grouping.includes("apple_conversion_bucket")) fail();
 }
 
 function costRecords(input: Any): CostRecord[] {

@@ -559,8 +559,8 @@ if (!summaryOnly) {
         }
       });
     }
-    it("contains 44 fixture directories", () => {
-      check(fixtureDirs.length === 44, `expected 44 fixture directories, found ${fixtureDirs.length}`);
+    it("contains 45 fixture directories", () => {
+      check(fixtureDirs.length === 45, `expected 45 fixture directories, found ${fixtureDirs.length}`);
     });
   });
 
@@ -869,12 +869,20 @@ const scenarios: Array<[string, () => void]> = [
     check(runs["run-44-skan-coarse-low:skan_conversion_value_distribution"].value_unscaled === "1", "scenario 44 coarse bucket");
     check(value.metric_runs.every((run: Any) => run.aggregation_time_zone === "UTC" && run.grouping.dimensions.metric_date === "2026-08-20"), "scenario 44 UTC receipt date");
   }],
+  ["45 iOS conversion schema provenance", () => {
+    const value = fixture("45-ios-conversion-schema");
+    const install = value.input.records.find((record: Any) => record.event_name === "install").payload;
+    const update = value.input.records.find((record: Any) => record.event_name === "custom_event").payload;
+    check(install.conversion_schema_version === "openmmp-default-v1" && /^[0-9a-f]{64}$/.test(install.conversion_schema_sha256), "scenario 45 conversion schema provenance");
+    check(update.event_key === "openmmp.conversion_value_updated" && update.attributes.schema_version === install.conversion_schema_version, "scenario 45 conversion update event");
+    check(value.output.attributions[0].reason_code === "platform_referrer_not_available" && value.output.metric_runs.length === 0, "scenario 45 attribution and metric boundary");
+  }],
 ];
 if (!summaryOnly) {
   describe("reviewed scenarios", () => {
     for (const [name, assertion] of scenarios) it(name, assertion);
-    it("contains 44 scenario assertions", () => {
-      check(scenarios.length === 44, "scenario assertion inventory must contain 44 entries");
+    it("contains 45 scenario assertions", () => {
+      check(scenarios.length === 45, "scenario assertion inventory must contain 45 entries");
     });
   });
 
@@ -1435,7 +1443,7 @@ const acceptance: Array<[string, () => void]> = [
     check(corrections.some((item: Any) => item.correction_type === "retraction"), "AC15 retraction");
     check(fixture("17-redaction-recalculation").output.metric_runs.some((item: Any) => item.supersedes_metric_run_id), "AC15 redaction");
   }],
-  ["AC16 clock referrer prefetch and withdrawal fixtures pass", () => check(scenarios.length === 44 && fixture("11-clock-skew").output.deliveries.some((item: Any) => item.clock_skew_suspected) && fixture("13-referrer-unsupported").output.attributions.length === 2 && fixture("19-bot-prefetch").output.fraud_decisions.length === 1 && fixture("41-click-injection-suspected").output.fraud_decisions.length === 1 && fixture("20-timestamp-invalid").output.rejections.some((item: Any) => item.reason_code === "timestamp_invalid"), "AC16")],
+  ["AC16 clock referrer prefetch and withdrawal fixtures pass", () => check(scenarios.length === 45 && fixture("11-clock-skew").output.deliveries.some((item: Any) => item.clock_skew_suspected) && fixture("13-referrer-unsupported").output.attributions.length === 2 && fixture("19-bot-prefetch").output.fraud_decisions.length === 1 && fixture("41-click-injection-suspected").output.fraud_decisions.length === 1 && fixture("20-timestamp-invalid").output.rejections.some((item: Any) => item.reason_code === "timestamp_invalid"), "AC16")],
   ["AC17 server-recognized withdrawal rejects and redacts payload", () => {
     for (const name of ["14-withdrawal-after-occurrence", "15-event-after-withdrawal"]) {
       const value = fixture(name).output;
@@ -1475,7 +1483,7 @@ const acceptance: Array<[string, () => void]> = [
     for (const forbidden of ["threshold", "model_weight", "watchlist", "ip_address", "user_agent", "response_timing"]) check(!schemaText.includes(forbidden), `AC20 ${forbidden}`);
     check(specText.includes("remain private"), "AC20 private boundary");
   }],
-  ["AC21 one command validates every schema registry fixture and golden", () => check(schemaPaths.length === 27 && Object.keys(registries).length === 8 && fixtureDirs.length === 44 && outputArtifactCount === 44 * 13, "AC21")],
+  ["AC21 one command validates every schema registry fixture and golden", () => check(schemaPaths.length === 27 && Object.keys(registries).length === 8 && fixtureDirs.length === 45 && outputArtifactCount === 45 * 13, "AC21")],
   ["AC22 repeated and independent evaluators produce identical JCS", () => {
     for (const { output, python } of results.values()) check(equal(output, python), "AC22 evaluator mismatch");
     const vector = { numbers: [333333333.33333329, 1e30, 4.50, 2e-3, 1e-27, -0], string: "€$\u000f\nA'B\"\\\"/" };
@@ -1604,6 +1612,29 @@ if (!summaryOnly) {
       check(!definitionValidator({ ...skanCount, grouping_dimensions: ["metric_date", "apple_conversion_bucket"] }), "SKAN count accepted a conversion bucket");
       check(!definitionValidator({ ...distribution, grouping_dimensions: ["metric_date"] }), "SKAN distribution accepted a missing conversion bucket");
       check(!definitionValidator({ ...distribution, event_names: ["adattributionkit_postback"] }), "SKAN distribution accepted an AAK event");
+
+      for (const [label, mutate] of [
+        ["aggregate name with deterministic event", (definition: Any) => { definition.event_names = ["install"]; }],
+        ["deterministic name with aggregate event", (definition: Any) => {
+          definition.metric_name = "daily_synthetic_install_count";
+          definition.event_names = ["skan_postback"];
+        }],
+        ["mixed deterministic and aggregate events", (definition: Any) => {
+          definition.metric_name = "daily_synthetic_install_count";
+          definition.event_names = ["install", "skan_postback"];
+        }],
+      ] as const) {
+        const mutated = structuredClone(baseline);
+        const definition = mutated.metric_definitions.find((candidate: Any) =>
+          candidate.metric_name === "skan_attributed_installs");
+        mutate(definition);
+        const tsResult = capture(() => evaluate(mutated));
+        const pyResult = capture(() => pythonOutputs([mutated]));
+        check(!tsResult.ok && String(tsResult.error).includes("metric_definition_series_mismatch"),
+          `TypeScript did not name the ${label} rejection`);
+        check(!pyResult.ok && String(pyResult.error).includes("metric_definition_series_mismatch"),
+          `Python did not name the ${label} rejection`);
+      }
 
       const metricRunValidator = validatorFor(outputSchemaIds.metric_runs);
       const skanCountRun = baseline.metric_evaluations.length > 0

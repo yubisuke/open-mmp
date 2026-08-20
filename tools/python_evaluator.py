@@ -702,10 +702,40 @@ def metric_definitions(value: dict[str, Any]) -> list[dict[str, Any]]:
     for definition in definitions:
         if definition["metric_name"] in names:
             raise ValueError(f"duplicate metric definition: {definition['metric_name']}")
+        validate_metric_definition_series(definition)
         names.add(definition["metric_name"])
     return sort_by_key(definitions, lambda definition: (
         definition["metric_name"], definition["metric_definition_version"],
     ))
+
+
+def validate_metric_definition_series(definition: dict[str, Any]) -> None:
+    aggregate_names = {
+        "skan_attributed_installs", "skan_conversion_value_distribution", "aak_attributed_installs",
+    }
+    aggregate_events = {"skan_postback", "adattributionkit_postback"}
+    metric_name = definition["metric_name"]
+    event_names = definition.get("event_names", [])
+    grouping = definition.get("grouping_dimensions", [])
+
+    def fail() -> None:
+        raise ValueError(f"metric_definition_series_mismatch:{metric_name}")
+
+    if metric_name in aggregate_names:
+        expected_event = "adattributionkit_postback" if metric_name == "aak_attributed_installs" else "skan_postback"
+        expected_grouping = (
+            ["metric_date", "apple_conversion_bucket"]
+            if metric_name == "skan_conversion_value_distribution" else ["metric_date"]
+        )
+        if (definition.get("definition", {}).get("calculation") != "event_count"
+                or definition.get("definition", {}).get("numerator") != "events"
+                or definition.get("aggregation_time_zone") != "UTC"
+                or event_names != [expected_event]
+                or sorted(grouping) != sorted(expected_grouping)):
+            fail()
+        return
+    if any(event_name in aggregate_events for event_name in event_names) or "apple_conversion_bucket" in grouping:
+        fail()
 
 
 def cost_records(value: dict[str, Any]) -> list[dict[str, Any]]:
