@@ -475,30 +475,30 @@ CREATE TABLE control.sdk_keys (
   sdk_key_id control.identifier PRIMARY KEY,
   tenant_id control.identifier NOT NULL,
   app_id    control.identifier NOT NULL,
-  platform  text NOT NULL CHECK (platform IN ('android')),   -- 'ios' in M4a
+  -- M4 adds nullable platform evidence for newly issued keys; existing M2 rows remain unchanged.
   secret_ref text NOT NULL,          -- envelope-encrypted object in the payload store
   created_at control.canonical_timestamp NOT NULL,
   FOREIGN KEY (tenant_id, app_id) REFERENCES control.apps (tenant_id, app_id)
 );
 -- plus control.sdk_key_states (active | retired) and control.sdk_keys_current, max two active
 
-CREATE TABLE control.installation_keys (
+CREATE TABLE control.installation_credentials (
   installation_key_id control.identifier PRIMARY KEY,   -- opaque, server-assigned
   tenant_id control.identifier NOT NULL,
   app_id    control.identifier NOT NULL,
+  installation_id_digest text NOT NULL CHECK (installation_id_digest ~ '^[a-f0-9]{64}$'),
   sdk_key_id control.identifier NOT NULL REFERENCES control.sdk_keys (sdk_key_id),
-  installation_id text NOT NULL,
   secret_ref text NOT NULL,          -- envelope-encrypted object in the payload store
-  enrolled_at control.canonical_timestamp NOT NULL,
-  UNIQUE (tenant_id, app_id, installation_id)
+  created_at control.canonical_timestamp NOT NULL,
+  UNIQUE (tenant_id, app_id, installation_id_digest)
 );
--- plus control.installation_key_states (active | revoked | purged) and ..._current
+-- plus control.installation_credential_states (active | revoked | deleted) and ..._current
 ```
 
 Two properties are deliberate.
 
 - The **secret material lives in the payload store**, not in the table. Purging an installation therefore reuses the mechanism M1 already proved: delete the encrypted object and its wrapped key entry, append a `purged` state row, and the credential is unrecoverable while the append-only table is untouched. No new deletion mechanism, no `UPDATE` exception.
-- The key row carries `installation_id`, so the authorisation check in M2-S-2 is a single indexed lookup, and `UNIQUE (tenant_id, app_id, installation_id)` makes double enrollment of one installation impossible.
+- The key row carries only `HMAC-SHA-256(tenant_id || NUL || app_id || NUL || installation_id)` as `installation_id_digest`, so the authorisation check in M2-S-2 is an indexed digest lookup without storing the plaintext installation identifier. `UNIQUE (tenant_id, app_id, installation_id_digest)` makes double enrollment of one installation impossible.
 
 ### Ephemeral (new schema)
 

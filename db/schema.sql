@@ -1187,3 +1187,11 @@ GRANT SELECT, INSERT, DELETE ON ephemeral.dashboard_sessions TO openmmp_app;
 GRANT USAGE ON SCHEMA ephemeral TO openmmp_reader;
 GRANT SELECT ON ephemeral.dashboard_sessions TO openmmp_reader;
 GRANT TRUNCATE ON ephemeral.dashboard_sessions TO openmmp_seed;
+
+-- 011_m4_sdk_platform.sql
+ALTER TABLE control.sdk_keys
+  ADD COLUMN platform text
+  CHECK (platform IS NULL OR platform IN ('android', 'ios'));
+
+COMMENT ON COLUMN control.sdk_keys.platform IS
+  'Issuing SDK platform. NULL preserves pre-M4 key rows; new issuance must set android or ios.';
