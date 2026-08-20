@@ -84,13 +84,15 @@ Evidence gate: An API 36 emulator first launch reads synthetic referrer evidence
 
 ## M3 Metrics dashboard
 
+M3 is implemented on synthetic evidence. It uses dependency-free server-rendered HTML and SVG, tenant-scoped opaque sessions, a forced-RLS reader role, one typed filter/SQL-builder path shared by API and dashboard, additive CSV columns, aggregate-only record counts, and fixed-watermark consistency checks. Real-browser, production-TLS, real-cardinality, and five-day operator observations remain in the [M3 operator checklist](validation/m3-operator-checklist.md).
+
 - App registration and measurement-link creation
 - ROAS, retention, cohort, and attribution breakdowns
 - CSV export
 - Attribution method, policy version, grouping, and data-freshness display
 - Authentication established before exposing any dashboard data
 
-Evidence gate: Raw records, reporting API, and dashboard match under identical filters and definitions.
+Evidence gate: `npm run verify:consistency` compares raw aggregate counts, reporting rows, the typed dashboard view, and rendered numeric attributes under at least eight synthetic filter combinations at one fixed watermark. Runtime CI separately proves reader RLS, SQL/evaluator metric parity, CSV byte identity, and the API runtime SBOM baseline.
 
 ## M4a iOS first-party measurement
 

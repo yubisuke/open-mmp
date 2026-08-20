@@ -69,6 +69,13 @@ Contract v0.3 does not select among multiple accepted clicks with one `click_id`
 <!-- threat-component:unity-bridge -->
 | `unity-bridge` | Planned M2b boundary: callback thread misuse, JNI lifetime leaks, event-field drift, and missing ad-format subscriptions | M2b must add a typed C#/Kotlin bridge, main-thread dispatch, allocation tests, and reflection coverage | No Unity package exists in M2a; real Unity export and live MAX behavior remain operator-verified. |
 
+## M3 trust-boundary addition
+
+| Component | Boundary and primary threats | Implemented controls | Residual risk |
+| --- | --- | --- | --- |
+<!-- threat-component:dashboard -->
+| `dashboard` | Admin-key disclosure, session theft, CSRF, cross-tenant app discovery, report-query injection, identifier export, login abuse, and client-side supply-chain growth | scrypt admin-key verification; opaque 32-byte sessions stored only as SHA-256 digests; fixed 12-hour expiry; Strict/Secure/HttpOnly cookie; HMAC synchronizer token and Origin mismatch rejection; bearer/cookie namespace separation; tenant-forced reader RLS; identical app-not-found responses; allowlisted typed filters with bound SQL; aggregate-only raw counts; CSP with no scripts; memory-only source-IP throttling; fixed API runtime SBOM baseline | Production TLS, reverse-proxy log retention, multi-instance rate limiting, browser usability, and real-cardinality query performance remain operator evidence. |
+
 ## Residual risk and release gates
 
 M1a now has a local network service, tenant database, authenticated admin path, envelope-encrypted protected-object store, and synthetic runtime security gates. It still cannot prove production TLS termination, external secret-manager operation, real provider delivery, capacity, availability, backup recovery, live fraud controls, or incident response. Those remain operator and later production gates.

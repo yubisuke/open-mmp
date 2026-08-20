@@ -61,6 +61,8 @@ jobs:
         run: npm run seed && npm run verify:parity
       - name: Verify SQL cohort metrics against the contract evaluator
         run: npm run test:metric-parity
+      - name: Verify raw, API, dashboard-view, and HTML consistency
+        run: npm run verify:consistency
       - name: Run reduced synthetic metric performance floor
         run: OPENMMP_BENCHMARK_ROWS=100000 npm run benchmark:metric-floor
       - name: Check threat-model coverage
@@ -71,6 +73,8 @@ jobs:
           docker compose --env-file /dev/null exec -T api sh -c 'set -a && . /run/openmmp/app/runtime.env && set +a && OPENMMP_API_HOST_PORT=8080 node --import tsx tools/runtime-smoke.ts'
       - name: Generate workspace SBOMs
         run: npm run sbom
+      - name: Enforce the M3 API runtime component baseline
+        run: npm run check:api-runtime-sbom
       - name: Upload workspace SBOMs
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:

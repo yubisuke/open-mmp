@@ -12,14 +12,14 @@ Proposed stack:
 - Android SDK: Kotlin
 - Unity integration: C# API with an Android Kotlin bridge
 - iOS SDK: Swift, Phase 4a
-- Dashboard: TypeScript web application, later in the MVP
+- Dashboard: dependency-free, server-rendered TypeScript HTML with no client JavaScript
 - Local runtime: Docker Compose
 
 ## Reference deployment boundary
 
 M1 through M3 use one portable deployment path: Docker Compose, Node.js services, and PostgreSQL. They do not adopt Cloudflare Queues, R2, or D1. M2 may offer a Cloudflare Workers redirector as an optional edge adapter, but the same redirector behavior must remain available through the portable Node.js interface. The ingestion API, worker, authoritative ledger, protected evidence, and dashboard do not require Cloudflare. No public contract depends on a Cloudflare-specific API.
 
-The decided M1 implementation baseline is documented in [M1 Design Baseline](design/m1-baseline.md). R-22 resolves every option set in that document to its recorded recommendation. The Android, Unity, redirector, and SDK-ingestion design is fixed by R-24 in [M2 Design Baseline](design/m2-baseline.md).
+The decided M1 implementation baseline is documented in [M1 Design Baseline](design/m1-baseline.md). R-22 resolves every option set in that document to its recorded recommendation. The Android, Unity, redirector, and SDK-ingestion design is fixed by R-24 in [M2 Design Baseline](design/m2-baseline.md). The dependency-free server-rendered dashboard, tenant-scoped session, reader-role, and typed reporting design is fixed by R-25 in [M3 Design Baseline](design/m3-baseline.md).
 
 ## Android M2 flow
 
@@ -75,6 +75,11 @@ The following four identifiers are covered mechanically. The two device componen
 - `sdk-android`: planned M2b Kotlin client boundary for Install Referrer, Meta evidence, durable delivery, consent, and collection lifecycle.
 <!-- m1-component:unity-bridge -->
 - `unity-bridge`: planned M2b C# to Kotlin boundary for Unity lifecycle and MAX impression-revenue callbacks.
+
+### M3 component inventory
+
+<!-- m1-component:dashboard -->
+- `dashboard`: tenant-scoped opaque sessions, strict credential separation, a read-only PostgreSQL role, shared typed report filters, aggregate exports, and dependency-free server-rendered HTML/SVG.
 
 ### Redirector
 
@@ -150,12 +155,14 @@ Initial Android rule:
 
 ### Reporting API
 
-- `GET /v1/reports/metrics?format=json|csv` returns tenant/app-scoped metric rows after bearer-key verification.
-- `GET /v1/audit/differences?format=json|csv` returns the persisted reconciliation artifact, including internal/external snapshots, protected matching-key metadata, candidates, exclusions, windows, joins, freshness, and neutral reason codes.
+- `GET /v1/reports/metrics?app_id=...&format=json|csv` returns tenant-scoped, validated-app metric rows under one typed filter and keyset-pagination contract.
+- `GET /v1/reports/records?app_id=...&watermark_at_most=...` returns aggregate counts and declared non-identifying dimensions only; it never returns an installation, click, record ID, payload, or payload reference.
+- `GET /v1/audit/differences?app_id=...&format=json|csv` renders only persisted reconciliation artifacts, including internal/external snapshots, protected matching-key metadata, candidates, exclusions, windows, joins, freshness, and neutral reason codes.
 - JSON and CSV are generated from one normalized row model. Metric rows carry the metric-definition version, policy versions, input watermark, immutable snapshot ID, freshness, and explicit present/undefined value state.
+- Date filters are half-open, filter values are bound parameters, supersession defaults to the latest row, and `supersession=all` exposes history. Pagination uses an opaque keyset cursor and never `OFFSET`.
 - Undefined ROAS has an absent numeric value and an explicit reason. It is not coerced to zero or infinity.
 - Raw-record access remains separate from aggregate reporting; these endpoints never expose raw payloads.
-- The authenticated scope, not request parameters, fixes the tenant and app. Responses use `cache-control: no-store`.
+- The authenticated scope fixes the tenant. The request supplies an `app_id` that is validated against that tenant's registered apps; unknown and cross-tenant apps have the same response. Responses use `cache-control: no-store`.
 - Aggregate privacy reports are never presented as installation-level records.
 
 ## Data layers

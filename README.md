@@ -16,7 +16,7 @@ This project is licensed under the [Apache License 2.0](LICENSE); attribution is
 
 ## Current status
 
-This project contains the v0.3.1 contract, the M1a Shadow ledger/import foundation, the M1b cohort metric and difference-audit runtime, and the M2 Android/Unity implementation. M2 adds a portable measurement-link redirector, HMAC-authenticated durable SDK ingestion, a Kotlin SDK with a backup-excluded Room queue and Install Referrer readers, server-side Meta Install Referrer decryption over synthetic vectors, MAX ILRD mapping, a Unity UPM bridge, Android samples, and synthetic JVM/emulator gates. Real provider connectivity, real-device and campaign validation, a production deployment, and exact 4-vCPU/8-GB capacity validation have not been demonstrated. Immutable baselines are available at the `contract-v0.1` and `contract-v0.2.1` Git tags.
+This project contains the v0.3.1 contract, the M1a Shadow ledger/import foundation, the M1b cohort metric and difference-audit runtime, the M2 Android/Unity implementation, and the M3 operator dashboard. M3 adds tenant-scoped opaque sessions, a PostgreSQL read-only path, typed report filters, keyset pagination, aggregate raw-record counts, app registration, CSV export, and dependency-free server-rendered HTML/SVG with no client JavaScript. Real provider connectivity, real-device and campaign validation, a production deployment, real-cardinality dashboard usability, and exact 4-vCPU/8-GB capacity validation have not been demonstrated. Immutable baselines are available at the `contract-v0.1` and `contract-v0.2.1` Git tags.
 
 The first product entry point is a Shadow MMP that runs alongside an existing provider. It normalizes first-party events, existing MMP exports, media cost, and revenue into a common contract, then explains neutral differences through candidate evidence, exclusion reasons, attribution windows, ID joins, and recalculation history. Difference reasons describe measurement semantics, not provider quality. It must not be treated as the primary MMP until a real shadow pilot has produced sufficient evidence.
 
@@ -44,10 +44,9 @@ The first native attribution vertical slice targets Android:
 
 ```text
 apps/
-  api/                 # Management and reporting API
+  api/                 # Management/reporting API and server-rendered dashboard
   redirector/          # Measurement links and redirects
   worker/              # Attribution and recalculation jobs
-  dashboard/           # Management UI, later in the MVP
 packages/
   contracts/           # API schemas and shared types
   attribution-core/    # Pure attribution logic
@@ -59,7 +58,7 @@ sdk/
 docs/
 ```
 
-Implemented runtime code lives in `apps/api`, `apps/redirector`, `apps/worker`, `apps/runtime`, `packages/contracts`, `packages/attribution-core`, `packages/redirector-core`, `packages/meta-install-referrer`, `sdk/android`, and `sdk/unity`. The iOS SDK and dashboard remain planned.
+Implemented runtime code lives in `apps/api`, `apps/redirector`, `apps/worker`, `apps/runtime`, `packages/contracts`, `packages/attribution-core`, `packages/redirector-core`, `packages/meta-install-referrer`, `sdk/android`, and `sdk/unity`. The iOS SDK remains planned.
 
 ## Current layout (v0.3 contract artifacts)
 
@@ -85,6 +84,7 @@ Implemented runtime code lives in `apps/api`, `apps/redirector`, `apps/worker`, 
 - [Schema versioning policy](docs/schema-versioning.md)
 - [Operator real-data validation checklist](docs/validation/real-data-checklist.md)
 - [M2 device and provider validation checklist](docs/validation/m2-device-checklist.md)
+- [M3 operator validation checklist](docs/validation/m3-operator-checklist.md)
 
 ## Five-minute synthetic quickstart
 
@@ -97,7 +97,7 @@ npm run demo:metrics
 
 The bootstrap service generates local secrets, migrations run automatically, and the API and worker start only after PostgreSQL is healthy. `demo:metrics` prints tenant-scoped ledger counts plus a clearly labelled contract-synthetic preview. The preview is calculated from fixture 33 and does not claim that a real provider or campaign was queried. Its key values are:
 
-The API listens on `http://localhost:8080` and the portable redirector on `http://localhost:8090`. Tracking links are created through the authenticated management route; request query parameters and headers can never override their stored destinations. SDK enrollment and event delivery use the HMAC signing string fixed in [M2 Design Baseline](docs/design/m2-baseline.md).
+The API and dashboard listen on `http://localhost:8080` (`/dashboard` for the login page), and the portable redirector listens on `http://localhost:8090`. `npm run bootstrap` prints the local admin key once; paste it into the dashboard login form. Dashboard reports are aggregate operator views, not data-subject exports. Tracking links are created through the authenticated management route; request query parameters and headers can never override their stored destinations. SDK enrollment and event delivery use the HMAC signing string fixed in [M2 Design Baseline](docs/design/m2-baseline.md).
 
 ```json
 {

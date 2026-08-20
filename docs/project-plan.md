@@ -85,9 +85,13 @@ M2a and M2b are complete on synthetic evidence: the portable redirector, HMAC ap
 
 ### Phase 3: Metrics dashboard
 
+Phase 3 is implemented on synthetic evidence. The dashboard is served by the existing API process as server-rendered, zero-JavaScript HTML/SVG and shares the reporting query builder and encoder rather than calling a second reporting implementation.
+
 - App registration, measurement-link creation, and authenticated reporting
 - ROAS, retention, cohort, and attribution views
 - Raw, report, and dashboard consistency under identical definitions
+- Fixed-watermark consistency across aggregate record counts, API rows, typed views, and rendered values
+- Reader-role RLS, opaque sessions, CSRF/Origin protection, and a no-growth API runtime SBOM gate
 
 ### Phase 4a: iOS first-party measurement
 
