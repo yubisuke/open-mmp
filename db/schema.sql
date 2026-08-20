@@ -1161,6 +1161,14 @@ CREATE INDEX metric_runs_superseded_idx
 CREATE INDEX metric_runs_dashboard_keyset_idx
   ON ledger.metric_runs (tenant_id, app_id, metric_name, grouping_digest, metric_run_id);
 
+ALTER TABLE ledger.click_facts
+  ADD COLUMN campaign_id text,
+  ADD COLUMN network text,
+  ADD COLUMN country text CHECK (country IS NULL OR country ~ '^[A-Z]{2}$');
+
+CREATE INDEX click_facts_dashboard_dimensions_idx
+  ON ledger.click_facts (tenant_id, app_id, campaign_id, network, country);
+
 ALTER TABLE ephemeral.dashboard_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ephemeral.dashboard_sessions FORCE ROW LEVEL SECURITY;
 CREATE POLICY dashboard_sessions_tenant ON ephemeral.dashboard_sessions

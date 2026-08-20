@@ -76,6 +76,8 @@ const server = createServer(createRequestHandler({
     Number(process.env.OPENMMP_DASHBOARD_LOGIN_RATE_BURST ?? "10"),
   ),
   dashboardLoginGlobalBucket: new TokenBucket(1, 60),
+  reportMaximumRows: Number(process.env.OPENMMP_REPORT_MAX_ROWS ?? "1000"),
+  reportMaximumExportRows: Number(process.env.OPENMMP_REPORT_EXPORT_MAX_ROWS ?? "200000"),
   trackingDestinationAllowlist: (process.env.OPENMMP_REDIRECTOR_DESTINATION_ALLOWLIST ?? "")
     .split(",").map((value) => value.trim()).filter(Boolean),
   sdk: {
@@ -111,5 +113,6 @@ const server = createServer(createRequestHandler({
 
 server.listen(port, "0.0.0.0", () => {
   console.log(`Open MMP API listening on ${port}`);
+  console.log(`Open MMP dashboard URL: ${baseUrl}/dashboard`);
   console.log("Open MMP runtime credentials loaded from encrypted configuration.");
 });

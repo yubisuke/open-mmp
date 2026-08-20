@@ -296,6 +296,32 @@ describe("M3 dashboard identity and control plane", { concurrency: false }, () =
     assert.deepEqual(audits.rows.map((row) => row.action), ["app_registered", "sdk_key_issued"]);
     assert.equal(audits.rows.some((row) => row.row_text.includes(issued.sdk_key)), false);
 
+    const dashboardCookie = cookie(await login(adminKeyA));
+    const appPage = await fetch(`${baseUrl}/dashboard/apps/${newAppId}`, { headers: { cookie: dashboardCookie } });
+    const appHtml = await appPage.text();
+    const csrf = /name="csrf_token" value="([^"]+)"/.exec(appHtml)?.[1];
+    assert.ok(csrf);
+    assert.match(appHtml, /Create a tracking link/);
+    const trackingLink = await fetch(`${baseUrl}/dashboard/apps/${newAppId}/tracking-links`, {
+      method: "POST",
+      headers: { cookie: dashboardCookie, origin: configuredOrigin, "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        csrf_token: csrf,
+        destination_kind: "play_store",
+        destination_url: "https://play.google.com/store/apps/details?id=dev.openmmp.synthetic",
+        play_package_name: "dev.openmmp.synthetic",
+        campaign_id: "synthetic-campaign",
+      }),
+    });
+    assert.equal(trackingLink.status, 201);
+    assert.match(await trackingLink.text(), /Tracking link created/);
+    const trackingAudit = await withTenant(appPool, tenantId, (client) => client.query(
+      `SELECT 1 FROM ledger.audit_logs
+       WHERE tenant_id=$1 AND app_id=$2 AND action='tracking_link_created' AND outcome='succeeded'`,
+      [tenantId, newAppId],
+    ));
+    assert.equal(trackingAudit.rowCount, 1);
+
     const emptyReport = await fetch(`${baseUrl}/v1/reports/metrics?app_id=${newAppId}&format=json`, { headers });
     assert.equal(emptyReport.status, 200);
     assert.deepEqual(await emptyReport.json(), { data: [] });

@@ -35,7 +35,7 @@ describe("M2a redirector HTTP shell", () => {
        VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`, [tenantId, appId, new Date().toISOString()],
     ).then(() => undefined));
     const link = await createTrackingLink({
-      pool, tenantId, appId, allowedOrigins: [],
+      pool, tenantId, appId, actorRef: "admin_key:synthetic-redirector-test", allowedOrigins: [],
       body: {
         destination_kind: "play_store",
         destination_url: "https://play.google.com/store/apps/details?id=invalid.placeholder",
@@ -128,7 +128,7 @@ describe("M2a redirector HTTP shell", () => {
 
   it("fails closed at link creation and never persists the source IP", async () => {
     await assert.rejects(createTrackingLink({
-      pool, tenantId, appId, allowedOrigins: [],
+      pool, tenantId, appId, actorRef: "admin_key:synthetic-redirector-test", allowedOrigins: [],
       body: { destination_kind: "custom_https", destination_url: "https://attacker.invalid/" },
     }), /destination_origin_not_allowed/);
     const databaseContainsIp = await withTenant(pool, tenantId, async (client) => {

@@ -250,11 +250,27 @@ async function persistProjection(appPool: Pool, logical: Any, input: Any): Promi
   const projected = (value: Any) => JSON.stringify(value);
   await withTenant(appPool, logical.tenant_id, async (client) => {
     if (logical.event_name === "click") {
+      const importContext = payload.import_context ?? {};
+      const campaignId = payload.campaign_id ?? importContext.provider_campaign_ref ?? null;
+      const network = payload.network ?? importContext.provider_network ?? null;
+      const country = payload.country ?? importContext.provider_country ?? null;
       await client.query(
         `INSERT INTO ledger.click_facts (
-          logical_event_id, tenant_id, app_id, click_id, redirector_click_at, artifact
-        ) VALUES ($1,$2,$3,$4,$5,$6::jsonb) ON CONFLICT (logical_event_id) DO NOTHING`,
-        [logical.logical_event_id, logical.tenant_id, logical.app_id, payload.click_id, payload.redirector_click_at ?? null, projected({ click_id: payload.click_id, redirector_click_at: payload.redirector_click_at ?? null })],
+          logical_event_id, tenant_id, app_id, click_id, redirector_click_at,
+          campaign_id, network, country, artifact
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb) ON CONFLICT (logical_event_id) DO NOTHING`,
+        [
+          logical.logical_event_id, logical.tenant_id, logical.app_id,
+          payload.click_id, payload.redirector_click_at ?? null,
+          campaignId, network, country,
+          projected({
+            click_id: payload.click_id,
+            redirector_click_at: payload.redirector_click_at ?? null,
+            campaign_id: campaignId,
+            network,
+            country,
+          }),
+        ],
       );
     } else if (logical.event_name === "install") {
       const importContext = payload.import_context ?? {};

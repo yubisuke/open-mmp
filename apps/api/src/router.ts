@@ -1,8 +1,12 @@
+import { createHash } from "node:crypto";
 import type { IncomingMessage, RequestListener, ServerResponse } from "node:http";
 import type { Pool } from "pg";
 import type { PayloadStore } from "@open-mmp/runtime";
-import { listApps, registerApp, requireRegisteredApp } from "./apps-admin.js";
+import { AppNotFoundError, listApps, registerApp, requireRegisteredApp } from "./apps-admin.js";
 import { verifyAdminKey, type AdminIdentity } from "./admin-auth.js";
+import { dashboardCss } from "./dashboard/css.js";
+import { escapeHtml, renderDashboard } from "./dashboard/render.js";
+import { buildDashboardView } from "./dashboard/view.js";
 import { receiveMax, type MaxReceiverConfig } from "./max-receiver.js";
 import { executePrivacyRequest, type PrivacyRequestBody } from "./privacy.js";
 import {
@@ -10,8 +14,10 @@ import {
   encodeDifferenceAudit,
   encodeMetricReport,
   metricReport,
+  recordCounts,
   type ReportFormat,
 } from "./reporting.js";
+import { parseMetricQuery, ReportQueryError } from "./report-query.js";
 import type { KeyedTokenBucket, TokenBucket } from "./rate-limit.js";
 import { matchRoute, type RouteDefinition } from "./routes.js";
 import type { SdkRouteDependencies } from "./sdk-routes.js";
@@ -58,21 +64,15 @@ export type RequestHandlerDependencies = {
   readonly dashboardLoginGlobalBucket?: TokenBucket;
   readonly sdk?: SdkRouteDependencies;
   readonly trackingDestinationAllowlist?: readonly string[];
+  readonly reportMaximumRows?: number;
+  readonly reportMaximumExportRows?: number;
 };
-
-function escapeHtml(value: string): string {
-  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
-}
 
 function loginPage(error?: string): string {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Open MMP login</title><link rel="stylesheet" href="/dashboard/app.css"></head><body><main><h1>Open MMP</h1>${error ? `<p role="alert">${escapeHtml(error)}</p>` : ""}<form method="post" action="/dashboard/session"><label>Admin key <input name="admin_key" type="password" autocomplete="current-password" required></label><button type="submit">Sign in</button></form></main></body></html>`;
 }
 
-function dashboardPage(session: DashboardSession): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Open MMP dashboard</title><link rel="stylesheet" href="/dashboard/app.css"></head><body><main><h1>Open MMP dashboard</h1><p>No data yet; run <code>npm run seed</code>.</p><form method="post" action="/dashboard/session/delete"><input type="hidden" name="csrf_token" value="${csrfToken(session.token)}"><button type="submit">Sign out</button></form></main></body></html>`;
-}
-
-const dashboardCss = `:root{font-family:system-ui,sans-serif;color-scheme:light dark}body{margin:0;padding:2rem;background:Canvas;color:CanvasText}main{max-width:72rem;margin:auto}form{display:grid;gap:1rem;max-width:32rem}input,button{font:inherit;padding:.65rem}table{border-collapse:collapse;width:100%}th,td{padding:.5rem;border:1px solid GrayText;text-align:left}@media(prefers-color-scheme:dark){:root{color-scheme:dark}}\n`;
+const dashboardCssEtag = `"${createHash("sha256").update(dashboardCss).digest("hex")}"`;
 
 async function rawBody(request: IncomingMessage, maximumBytes = 32 * 1024): Promise<Buffer> {
   const chunks: Buffer[] = [];
@@ -141,23 +141,53 @@ async function dashboardSessionFor(
   );
 }
 
+function dashboardAppId(pathname: string): string | undefined {
+  const match = /^\/dashboard\/apps\/([^/]+)(?:\/(?:cohorts\.csv|differences|tracking-links))?$/.exec(pathname);
+  if (!match) return undefined;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return undefined;
+  }
+}
+
+async function rejectDashboardCsrf(
+  dependencies: RequestHandlerDependencies,
+  response: ServerResponse,
+  session: DashboardSession,
+  action: string,
+  targetScope: "tenant" | "app" | "session" | "tracking_link" | "sdk_key",
+  targetRef: string,
+): Promise<void> {
+  await recordDashboardAudit(dependencies.pool, {
+    tenantId: session.tenantId,
+    actorRef: `admin_key:${session.adminKeyId}`,
+    action,
+    targetScope,
+    targetRef,
+    outcome: "failed",
+    reasonCode: "csrf_rejected",
+  });
+  dashboardHtml(response, 403, "<!doctype html><html lang=\"en\"><body><h1>Forbidden</h1></body></html>");
+}
+
 export function createRequestHandler(dependencies: RequestHandlerDependencies): RequestListener {
   assertDashboardBaseUrl(dependencies.dashboard.enabled, dependencies.dashboard.publicBaseUrl);
   return (request, response) => {
     void (async () => {
       const target = new URL(request.url ?? "/", "http://open-mmp.local");
       const route = matchRoute(request.method, target.pathname);
-      if (!route || (!dependencies.dashboard.enabled && route.id.startsWith("dashboard_"))) {
+      if (!route || (!dependencies.dashboard.enabled && route.handler.startsWith("dashboard_"))) {
         json(response, 404, { error: "not_found" });
         return;
       }
       const pool = routePool(dependencies, route);
 
-      if (route.id === "health") {
+      if (route.handler === "health") {
         json(response, 200, { status: "ok" });
         return;
       }
-      if (route.id === "max_ingest") {
+      if (route.handler === "max_ingest") {
         if (!request.url?.startsWith(`/v1/ingest/max/${dependencies.maxConfig.pathSecret}?`)) {
           json(response, 404, { error: "not_found" });
           return;
@@ -173,25 +203,45 @@ export function createRequestHandler(dependencies: RequestHandlerDependencies): 
         });
         return;
       }
-      if (route.id === "sdk_enrollment" && dependencies.sdk) return handleSdkEnrollment(request, response, dependencies.sdk);
-      if (route.id === "sdk_batch" && dependencies.sdk) return handleSdkBatch(request, response, dependencies.sdk);
-      if (route.id === "device_privacy" && dependencies.sdk) return handleDevicePrivacy(request, response, dependencies.sdk);
+      if (route.handler === "sdk_enrollment" && dependencies.sdk) return handleSdkEnrollment(request, response, dependencies.sdk);
+      if (route.handler === "sdk_batch" && dependencies.sdk) return handleSdkBatch(request, response, dependencies.sdk);
+      if (route.handler === "device_privacy" && dependencies.sdk) return handleDevicePrivacy(request, response, dependencies.sdk);
 
-      if (route.id === "dashboard_css") {
-        response.writeHead(200, { ...dashboardHeaders, "content-type": "text/css; charset=utf-8", "cache-control": "no-cache" });
+      if (route.handler === "dashboard_css") {
+        if (request.headers["if-none-match"] === dashboardCssEtag) {
+          response.writeHead(304, { ...dashboardHeaders, etag: dashboardCssEtag, "cache-control": "no-cache" }).end();
+          return;
+        }
+        response.writeHead(200, {
+          ...dashboardHeaders,
+          "content-type": "text/css; charset=utf-8",
+          "cache-control": "no-cache",
+          etag: dashboardCssEtag,
+        });
         response.end(dashboardCss);
         return;
       }
-      if (route.id === "dashboard_root") {
+      if (route.handler === "dashboard_root") {
         const session = await dashboardSessionFor(dependencies, request);
         if (!session && authorization(request)) {
           dashboardHtml(response, 401, loginPage("Authentication required."));
           return;
         }
-        dashboardHtml(response, 200, session ? dashboardPage(session) : loginPage());
+        if (!session) {
+          dashboardHtml(response, 200, loginPage());
+          return;
+        }
+        const apps = await listApps(dependencies.readerPool, {
+          keyId: session.adminKeyId,
+          tenantId: session.tenantId,
+        });
+        dashboardHtml(response, 200, renderDashboard(buildDashboardView({
+          apps,
+          csrfToken: csrfToken(session.token),
+        })));
         return;
       }
-      if (route.id === "dashboard_login") {
+      if (route.handler === "dashboard_login") {
         const allowed = (!dependencies.dashboardLoginBucket || dependencies.dashboardLoginBucket.allow(sourceKey(request)))
           && (!dependencies.dashboardLoginGlobalBucket || dependencies.dashboardLoginGlobalBucket.allow());
         if (!allowed) {
@@ -239,7 +289,7 @@ export function createRequestHandler(dependencies: RequestHandlerDependencies): 
         }).end();
         return;
       }
-      if (route.id === "dashboard_logout") {
+      if (route.handler === "dashboard_logout") {
         const session = await dashboardSessionFor(dependencies, request);
         if (!session) {
           dashboardHtml(response, 401, loginPage("Authentication required."));
@@ -277,6 +327,127 @@ export function createRequestHandler(dependencies: RequestHandlerDependencies): 
         return;
       }
 
+      if (["dashboard_app", "dashboard_export", "dashboard_differences", "dashboard_tracking_links_create", "dashboard_apps_create"].includes(route.handler)) {
+        const session = await dashboardSessionFor(dependencies, request);
+        if (!session) {
+          dashboardHtml(response, 401, loginPage("Authentication required."));
+          return;
+        }
+        const sessionIdentity: AdminIdentity = { keyId: session.adminKeyId, tenantId: session.tenantId };
+        if (route.handler === "dashboard_apps_create") {
+          const body = await formBody(request);
+          const appId = body.get("app_id") ?? "";
+          if (!csrfOriginAccepted(request, dependencies.dashboard.publicBaseUrl)
+            || !verifyCsrfToken(session.token, body.get("csrf_token") ?? undefined)) {
+            await rejectDashboardCsrf(dependencies, response, session, "dashboard_app_register", "app", appId || "app:unrecognized");
+            return;
+          }
+          try {
+            const issued = await registerApp({
+              pool: dependencies.pool,
+              payloadStore: dependencies.payloadStore,
+              identity: sessionIdentity,
+              appId,
+              publicBaseUrl: dependencies.publicBaseUrl,
+              redirectorBaseUrl: dependencies.redirectorBaseUrl,
+            });
+            dashboardHtml(response, 201, `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>SDK key issued</title><link rel="stylesheet" href="/dashboard/app.css"></head><body><main><h1>SDK key issued</h1><p>Copy this secret now. It cannot be retrieved again.</p><dl><dt>App</dt><dd>${escapeHtml(issued.app_id)}</dd><dt>SDK key ID</dt><dd>${escapeHtml(issued.sdk_key_id)}</dd><dt>SDK key</dt><dd><code>${escapeHtml(issued.sdk_key)}</code></dd></dl><p><a href="/dashboard/apps/${encodeURIComponent(issued.app_id)}">Continue to the app dashboard</a></p></main></body></html>`);
+          } catch (error) {
+            const status = error instanceof Error && error.message === "app_already_registered" ? 409 : 400;
+            dashboardHtml(response, status, `<!doctype html><html lang="en"><body><h1>App registration failed</h1><p>${escapeHtml(error instanceof Error ? error.message : "invalid_request")}</p></body></html>`);
+          }
+          return;
+        }
+
+        const appId = dashboardAppId(target.pathname) ?? "";
+        try {
+          const appIdentity = await requireRegisteredApp(dependencies.readerPool, sessionIdentity, appId);
+          if (route.handler === "dashboard_tracking_links_create") {
+            const body = await formBody(request);
+            if (!csrfOriginAccepted(request, dependencies.dashboard.publicBaseUrl)
+              || !verifyCsrfToken(session.token, body.get("csrf_token") ?? undefined)) {
+              await rejectDashboardCsrf(dependencies, response, session, "dashboard_tracking_link_create", "tracking_link", "tracking_link:unrecognized");
+              return;
+            }
+            try {
+              const result = await createTrackingLink({
+                pool: dependencies.pool,
+                tenantId: appIdentity.tenantId,
+                appId: appIdentity.appId,
+                actorRef: `admin_key:${session.adminKeyId}`,
+                allowedOrigins: dependencies.trackingDestinationAllowlist ?? [],
+                body: Object.fromEntries(body),
+              });
+              const link = `${dependencies.redirectorBaseUrl.replace(/\/$/, "")}/${result.slug}`;
+              dashboardHtml(response, 201, `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Tracking link created</title><link rel="stylesheet" href="/dashboard/app.css"></head><body><main><h1>Tracking link created</h1><dl><dt>App</dt><dd>${escapeHtml(appIdentity.appId)}</dd><dt>Tracking link</dt><dd><code>${escapeHtml(link)}</code></dd><dt>Destination</dt><dd>${escapeHtml(result.destination_url)}</dd></dl><p><a href="/dashboard/apps/${encodeURIComponent(appIdentity.appId)}">Return to the app dashboard</a></p></main></body></html>`);
+            } catch (error) {
+              dashboardHtml(response, 400, `<!doctype html><html lang="en"><body><h1>Tracking link creation failed</h1><p>${escapeHtml(error instanceof Error ? error.message : "tracking_link_invalid")}</p></body></html>`);
+            }
+            return;
+          }
+          const params = new URLSearchParams(target.searchParams);
+          if (route.handler === "dashboard_export") {
+            params.set("format", "csv");
+            params.set("export", "true");
+          }
+          const parsed = parseMetricQuery({
+            tenantId: appIdentity.tenantId,
+            appId: appIdentity.appId,
+            searchParams: params,
+            maximumRows: dependencies.reportMaximumRows,
+            maximumExportRows: dependencies.reportMaximumExportRows,
+          });
+          if (route.handler === "dashboard_export") {
+            const page = await metricReport(dependencies.readerPool, appIdentity, parsed.query);
+            if (page.next_cursor) {
+              dashboardHtml(response, 400, "<!doctype html><html lang=\"en\"><body><h1>Export limit exceeded</h1></body></html>");
+              return;
+            }
+            const encoded = encodeMetricReport(page, "csv");
+            const first = page.data[0];
+            const range = `${parsed.query.dateFrom ?? "all"}-${parsed.query.dateTo ?? "all"}`;
+            response.writeHead(200, {
+              "content-type": encoded.contentType,
+              "content-disposition": `attachment; filename="open-mmp-${appIdentity.appId}-${range}-${first?.input_snapshot_id.slice(0, 8) ?? "empty"}.csv"`,
+              "cache-control": "no-store",
+              "x-content-type-options": "nosniff",
+            });
+            response.end(encoded.body);
+            return;
+          }
+
+          const apps = await listApps(dependencies.readerPool, sessionIdentity);
+          const metrics = await metricReport(dependencies.readerPool, appIdentity, parsed.query);
+          const effectiveWatermark = parsed.query.watermarkAtMost
+            ?? metrics.data.map((row) => row.input_received_at_watermark).sort().at(-1);
+          const effectiveQuery = effectiveWatermark
+            ? { ...parsed.query, watermarkAtMost: effectiveWatermark }
+            : parsed.query;
+          const records = effectiveWatermark
+            ? await recordCounts(dependencies.readerPool, appIdentity, effectiveQuery)
+            : [];
+          const storedDifferences = await differenceAudit(dependencies.readerPool, appIdentity, effectiveQuery);
+          dashboardHtml(response, 200, renderDashboard(buildDashboardView({
+            apps,
+            selectedAppId: appIdentity.appId,
+            query: effectiveQuery,
+            metrics: route.handler === "dashboard_differences" ? { data: [] } : metrics,
+            records: route.handler === "dashboard_differences" ? [] : records,
+            differences: storedDifferences,
+            csrfToken: csrfToken(session.token),
+          })));
+        } catch (error) {
+          if (error instanceof AppNotFoundError) {
+            dashboardHtml(response, 404, "<!doctype html><html lang=\"en\"><body><h1>App not found</h1></body></html>");
+          } else if (error instanceof ReportQueryError || (error instanceof Error && error.message === "watermark_required")) {
+            dashboardHtml(response, 400, `<!doctype html><html lang="en"><body><h1>Invalid filter</h1><p>${escapeHtml(error.message)}</p></body></html>`);
+          } else {
+            throw error;
+          }
+        }
+        return;
+      }
+
       if (route.auth === "admin_bearer") {
         if (dependencies.adminBucket && !dependencies.adminBucket.allow()) {
           response.writeHead(429, { "retry-after": "1", "cache-control": "no-store" }).end();
@@ -287,11 +458,11 @@ export function createRequestHandler(dependencies: RequestHandlerDependencies): 
           json(response, 401, { error: "unauthorized" });
           return;
         }
-        if (route.id === "admin_apps_list") {
+        if (route.handler === "admin_apps_list") {
           json(response, 200, { data: await listApps(pool, identity) });
           return;
         }
-        if (route.id === "admin_apps_create") {
+        if (route.handler === "admin_apps_create") {
           try {
             const body = await jsonBody(request);
             const result = await registerApp({
@@ -310,31 +481,60 @@ export function createRequestHandler(dependencies: RequestHandlerDependencies): 
           }
           return;
         }
-        if (route.id === "report_metrics" || route.id === "audit_differences" || route.id === "report_records") {
+        if (route.handler === "report_metrics" || route.handler === "audit_differences" || route.handler === "report_records") {
           const appId = target.searchParams.get("app_id") ?? "";
           try {
             const appIdentity = await requireRegisteredApp(pool, identity, appId);
-            if (route.id === "report_records") {
-              json(response, 501, { error: "record_counts_not_implemented" });
+            const parsed = parseMetricQuery({
+              tenantId: appIdentity.tenantId,
+              appId: appIdentity.appId,
+              searchParams: target.searchParams,
+              maximumRows: dependencies.reportMaximumRows,
+              maximumExportRows: dependencies.reportMaximumExportRows,
+            });
+            if (route.handler === "report_records") {
+              const data = await recordCounts(pool, appIdentity, parsed.query);
+              json(response, 200, { data });
               return;
             }
-            const requestedFormat = target.searchParams.get("format") ?? "json";
-            if (requestedFormat !== "json" && requestedFormat !== "csv") {
-              json(response, 400, { error: "unsupported_format" });
-              return;
+            const format = parsed.format as ReportFormat;
+            let encoded: { contentType: string; body: string };
+            let first: { input_snapshot_id?: string } | undefined;
+            if (route.handler === "report_metrics") {
+              const page = await metricReport(pool, appIdentity, parsed.query);
+              if (parsed.export && page.next_cursor) {
+                json(response, 400, { error: "export_limit_exceeded" });
+                return;
+              }
+              encoded = encodeMetricReport(page, format);
+              first = page.data[0];
+            } else {
+              const page = await differenceAudit(pool, appIdentity, parsed.query);
+              encoded = encodeDifferenceAudit(page, format);
+              first = page.data[0] as { input_snapshot_id?: string } | undefined;
             }
-            const format = requestedFormat as ReportFormat;
-            const encoded = route.id === "report_metrics"
-              ? encodeMetricReport(await metricReport(pool, appIdentity), format)
-              : encodeDifferenceAudit(await differenceAudit(pool, appIdentity), format);
-            response.writeHead(200, { "content-type": encoded.contentType, "cache-control": "no-store" });
+            const range = `${parsed.query.dateFrom ?? "all"}-${parsed.query.dateTo ?? "all"}`;
+            response.writeHead(200, {
+              "content-type": encoded.contentType,
+              "cache-control": "no-store",
+              "x-content-type-options": "nosniff",
+              ...(format === "csv" ? {
+                "content-disposition": `attachment; filename="open-mmp-${appIdentity.appId}-${range}-${first?.input_snapshot_id?.slice(0, 8) ?? "empty"}.csv"`,
+              } : {}),
+            });
             response.end(encoded.body);
-          } catch {
-            json(response, 404, { error: "app_not_found" });
+          } catch (error) {
+            if (error instanceof AppNotFoundError) {
+              json(response, 404, { error: "app_not_found" });
+            } else if (error instanceof ReportQueryError || (error instanceof Error && error.message === "watermark_required")) {
+              json(response, 400, { error: error.message });
+            } else {
+              throw error;
+            }
           }
           return;
         }
-        if (route.id === "admin_tracking_links") {
+        if (route.handler === "admin_tracking_links") {
           try {
             const body = await jsonBody(request);
             const appIdentity = await requireRegisteredApp(dependencies.pool, identity, String(body.app_id ?? ""));
@@ -342,6 +542,7 @@ export function createRequestHandler(dependencies: RequestHandlerDependencies): 
               pool: dependencies.pool,
               tenantId: appIdentity.tenantId,
               appId: appIdentity.appId,
+              actorRef: `admin_key:${identity.keyId}`,
               allowedOrigins: dependencies.trackingDestinationAllowlist ?? [],
               body,
             });
@@ -352,7 +553,7 @@ export function createRequestHandler(dependencies: RequestHandlerDependencies): 
           }
           return;
         }
-        if (route.id === "admin_privacy") {
+        if (route.handler === "admin_privacy") {
           try {
             const body = await jsonBody(request) as PrivacyRequestBody;
             const appIdentity = await requireRegisteredApp(dependencies.pool, identity, String(body.app_id ?? ""));
