@@ -280,6 +280,7 @@
         "subject_scope": { "enum": ["installation_level", "aggregate"] },
         "processing_purpose_id": { "$ref": "common.schema.json#/$defs/processingPurposeId" },
         "processing_sequence": { "type": "integer", "minimum": 0 },
+        "integrity_verdict": { "$ref": "common.schema.json#/$defs/integrityVerdict" },
         "alternative_legal_basis_id": { "$ref": "common.schema.json#/$defs/id" }
       }
     },
