@@ -1,6 +1,6 @@
 {
   "name": "@open-mmp/contracts",
-  "version": "0.3.5",
+  "version": "0.3.6",
   "private": true,
   "description": "Open MMP contract schemas, registries, generated types, and validation dependencies",
   "type": "module",

@@ -6,7 +6,8 @@ import { jcs, sha256 } from "@open-mmp/attribution-core";
 type Any = Record<string, any>;
 type Queryable = Pick<PoolClient, "query">;
 
-type Scope = { tenant_id: string; app_id: string };
+export type MetricScope = { tenant_id: string; app_id: string };
+type Scope = MetricScope;
 type SnapshotRecord = {
   tenant_id: string;
   app_id: string;
@@ -560,8 +561,9 @@ export async function computeSqlMetricRunsWithClient(
   client: Queryable,
   input: Any,
   persist = true,
+  scopeOverride?: MetricScope,
 ): Promise<Any[]> {
-  const scope = scopeForInput(input);
+  const scope = scopeOverride ?? scopeForInput(input);
   const fxPolicy = input.fx_policy;
   if (!fxPolicy || fxPolicy.rates?.length !== 1) {
     throw new Error("v0.2 SQL metric runs require exactly one structured FX rate");
@@ -701,13 +703,18 @@ function assertMetricDefinitionSeries(definition: Any): void {
       grouping.includes("apple_conversion_bucket")) fail();
 }
 
-export async function computeSqlMetricRuns(pool: Pool, input: Any, persist = true): Promise<Any[]> {
-  const scope = scopeForInput(input);
+export async function computeSqlMetricRuns(
+  pool: Pool,
+  input: Any,
+  persist = true,
+  scopeOverride?: MetricScope,
+): Promise<Any[]> {
+  const scope = scopeOverride ?? scopeForInput(input);
   const client = await pool.connect();
   try {
     await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ");
     await client.query("SELECT set_config('open_mmp.tenant_id', $1, true)", [scope.tenant_id]);
-    const output = await computeSqlMetricRunsWithClient(client, input, persist);
+    const output = await computeSqlMetricRunsWithClient(client, input, persist, scope);
     await client.query("COMMIT");
     return output;
   } catch (error) {

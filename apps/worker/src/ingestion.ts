@@ -8,6 +8,7 @@ import {
   type CandidateAttempt,
   type CandidateProvider,
 } from "@open-mmp/attribution-core";
+import { validateEventPayload } from "@open-mmp/contracts";
 import { uuidV7, withTenant } from "@open-mmp/runtime";
 
 type Any = Record<string, any>;
@@ -162,8 +163,8 @@ async function storedArtifact(
   return artifact;
 }
 
-async function persistRaw(appPool: Pool, artifact: Any, policyDigest: string): Promise<Any> {
-  return withTenant(appPool, artifact.tenant_id, (client) => storedArtifact(
+async function persistRawWithClient(client: PoolClient, artifact: Any, policyDigest: string): Promise<Any> {
+  return storedArtifact(
     client,
     `INSERT INTO ledger.raw_records (
       record_id, tenant_id, app_id, producer, producer_version, event_id, delivery_id,
@@ -187,7 +188,11 @@ async function persistRaw(appPool: Pool, artifact: Any, policyDigest: string): P
     ],
     "SELECT artifact FROM ledger.raw_records WHERE record_id = $1",
     [artifact.record_id],
-  ));
+  );
+}
+
+async function persistRaw(appPool: Pool, artifact: Any, policyDigest: string): Promise<Any> {
+  return withTenant(appPool, artifact.tenant_id, (client) => persistRawWithClient(client, artifact, policyDigest));
 }
 
 function policyDigestForRecord(input: Any, recordId: string): string {
@@ -197,9 +202,8 @@ function policyDigestForRecord(input: Any, recordId: string): string {
   return digest;
 }
 
-async function persistDelivery(appPool: Pool, artifact: Any): Promise<Any> {
-  return withTenant(appPool, artifact.tenant_id, async (client) => {
-    const result = await client.query<{ artifact: Any }>(
+async function persistDeliveryWithClient(client: PoolClient, artifact: Any): Promise<Any> {
+  const result = await client.query<{ artifact: Any }>(
       `INSERT INTO ledger.event_deliveries (
         delivery_attempt_id, delivery_id, record_id, canonical_record_id, tenant_id, app_id,
         received_at, ingestion_status, duplicate_resolution, timeliness,
@@ -218,13 +222,16 @@ async function persistDelivery(appPool: Pool, artifact: Any): Promise<Any> {
         artifact.withdrawal_recognized_at ?? null, artifact.alternative_legal_basis_id ?? null,
         artifact.alternative_legal_basis_policy_version ?? null, JSON.stringify(artifact),
       ],
-    );
-    return result.rows[0].artifact;
-  });
+  );
+  return result.rows[0].artifact;
 }
 
-async function persistLogical(appPool: Pool, artifact: Any): Promise<Any> {
-  return withTenant(appPool, artifact.tenant_id, (client) => storedArtifact(
+async function persistDelivery(appPool: Pool, artifact: Any): Promise<Any> {
+  return withTenant(appPool, artifact.tenant_id, (client) => persistDeliveryWithClient(client, artifact));
+}
+
+async function persistLogicalWithClient(client: PoolClient, artifact: Any): Promise<Any> {
+  return storedArtifact(
     client,
     `INSERT INTO ledger.logical_events (
       logical_event_id, record_id, tenant_id, app_id, producer, event_id,
@@ -238,18 +245,21 @@ async function persistLogical(appPool: Pool, artifact: Any): Promise<Any> {
     ],
     "SELECT artifact FROM ledger.logical_events WHERE logical_event_id = $1",
     [artifact.logical_event_id],
-  ));
+  );
 }
 
-async function persistProjection(appPool: Pool, logical: Any, input: Any): Promise<void> {
+async function persistLogical(appPool: Pool, artifact: Any): Promise<Any> {
+  return withTenant(appPool, artifact.tenant_id, (client) => persistLogicalWithClient(client, artifact));
+}
+
+async function persistProjectionWithClient(client: PoolClient, logical: Any, input: Any): Promise<void> {
   const attempt = inputAttempts(input).find(({ server, record }) =>
     server.tenant_id === logical.tenant_id && server.app_id === logical.app_id && record.record_id === logical.record_id,
   );
   if (!attempt) throw new Error(`missing input record for logical event ${logical.logical_event_id}`);
   const payload = attempt.record.payload;
   const projected = (value: Any) => JSON.stringify(value);
-  await withTenant(appPool, logical.tenant_id, async (client) => {
-    if (logical.event_name === "click") {
+  if (logical.event_name === "click") {
       const importContext = payload.import_context ?? {};
       const campaignId = payload.campaign_id ?? importContext.provider_campaign_ref ?? null;
       const network = payload.network ?? importContext.provider_network ?? null;
@@ -365,8 +375,11 @@ async function persistProjection(appPool: Pool, logical: Any, input: Any): Promi
           attempt.record.received_at, projected(aggregateFact),
         ],
       );
-    }
-  });
+  }
+}
+
+async function persistProjection(appPool: Pool, logical: Any, input: Any): Promise<void> {
+  return withTenant(appPool, logical.tenant_id, (client) => persistProjectionWithClient(client, logical, input));
 }
 
 async function persistFixtureCosts(appPool: Pool, input: Any): Promise<void> {
@@ -425,16 +438,18 @@ async function persistCorrection(appPool: Pool, artifact: Any): Promise<Any> {
   ));
 }
 
-async function persistRejection(appPool: Pool, artifact: Any): Promise<Any> {
-  return withTenant(appPool, artifact.tenant_id, async (client) => {
-    const result = await client.query<{ artifact: Any }>(
+async function persistRejectionWithClient(client: PoolClient, artifact: Any): Promise<Any> {
+  const result = await client.query<{ artifact: Any }>(
       `INSERT INTO ledger.rejections (
         tenant_id, app_id, delivery_id, record_id, reason_code, artifact
       ) VALUES ($1,$2,$3,$4,$5,$6::jsonb) RETURNING artifact`,
       [artifact.tenant_id, artifact.app_id, artifact.delivery_id, artifact.record_id, artifact.reason_code, JSON.stringify(artifact)],
-    );
-    return result.rows[0].artifact;
-  });
+  );
+  return result.rows[0].artifact;
+}
+
+async function persistRejection(appPool: Pool, artifact: Any): Promise<Any> {
+  return withTenant(appPool, artifact.tenant_id, (client) => persistRejectionWithClient(client, artifact));
 }
 
 async function persistPrivacyRequest(appPool: Pool, artifact: Any): Promise<Any> {
@@ -725,7 +740,61 @@ export type RuntimeIngestionResult = {
   attributions: Any[];
   fraud_decisions: Any[];
   reconciliation: Any[];
+  validation_failures: Array<{ record_id: string; delivery_id: string; fields: readonly string[] }>;
 };
+
+function schemaInvalidArtifacts(attempt: CandidateAttempt): {
+  delivery: Any;
+  rejection: Any;
+  failure: RuntimeIngestionResult["validation_failures"][number];
+} | undefined {
+  const validation = validateEventPayload(attempt.record.event_name, attempt.record.payload);
+  if (validation.valid) return undefined;
+  const purpose = (attempt.server.processing_purposes ?? []).find(
+    (entry: Any) => entry.processing_purpose_id === attempt.record.processing_purpose_id,
+  );
+  const withdrawal = (attempt.server.withdrawals ?? []).find(
+    (entry: Any) => entry.processing_purpose_id === attempt.record.processing_purpose_id,
+  );
+  const consentReason = !purpose?.consent_required
+    ? "consent_not_required"
+    : !withdrawal || Number(attempt.record.processing_sequence) < Number(withdrawal.withdrawal_recognized_sequence)
+      ? "consent_valid_before_withdrawal"
+      : "consent_withdrawn";
+  const common = {
+    contract_version: "0.3.0",
+    delivery_id: attempt.record.delivery_id,
+    record_id: attempt.record.record_id,
+    tenant_id: attempt.server.tenant_id,
+    app_id: attempt.server.app_id,
+    payload_disposition: "discarded",
+    ...(attempt.record.processing_purpose_id ? { processing_purpose_id: attempt.record.processing_purpose_id } : {}),
+    consent_evaluation_policy_version: purpose?.policy_version ?? "not-applicable",
+    consent_decision_reason_code: consentReason,
+    ...(withdrawal?.withdrawal_recognized_at ? { withdrawal_recognized_at: withdrawal.withdrawal_recognized_at } : {}),
+    reason_code: "payload_schema_invalid",
+  };
+  return {
+    delivery: {
+      ...common,
+      received_at: attempt.record.received_at,
+      ingestion_status: "rejected",
+      duplicate_resolution: "unique",
+      timeliness: attempt.record.late ? "late" : "on_time",
+      clock_skew_suspected: false,
+    },
+    rejection: {
+      ...common,
+      reason_code_version: "0.3.0",
+      retained: "non_identifying_metadata",
+    },
+    failure: {
+      record_id: attempt.record.record_id,
+      delivery_id: attempt.record.delivery_id,
+      fields: validation.fields,
+    },
+  };
+}
 
 function runtimeInput(attempts: readonly CandidateAttempt[]): Any {
   return {
@@ -759,14 +828,18 @@ export async function ingestRuntimeBatch(
   historicalAttempts: readonly CandidateAttempt[] = [],
 ): Promise<RuntimeIngestionResult> {
   if (attempts.length === 0) {
-    return { raw_records: [], deliveries: [], logical_events: [], rejections: [], attributions: [], fraud_decisions: [], reconciliation: [] };
+    return { raw_records: [], deliveries: [], logical_events: [], rejections: [], attributions: [], fraud_decisions: [], reconciliation: [], validation_failures: [] };
   }
-  const allAttempts = [...historicalAttempts, ...attempts].sort(compareCandidateAttempts);
+  const invalid = attempts.map(schemaInvalidArtifacts).filter((value): value is NonNullable<typeof value> => value !== undefined);
+  const invalidAttempts = new Set(invalid.map(({ failure }) => `${failure.record_id}\u0000${failure.delivery_id}`));
+  const validAttempts = attempts.filter((attempt) => !invalidAttempts.has(`${attempt.record.record_id}\u0000${attempt.record.delivery_id}`));
+  const validHistory = historicalAttempts.filter((attempt) => !schemaInvalidArtifacts(attempt));
+  const allAttempts = [...validHistory, ...validAttempts].sort(compareCandidateAttempts);
   const input = runtimeInput(allAttempts);
-  await ensureApps(appPool, input);
+  await ensureApps(appPool, runtimeInput(attempts));
   const output = evaluate(input, (values) => new IndexedCandidateProvider(values));
-  const recordIds = new Set(attempts.map((attempt) => attempt.record.record_id));
-  const deliveryIds = new Set(attempts.map((attempt) => attempt.record.delivery_id));
+  const recordIds = new Set(validAttempts.map((attempt) => attempt.record.record_id));
+  const deliveryIds = new Set(validAttempts.map((attempt) => attempt.record.delivery_id));
   const belongsToCurrent = (artifact: Any): boolean =>
     recordIds.has(artifact.record_id)
     || recordIds.has(artifact.subject_ref)
@@ -775,30 +848,39 @@ export async function ingestRuntimeBatch(
 
   const selected: RuntimeIngestionResult = {
     raw_records: output.raw_records.filter(belongsToCurrent),
-    deliveries: output.deliveries.filter(belongsToCurrent),
+    deliveries: [...output.deliveries.filter(belongsToCurrent), ...invalid.map(({ delivery }) => delivery)],
     logical_events: output.logical_events.filter(belongsToCurrent),
-    rejections: output.rejections.filter(belongsToCurrent),
+    rejections: [...output.rejections.filter(belongsToCurrent), ...invalid.map(({ rejection }) => rejection)],
     attributions: output.attributions.filter(belongsToCurrent),
     fraud_decisions: output.fraud_decisions.filter(belongsToCurrent),
     reconciliation: (output.reconciliation ?? []).filter((artifact: Any) =>
       artifact.tenant_id === attempts[0].server.tenant_id && artifact.app_id === attempts[0].server.app_id),
+    validation_failures: invalid.map(({ failure }) => failure),
   };
-  for (const raw of selected.raw_records) {
-    await persistRaw(appPool, raw, policyDigestForRecord(input, raw.record_id));
-    await withTenant(appPool, raw.tenant_id, (client) => client.query(
-      `INSERT INTO ledger.raw_payload_states (
-        tenant_id, app_id, record_id, lifecycle_status, changed_at
-      ) VALUES ($1,$2,$3,'available',$4)
-      ON CONFLICT (record_id, lifecycle_status) DO NOTHING`,
-      [raw.tenant_id, raw.app_id, raw.record_id, raw.received_at],
-    ).then(() => undefined));
+  for (const attempt of attempts) {
+    const raw = selected.raw_records.find((artifact) => artifact.record_id === attempt.record.record_id);
+    const delivery = selected.deliveries.find((artifact) => artifact.delivery_id === attempt.record.delivery_id && artifact.record_id === attempt.record.record_id);
+    const logical = selected.logical_events.find((artifact) => artifact.record_id === attempt.record.record_id);
+    const rejection = selected.rejections.find((artifact) => artifact.delivery_id === attempt.record.delivery_id && artifact.record_id === attempt.record.record_id);
+    await withTenant(appPool, attempt.server.tenant_id, async (client) => {
+      if (raw) {
+        await persistRawWithClient(client, raw, policyDigestForRecord(input, raw.record_id));
+        await client.query(
+          `INSERT INTO ledger.raw_payload_states (
+            tenant_id, app_id, record_id, lifecycle_status, changed_at
+          ) VALUES ($1,$2,$3,'available',$4)
+          ON CONFLICT (record_id, lifecycle_status) DO NOTHING`,
+          [raw.tenant_id, raw.app_id, raw.record_id, raw.received_at],
+        );
+      }
+      if (delivery) await persistDeliveryWithClient(client, delivery);
+      if (logical) {
+        await persistLogicalWithClient(client, logical);
+        await persistProjectionWithClient(client, logical, input);
+      }
+      if (rejection) await persistRejectionWithClient(client, rejection);
+    });
   }
-  for (const delivery of selected.deliveries) await persistDelivery(appPool, delivery);
-  for (const logical of selected.logical_events) {
-    await persistLogical(appPool, logical);
-    await persistProjection(appPool, logical, input);
-  }
-  for (const rejection of selected.rejections) await persistRejection(appPool, rejection);
   for (const attribution of selected.attributions) {
     await persistAttribution(appPool, attribution);
   }

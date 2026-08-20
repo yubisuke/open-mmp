@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
   "kind": "manual_cost",
-  "source_id": "synthetic-manual-cost",
+  "source_id": "synthetic-integer-cost",
   "tenant_id": "tenant-local",
   "app_id": "app-local",
   "format": "csv",

@@ -6,7 +6,7 @@ connection, device validation, platform approval, or operator acceptance.
 
 | Milestone | State | Implemented evidence | Residual boundary |
 | --- | --- | --- | --- |
-| M0.3 Contract v0.3.5 | Implemented | 27 schemas, 8 registries, 46 reviewed synthetic fixtures, independent TypeScript/Python evaluators, RFC 8785 parity, optional integrity evidence | No real data, provider token, device identifier, or live fraud rule is validated |
+| M0.3 Contract v0.3.6 | Implemented | 27 schemas, 8 registries, 47 reviewed synthetic fixtures, independent TypeScript/Python evaluators, RFC 8785 parity, optional integrity evidence, runtime schema-rejection evidence | No real data, provider token, device identifier, or live fraud rule is validated |
 | M1a Shadow ledger/import | Implemented | PostgreSQL append-only/RLS ledger, encrypted payload port, three synthetic import paths, runtime-to-golden parity, SBOM | Real exports, provider credentials, production TLS, external KMS, and deployment operations are unverified |
 | M1b Metrics/difference audit | Implemented | SQL/evaluator parity, fixed snapshots, supersession/redaction recalculation, authenticated JSON/CSV audit, synthetic performance floor | A real shadow pilot and exact 4-vCPU/8-GB capacity remain unverified |
 | M2 Android/Unity/redirector | Implemented | HMAC durable ingestion, deterministic referrer path, Kotlin SDK, Unity bridge, emulator CI, Android SBOM | Real Play/Meta/MAX campaigns, devices, backup transfer, and Unity export remain operator checks |
