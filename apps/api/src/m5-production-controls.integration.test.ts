@@ -7,6 +7,7 @@ import { after, before, describe, it } from "node:test";
 import type { Pool } from "pg";
 import {
   createAppPool,
+  createMigrationPool,
   createReaderPool,
   EncryptedFilePayloadStore,
   withTenant,
@@ -28,6 +29,7 @@ const keys = {
 
 describe("M5 RBAC and rule-bundle production controls", { concurrency: false }, () => {
   let appPool: Pool;
+  let migrationPool: Pool;
   let readerPool: Pool;
   let server: Server;
   let baseUrl: string;
@@ -38,6 +40,7 @@ describe("M5 RBAC and rule-bundle production controls", { concurrency: false }, 
 
   before(async () => {
     appPool = createAppPool();
+    migrationPool = createMigrationPool();
     readerPool = createReaderPool();
     payloadRoot = mkdtempSync(join(tmpdir(), "openmmp-m5-controls-"));
     payloadStore = new EncryptedFilePayloadStore(
@@ -89,6 +92,7 @@ describe("M5 RBAC and rule-bundle production controls", { concurrency: false }, 
   after(async () => {
     if (server) await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     await appPool?.end();
+    await migrationPool?.end();
     await readerPool?.end();
     if (payloadRoot) rmSync(payloadRoot, { recursive: true, force: true });
   });
@@ -278,8 +282,12 @@ describe("M5 RBAC and rule-bundle production controls", { concurrency: false }, 
     await assert.rejects(() => withTenant(appPool, tenantId, (client) => client.query(
       "UPDATE control.rule_bundle_revisions SET rule_bundle_version='changed' WHERE rule_bundle_revision_id=$1",
       [first.rule_bundle_revision_id],
+    )), /permission denied/);
+    await assert.rejects(() => withTenant(migrationPool, tenantId, (client) => client.query(
+      "UPDATE control.rule_bundle_revisions SET rule_bundle_version='changed' WHERE rule_bundle_revision_id=$1",
+      [first.rule_bundle_revision_id],
     )), /append-only/);
-    await assert.rejects(() => withTenant(appPool, tenantId, (client) => client.query(
+    await assert.rejects(() => withTenant(migrationPool, tenantId, (client) => client.query(
       "DELETE FROM control.rule_bundle_revisions WHERE rule_bundle_revision_id=$1",
       [first.rule_bundle_revision_id],
     )), /append-only/);
