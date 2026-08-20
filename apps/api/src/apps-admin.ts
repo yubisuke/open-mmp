@@ -42,6 +42,7 @@ export async function registerApp(input: {
   readonly payloadStore: PayloadStore;
   readonly identity: AdminIdentity;
   readonly appId: string;
+  readonly sdkPlatform?: "android" | "ios";
   readonly publicBaseUrl: string;
   readonly redirectorBaseUrl: string;
   readonly now?: Date;
@@ -49,11 +50,13 @@ export async function registerApp(input: {
   readonly app_id: string;
   readonly sdk_key_id: string;
   readonly sdk_key: string;
+  readonly sdk_platform: "android" | "ios";
   readonly redirector_base_url: string;
   readonly max_postback_base_url: string;
 }> {
   if (!identifierPattern.test(input.appId)) throw new Error("app_id_invalid");
   const now = input.now ?? new Date();
+  const sdkPlatform = input.sdkPlatform ?? "android";
   const inserted = await withTenant(input.pool, input.identity.tenantId, (client) => client.query(
     `INSERT INTO control.apps (tenant_id, app_id, created_at)
      VALUES ($1,$2,$3) ON CONFLICT (tenant_id, app_id) DO NOTHING`,
@@ -67,7 +70,7 @@ export async function registerApp(input: {
     input.pool,
     input.payloadStore,
     { tenantId: input.identity.tenantId, appId: input.appId },
-    [{ keyId: sdkKeyId, secret: sdkKey }],
+    [{ keyId: sdkKeyId, secret: sdkKey, platform: sdkPlatform }],
     now.toISOString(),
   );
   await recordDashboardAudit(input.pool, {
@@ -94,6 +97,7 @@ export async function registerApp(input: {
     app_id: input.appId,
     sdk_key_id: sdkKeyId,
     sdk_key: sdkKey,
+    sdk_platform: sdkPlatform,
     redirector_base_url: input.redirectorBaseUrl,
     max_postback_base_url: `${input.publicBaseUrl}/v1/ingest/max`,
   };

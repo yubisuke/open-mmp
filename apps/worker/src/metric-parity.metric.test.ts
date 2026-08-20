@@ -520,4 +520,73 @@ describe("M1b SQL metric parity", { concurrency: false }, () => {
     assert.equal(total, 3n);
     assert.equal(parts, total);
   });
+
+  it("M4 reproduces qualified Apple aggregate counts and receipt-date buckets", async () => {
+    const appleFixture = "44-apple-aggregate-metrics";
+    const appleDirectory = join(process.cwd(), "fixtures", "v0.3", appleFixture);
+    const appleInput: Any = JSON.parse(readFileSync(join(appleDirectory, "input.json"), "utf8"));
+    const appleGolden: Any[] = JSON.parse(readFileSync(
+      join(appleDirectory, "expected_metric_runs.json"),
+      "utf8",
+    ));
+    await ingestFixture(appleFixture, appleInput, appPool, seedPool);
+    const appleFacts = await withTenant(appPool, appleInput.server_context.tenant_id, async (client) => {
+      const result = await client.query<{
+        event_name: string;
+        signature_verified: boolean;
+        did_win: boolean;
+        source_identifier_present: boolean;
+        conversion_bucket: string | null;
+      }>(
+        `SELECT event_name, signature_verified, did_win, source_identifier_present, conversion_bucket
+         FROM ledger.apple_postback_facts
+         WHERE tenant_id=$1 AND app_id=$2
+         ORDER BY logical_event_id COLLATE "C"`,
+        [appleInput.server_context.tenant_id, appleInput.server_context.app_id],
+      );
+      return result.rows;
+    });
+    assert.equal(appleFacts.length, appleInput.records.length);
+    assert.ok(appleFacts.every((fact) => fact.signature_verified && fact.did_win && fact.source_identifier_present));
+    assert.ok(appleFacts.every((fact) => fact.conversion_bucket !== null));
+    const expected = evaluate(appleInput).metric_runs;
+    const actual = await computeSqlMetricRuns(appPool, appleInput, false);
+    assert.equal(jcs(expected), jcs(appleGolden));
+    assert.equal(jcs(actual), jcs(expected));
+    assert.equal(actual.find((run) => run.metric_name === "skan_attributed_installs")?.value_unscaled, "2");
+    assert.equal(actual.find((run) => run.metric_name === "aak_attributed_installs")?.value_unscaled, "1");
+    assert.equal(actual.find((run) =>
+      run.metric_run_id === "run-44-skan-fine-21:skan_conversion_value_distribution")?.value_unscaled, "1");
+
+    const receiptAuthority = structuredClone(appleInput);
+    receiptAuthority.records.find((record: Any) => record.record_id === "skan-fine-44").occurred_at =
+      "2026-08-19T01:00:00.000Z";
+    await ingestFixture("44-apple-receipt-authority", receiptAuthority, appPool, seedPool);
+    const receiptExpected = evaluate(receiptAuthority).metric_runs;
+    const receiptActual = await computeSqlMetricRuns(appPool, receiptAuthority, false);
+    assert.equal(jcs(receiptActual), jcs(receiptExpected));
+    assert.equal(receiptActual.find((run) => run.metric_name === "skan_attributed_installs")?.value_unscaled, "2");
+
+    for (const mutation of [
+      { name: "signature", apply: (payload: Any) => { payload.signature_verified = false; } },
+      { name: "winner", apply: (payload: Any) => { payload.did_win = false; } },
+      { name: "source", apply: (payload: Any) => { delete payload.source_identifier; } },
+      {
+        name: "conversion",
+        apply: (payload: Any) => {
+          delete payload.conversion_value;
+          delete payload.coarse_conversion_value;
+        },
+      },
+    ]) {
+      const disqualified = structuredClone(appleInput);
+      mutation.apply(disqualified.records.find((record: Any) => record.record_id === "skan-fine-44").payload);
+      await ingestFixture(`44-apple-disqualified-${mutation.name}`, disqualified, appPool, seedPool);
+      const disqualifiedExpected = evaluate(disqualified).metric_runs;
+      const disqualifiedActual = await computeSqlMetricRuns(appPool, disqualified, false);
+      assert.equal(jcs(disqualifiedActual), jcs(disqualifiedExpected));
+      assert.equal(disqualifiedActual.find((run) =>
+        run.metric_name === "skan_attributed_installs")?.value_unscaled, "1");
+    }
+  });
 });

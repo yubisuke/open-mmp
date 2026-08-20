@@ -11,6 +11,7 @@ type Principal = {
   installationIdDigest?: string;
   secretRef: string;
   actorType: "sdk_key" | "sdk_installation";
+  platform: "android" | "ios";
 };
 
 export type SdkAuthConfig = {
@@ -93,9 +94,10 @@ async function resolvePrincipal(
     if (installationKeyId) {
       const result = await client.query<{
         installation_key_id: string; sdk_key_id: string; installation_id_digest: string; secret_ref: string;
+        platform: "android" | "ios" | null;
       }>(
         `SELECT credential.installation_key_id, credential.sdk_key_id,
-                credential.installation_id_digest, credential.secret_ref
+                credential.installation_id_digest, credential.secret_ref, sdk.platform
          FROM control.installation_credentials_current AS credential
          JOIN control.sdk_keys_current AS sdk
            ON sdk.sdk_key_id=credential.sdk_key_id
@@ -112,11 +114,12 @@ async function resolvePrincipal(
         installationKeyId: row.installation_key_id,
         installationIdDigest: row.installation_id_digest,
         secretRef: row.secret_ref, actorType: "sdk_installation" as const,
+        platform: row.platform ?? "android",
         secret: (await payloadStore.read(row.secret_ref)).toString("utf8"),
       };
     }
-    const result = await client.query<{ sdk_key_id: string; secret_ref: string }>(
-      `SELECT sdk_key_id, secret_ref FROM control.sdk_keys_current
+    const result = await client.query<{ sdk_key_id: string; secret_ref: string; platform: "android" | "ios" | null }>(
+      `SELECT sdk_key_id, secret_ref, platform FROM control.sdk_keys_current
        WHERE tenant_id=$1 AND app_id=$2 AND sdk_key_id=$3 AND status='active'`,
       [config.tenantId, config.appId, sdkKeyId],
     );
@@ -125,6 +128,7 @@ async function resolvePrincipal(
     return {
       tenantId: config.tenantId, appId: config.appId, sdkKeyId: row.sdk_key_id,
       secretRef: row.secret_ref, actorType: "sdk_key" as const,
+      platform: row.platform ?? "android",
       secret: (await payloadStore.read(row.secret_ref)).toString("utf8"),
     };
   });
@@ -226,7 +230,7 @@ export async function ensureSdkKeys(
   pool: Pool,
   payloadStore: PayloadStore,
   scope: { tenantId: string; appId: string },
-  keys: readonly { keyId: string; secret: string }[],
+  keys: readonly { keyId: string; secret: string; platform?: "android" | "ios" }[],
   now = new Date().toISOString(),
 ): Promise<void> {
   const unique = [...new Map(keys.map((key) => [key.keyId, key])).values()];
@@ -253,10 +257,11 @@ export async function ensureSdkKeys(
           );
           await client.query(
             `INSERT INTO control.sdk_keys (
-              sdk_key_id, tenant_id, app_id, secret_ref, created_at, artifact
-            ) VALUES ($1,$2,$3,$4,$5,$6::jsonb)`,
-            [key.keyId, scope.tenantId, scope.appId, secretRef, now, JSON.stringify({
-              sdk_key_id: key.keyId, tenant_id: scope.tenantId, app_id: scope.appId, created_at: now,
+              sdk_key_id, tenant_id, app_id, secret_ref, created_at, platform, artifact
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb)`,
+            [key.keyId, scope.tenantId, scope.appId, secretRef, now, key.platform ?? "android", JSON.stringify({
+              sdk_key_id: key.keyId, tenant_id: scope.tenantId, app_id: scope.appId,
+              platform: key.platform ?? "android", created_at: now,
             })],
           );
           await client.query(

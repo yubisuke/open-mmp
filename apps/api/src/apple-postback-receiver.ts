@@ -173,6 +173,10 @@ function normalizedPayload(
   body: JsonObject,
   verification: VerificationResult,
 ): JsonObject {
+  const evidenceBoundary = {
+    apple_signature_status: verification.verified ? "verified" : "unverified",
+    unsigned_observation_fields: Object.keys(verification.unsigned).sort(),
+  };
   if (kind === "skadnetwork") {
     const version = patternedString(body.version, "version", /^(3|4)\.[0-9]+$/, 16);
     const major = Number(version.split(".")[0]);
@@ -185,6 +189,7 @@ function normalizedPayload(
       attribution_signature: requiredString(body["attribution-signature"], "attribution_signature"),
       signature_verified: verification.verified,
       did_win: requiredBoolean(body["did-win"], "did_win"),
+      extensions: evidenceBoundary,
     };
     pickOptional(payload, body, [
       ["source-identifier", "source_identifier", (value, name) => patternedString(value, name, /^[0-9]{2,4}$/)],
@@ -230,6 +235,7 @@ function normalizedPayload(
     impression_type: enumeratedString(claims["impression-type"], "impression_type", ["app-impression"]),
     postback_sequence_index: rangedInteger(claims["postback-sequence-index"], "postback_sequence_index", 0, 2),
     did_win: requiredBoolean(claims["did-win"], "did_win"),
+    extensions: evidenceBoundary,
   };
   if (verification.verified && verification.signingKeyEnvironment) {
     payload.signing_key_environment = verification.signingKeyEnvironment;

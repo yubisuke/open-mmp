@@ -79,6 +79,19 @@ function normalizedRecord(
 ): Any {
   const payload = source.payload;
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) throw new Error("event_payload_invalid");
+  if (payload.adservices_context !== undefined || payload.extensions?.adservices_context !== undefined) {
+    throw new Error("device_adservices_claim_forbidden");
+  }
+  const adServicesToken = payload.extensions?.adservices_attribution_token_protected;
+  if (adServicesToken !== undefined) {
+    if (identity.platform !== "ios" || source.event_name !== "install") {
+      throw new Error("adservices_token_scope_invalid");
+    }
+    if (typeof adServicesToken !== "string" || adServicesToken.length < 1
+      || Buffer.byteLength(adServicesToken, "utf8") > 64 * 1024) {
+      throw new Error("adservices_token_invalid");
+    }
+  }
   if (typeof payload.installation_id === "string"
     && installationIdDigest(config, payload.installation_id) !== identity.installationIdDigest) {
     throw new Error("installation_scope_mismatch");
@@ -96,7 +109,7 @@ function normalizedRecord(
     delivery_id: `delivery:${uuidV7()}`,
     tenant_id: identity.tenantId,
     app_id: identity.appId,
-    producer: "sdk-android",
+    producer: identity.platform === "ios" ? "sdk-ios" : "sdk-android",
     producer_version: source.producer_version,
     ...(source.producer_variant ? { producer_variant: source.producer_variant } : {}),
     ...(source.wrapper_version ? { wrapper_version: source.wrapper_version } : {}),
@@ -179,7 +192,7 @@ export async function handleSdkBatch(
   const ingestBatchId = await appendDurableBatch(dependencies.pool, dependencies.payloadStore, {
     tenantId: identity.tenantId,
     appId: identity.appId,
-    producer: "sdk-android",
+    producer: identity.platform === "ios" ? "sdk-ios" : "sdk-android",
     body: durableBody,
     eventCount: records.length,
     receivedAt,

@@ -506,11 +506,14 @@ export function createRequestHandler(dependencies: RequestHandlerDependencies): 
         if (route.handler === "admin_apps_create") {
           try {
             const body = await jsonBody(request);
+            const sdkPlatform = body.sdk_platform === undefined ? "android" : body.sdk_platform;
+            if (sdkPlatform !== "android" && sdkPlatform !== "ios") throw new Error("sdk_platform_invalid");
             const result = await registerApp({
               pool: dependencies.pool,
               payloadStore: dependencies.payloadStore,
               identity,
               appId: String(body.app_id ?? ""),
+              sdkPlatform,
               publicBaseUrl: dependencies.publicBaseUrl,
               redirectorBaseUrl: dependencies.redirectorBaseUrl,
             });

@@ -66,6 +66,55 @@ CREATE TABLE ephemeral.adservices_lookups (
     REFERENCES ledger.raw_records (tenant_id, app_id, record_id)
 );
 
+-- Apple lookup responses are protected evidence. Parsed campaign values never
+-- become columns; the encrypted response reference remains privacy-purgeable.
+CREATE TABLE ledger.adservices_lookup_results (
+  lookup_result_id uuid PRIMARY KEY,
+  tenant_id control.identifier NOT NULL,
+  app_id control.identifier NOT NULL,
+  install_record_id control.identifier NOT NULL,
+  attribution_id text NOT NULL,
+  status text NOT NULL CHECK (status IN (
+    'attributed', 'not_attributed', 'token_expired', 'lookup_unavailable'
+  )),
+  response_ref text NOT NULL,
+  response_digest text NOT NULL CHECK (response_digest ~ '^[a-f0-9]{64}$'),
+  decided_at control.canonical_timestamp NOT NULL,
+  artifact jsonb NOT NULL,
+  UNIQUE (tenant_id, app_id, install_record_id),
+  FOREIGN KEY (tenant_id, app_id) REFERENCES control.apps (tenant_id, app_id),
+  FOREIGN KEY (tenant_id, app_id, install_record_id)
+    REFERENCES ledger.raw_records (tenant_id, app_id, record_id),
+  FOREIGN KEY (attribution_id) REFERENCES ledger.attribution_results (attribution_id)
+);
+
+-- Apple aggregate metric evaluation reads this non-identifying projection
+-- instead of reopening protected postback payloads. The receipt timestamp is
+-- authoritative for the public aggregate calendar series.
+CREATE TABLE ledger.apple_postback_facts (
+  logical_event_id text PRIMARY KEY,
+  tenant_id control.identifier NOT NULL,
+  app_id control.identifier NOT NULL,
+  event_name text NOT NULL CHECK (event_name IN ('skan_postback', 'adattributionkit_postback')),
+  signature_verified boolean NOT NULL,
+  did_win boolean NOT NULL,
+  source_identifier_present boolean NOT NULL,
+  conversion_bucket text CHECK (
+    conversion_bucket IS NULL
+    OR conversion_bucket ~ '^(fine:([0-9]|[1-5][0-9]|6[0-3])|coarse:(low|medium|high))$'
+  ),
+  received_at control.canonical_timestamp NOT NULL,
+  artifact jsonb NOT NULL,
+  FOREIGN KEY (tenant_id, app_id) REFERENCES control.apps (tenant_id, app_id),
+  FOREIGN KEY (tenant_id, app_id, logical_event_id)
+    REFERENCES ledger.logical_events (tenant_id, app_id, logical_event_id)
+);
+
+CREATE INDEX apple_postback_facts_metric_idx
+  ON ledger.apple_postback_facts (
+    tenant_id, app_id, event_name, received_at, conversion_bucket
+  );
+
 -- Unregistered Apple application identifiers do not have a tenant scope. Keep a
 -- deployment-scoped, digest-only audit trail instead of inventing a tenant or
 -- retaining the raw ADAM ID. The application role can insert but cannot read it.
@@ -101,7 +150,9 @@ BEGIN
     SELECT * FROM (VALUES
       ('control', 'conversion_schemas'),
       ('control', 'conversion_schema_states'),
-      ('ephemeral', 'adservices_lookups')
+      ('ephemeral', 'adservices_lookups'),
+      ('ledger', 'adservices_lookup_results'),
+      ('ledger', 'apple_postback_facts')
     ) AS values_to_secure(table_schema, table_name)
   LOOP
     EXECUTE format('ALTER TABLE %I.%I ENABLE ROW LEVEL SECURITY', item.table_schema, item.table_name);
@@ -115,6 +166,16 @@ BEGIN
   END LOOP;
 END
 $$;
+
+-- list_m4_work_tenants() runs before a tenant GUC exists. FORCE RLS therefore
+-- needs SELECT-only owner policies on its three inputs. openmmp_owner is
+-- NOLOGIN and the SECURITY DEFINER function returns tenant identifiers only.
+CREATE POLICY ingest_batches_m4_discovery_owner
+  ON ledger.ingest_batches FOR SELECT TO openmmp_owner USING (true);
+CREATE POLICY ingest_batch_states_m4_discovery_owner
+  ON ledger.ingest_batch_states FOR SELECT TO openmmp_owner USING (true);
+CREATE POLICY adservices_lookups_m4_discovery_owner
+  ON ephemeral.adservices_lookups FOR SELECT TO openmmp_owner USING (true);
 
 CREATE FUNCTION control.resolve_apple_app_adam_id(_apple_app_adam_id bigint)
 RETURNS TABLE (tenant_id control.identifier, app_id control.identifier)
@@ -140,6 +201,28 @@ AS $$
   ORDER BY registration.tenant_id
 $$;
 
+-- The worker must discover SDK/AdServices work before it has a tenant RLS
+-- context. Return tenant identifiers only; no event or credential data crosses
+-- this narrowly scoped SECURITY DEFINER boundary.
+CREATE FUNCTION control.list_m4_work_tenants()
+RETURNS SETOF control.identifier
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog
+AS $$
+  SELECT registration.tenant_id
+  FROM control.apple_app_registrations AS registration
+  UNION
+  SELECT batch.tenant_id
+  FROM ledger.ingest_batches_current AS batch
+  WHERE batch.status IN ('pending', 'processed')
+  UNION
+  SELECT lookup.tenant_id
+  FROM ephemeral.adservices_lookups AS lookup
+  ORDER BY 1
+$$;
+
 DO $$
 DECLARE
   item record;
@@ -149,7 +232,9 @@ BEGIN
       ('control', 'apple_app_registrations'),
       ('control', 'conversion_schemas'),
       ('control', 'conversion_schema_states'),
-      ('control', 'public_postback_audits')
+      ('control', 'public_postback_audits'),
+      ('ledger', 'adservices_lookup_results'),
+      ('ledger', 'apple_postback_facts')
     ) AS append_only(table_schema, table_name)
   LOOP
     EXECUTE format(
@@ -180,12 +265,17 @@ REVOKE ALL ON
   control.conversion_schemas,
   control.conversion_schema_states,
   control.public_postback_audits,
-  ephemeral.adservices_lookups
+  ephemeral.adservices_lookups,
+  ledger.adservices_lookup_results,
+  ledger.apple_postback_facts
 FROM PUBLIC;
 
 -- Default privileges grant later control tables to the application and reader
 -- roles. This tenant-less audit sink is intentionally write-only to the app.
-REVOKE ALL ON control.public_postback_audits FROM openmmp_app, openmmp_reader;
+REVOKE ALL ON
+  control.public_postback_audits,
+  ledger.adservices_lookup_results
+FROM openmmp_app, openmmp_reader;
 
 GRANT SELECT, INSERT ON
   control.apple_app_registrations,
@@ -195,12 +285,15 @@ TO openmmp_app;
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON ephemeral.adservices_lookups TO openmmp_app;
 GRANT INSERT ON control.public_postback_audits TO openmmp_app;
+GRANT SELECT, INSERT ON ledger.adservices_lookup_results TO openmmp_app;
+GRANT SELECT, INSERT ON ledger.apple_postback_facts TO openmmp_app;
 
 GRANT SELECT ON
   control.apple_app_registrations,
   control.conversion_schemas,
   control.conversion_schema_states,
-  ephemeral.adservices_lookups
+  ephemeral.adservices_lookups,
+  ledger.apple_postback_facts
 TO openmmp_reader;
 
 GRANT USAGE, SELECT ON SEQUENCE control.conversion_schema_states_conversion_schema_state_seq_seq
@@ -212,9 +305,13 @@ REVOKE ALL ON FUNCTION control.resolve_apple_app_adam_id(bigint) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION control.resolve_apple_app_adam_id(bigint) TO openmmp_app;
 REVOKE ALL ON FUNCTION control.list_apple_postback_tenants() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION control.list_apple_postback_tenants() TO openmmp_app;
+REVOKE ALL ON FUNCTION control.list_m4_work_tenants() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION control.list_m4_work_tenants() TO openmmp_app;
 
 GRANT TRUNCATE ON
   control.public_postback_audits,
-  ephemeral.adservices_lookups
+  ephemeral.adservices_lookups,
+  ledger.adservices_lookup_results,
+  ledger.apple_postback_facts
 TO openmmp_seed;
 GRANT USAGE ON SCHEMA control, ephemeral TO openmmp_seed;

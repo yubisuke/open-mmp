@@ -136,6 +136,10 @@ const appEntries: Record<string, string> = {
   OPENMMP_POSTBACK_APP_RATE_RPS: "200",
   OPENMMP_POSTBACK_APP_RATE_BURST: "1000",
   OPENMMP_POSTBACK_INVALID_LEDGER_QUOTA_PER_HOUR: "100",
+  OPENMMP_ADSERVICES_LOOKUP: "on",
+  OPENMMP_ADSERVICES_ENDPOINT: "https://api-adservices.apple.com/api/v1/",
+  OPENMMP_ADSERVICES_LOOKUP_RATE_RPS: "10",
+  OPENMMP_ADSERVICES_LOOKUP_RATE_BURST: "50",
 };
 const seedEntries: Record<string, string> = {
   OPENMMP_APP_DATABASE_URL: appDatabaseUrl,
