@@ -5,6 +5,75 @@ import { recordDashboardAudit } from "./session.js";
 
 type Any = Record<string, any>;
 
+export type TrackingLinkRecord = {
+  readonly tracking_link_id: string;
+  readonly slug: string;
+  readonly destination_kind: "play_store" | "custom_https";
+  readonly destination_url: string;
+  readonly play_package_name?: string;
+  readonly network?: string;
+  readonly site_id?: string;
+  readonly campaign_id?: string;
+  readonly ad_group_id?: string;
+  readonly creative_id?: string;
+  readonly created_at: string;
+  readonly status: "active" | "paused" | "archived";
+};
+
+export async function listTrackingLinks(
+  pool: Pool,
+  tenantId: string,
+  appId: string,
+): Promise<readonly TrackingLinkRecord[]> {
+  const result = await withTenant(pool, tenantId, (client) => client.query<{
+    tracking_link_id: string;
+    slug: string;
+    destination_kind: "play_store" | "custom_https";
+    destination_url: string;
+    play_package_name: string | null;
+    network: string | null;
+    site_id: string | null;
+    campaign_id: string | null;
+    ad_group_id: string | null;
+    creative_id: string | null;
+    created_at: string;
+    status: "active" | "paused" | "archived";
+  }>(
+    `SELECT link.tracking_link_id, link.slug, link.destination_kind,
+            link.destination_url, link.play_package_name, link.network,
+            link.site_id, link.campaign_id, link.ad_group_id, link.creative_id,
+            link.created_at, state.status
+       FROM control.tracking_links AS link
+       JOIN LATERAL (
+         SELECT candidate.status
+           FROM control.tracking_link_states AS candidate
+          WHERE candidate.tenant_id=link.tenant_id
+            AND candidate.app_id=link.app_id
+            AND candidate.tracking_link_id=link.tracking_link_id
+          ORDER BY candidate.tracking_link_state_seq DESC
+          LIMIT 1
+       ) AS state ON true
+      WHERE link.tenant_id=$1 AND link.app_id=$2
+      ORDER BY link.created_at DESC, link.tracking_link_id COLLATE "C"
+      LIMIT 200`,
+    [tenantId, appId],
+  ));
+  return result.rows.map((row) => ({
+    tracking_link_id: row.tracking_link_id,
+    slug: row.slug,
+    destination_kind: row.destination_kind,
+    destination_url: row.destination_url,
+    ...(row.play_package_name ? { play_package_name: row.play_package_name } : {}),
+    ...(row.network ? { network: row.network } : {}),
+    ...(row.site_id ? { site_id: row.site_id } : {}),
+    ...(row.campaign_id ? { campaign_id: row.campaign_id } : {}),
+    ...(row.ad_group_id ? { ad_group_id: row.ad_group_id } : {}),
+    ...(row.creative_id ? { creative_id: row.creative_id } : {}),
+    created_at: row.created_at,
+    status: row.status,
+  }));
+}
+
 export async function createTrackingLink(input: {
   pool: Pool;
   tenantId: string;

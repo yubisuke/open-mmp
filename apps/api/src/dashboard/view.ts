@@ -16,6 +16,16 @@ export type DashboardChart = {
   readonly series: readonly (number | undefined)[];
 };
 
+export type DashboardTrackingLink = {
+  readonly tracking_link_id: string;
+  readonly measurement_url: string;
+  readonly destination_url: string;
+  readonly network?: string;
+  readonly campaign_id?: string;
+  readonly status: "active" | "paused" | "archived";
+  readonly created_at: string;
+};
+
 export type DashboardView = {
   readonly apps: readonly DashboardApp[];
   readonly selectedAppId?: string;
@@ -25,6 +35,7 @@ export type DashboardView = {
   readonly differences: readonly Record<string, unknown>[];
   readonly undefinedCount: number;
   readonly charts: readonly DashboardChart[];
+  readonly trackingLinks: readonly DashboardTrackingLink[];
   readonly csrfToken: string;
   readonly nextCursor?: string;
   readonly metadata: {
@@ -55,6 +66,7 @@ export function buildDashboardView(input: {
   readonly metrics?: MetricReportPage;
   readonly records?: readonly RecordCountRow[];
   readonly differences?: DifferenceAuditPage;
+  readonly trackingLinks?: readonly DashboardTrackingLink[];
   readonly csrfToken: string;
 }): DashboardView {
   const rows = [...(input.metrics?.data ?? [])].sort(compare);
@@ -75,6 +87,9 @@ export function buildDashboardView(input: {
     differences: input.differences?.data ?? [],
     undefinedCount: rows.filter((row) => row.value_state === "undefined").length,
     charts: [...byMetric].map(([metric_name, series]) => ({ metric_name, series })),
+    trackingLinks: [...(input.trackingLinks ?? [])].sort((left, right) =>
+      right.created_at.localeCompare(left.created_at, "en")
+      || left.tracking_link_id.localeCompare(right.tracking_link_id, "en")),
     csrfToken: input.csrfToken,
     ...(input.metrics?.next_cursor ? { nextCursor: input.metrics.next_cursor } : {}),
     metadata: {

@@ -58,6 +58,14 @@ describe("M3 zero-JavaScript dashboard", () => {
       apps: [{ app_id: "app-one", created_at: "2026-08-20T00:00:00.000Z" }],
       selectedAppId: "app-one",
       metrics: { data: [metric()] },
+      trackingLinks: [{
+        tracking_link_id: "tracking-link:one",
+        measurement_url: "https://measure.example/r/synthetic",
+        destination_url: "https://destination.example/?value=<unsafe>",
+        campaign_id: "campaign-one",
+        status: "active",
+        created_at: "2026-08-20T00:00:00.000Z",
+      }],
       csrfToken: "synthetic-csrf",
     });
     const html = renderDashboard(view);
@@ -66,6 +74,10 @@ describe("M3 zero-JavaScript dashboard", () => {
     assert.equal(/\son[a-z]+\s*=/i.test(html), false);
     assert.ok(html.indexOf("<h1") < html.indexOf("<h2"));
     assert.ok(html.indexOf("<h2") < html.indexOf("<table"));
+    assert.match(html, /Measurement links/);
+    assert.match(html, /https:\/\/measure\.example\/r\/synthetic/);
+    assert.equal(html.includes("<unsafe>"), false);
+    assert.match(html, /&lt;unsafe&gt;/);
     assert.equal(
       dashboardHeaders["content-security-policy"],
       "default-src 'none'; style-src 'self'; img-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",

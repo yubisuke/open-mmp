@@ -11,6 +11,7 @@ export type RouteHandler =
   | "device_privacy"
   | "admin_apps_list"
   | "admin_apps_create"
+  | "admin_tracking_links_list"
   | "admin_tracking_links"
   | "admin_privacy"
   | "dashboard_root"
@@ -20,6 +21,7 @@ export type RouteHandler =
   | "dashboard_app"
   | "dashboard_export"
   | "dashboard_differences"
+  | "dashboard_tracking_links_list"
   | "dashboard_tracking_links_create"
   | "dashboard_apps_create";
 
@@ -42,6 +44,7 @@ export const routes: readonly RouteDefinition[] = [
   { handler: "device_privacy", method: "POST", pattern: /^\/v1\/privacy\/on-device$/, auth: "sdk_hmac", mutates: true },
   { handler: "admin_apps_list", method: "GET", pattern: /^\/v1\/admin\/apps$/, auth: "admin_bearer", mutates: false },
   { handler: "admin_apps_create", method: "POST", pattern: /^\/v1\/admin\/apps$/, auth: "admin_bearer", mutates: true },
+  { handler: "admin_tracking_links_list", method: "GET", pattern: /^\/v1\/admin\/tracking-links$/, auth: "admin_bearer", mutates: false },
   { handler: "admin_tracking_links", method: "POST", pattern: /^\/v1\/admin\/tracking-links$/, auth: "admin_bearer", mutates: true },
   { handler: "admin_privacy", method: "POST", pattern: /^\/v1\/admin\/privacy-requests$/, auth: "admin_bearer", mutates: true },
   { handler: "dashboard_root", method: "GET", pattern: /^\/dashboard\/?$/, auth: "public", mutates: false },
@@ -50,6 +53,7 @@ export const routes: readonly RouteDefinition[] = [
   { handler: "dashboard_logout", method: "POST", pattern: /^\/dashboard\/session\/delete$/, auth: "dashboard_session", mutates: true },
   { handler: "dashboard_export", method: "GET", pattern: /^\/dashboard\/apps\/[^/]+\/cohorts\.csv$/, auth: "dashboard_session", mutates: false },
   { handler: "dashboard_differences", method: "GET", pattern: /^\/dashboard\/apps\/[^/]+\/differences$/, auth: "dashboard_session", mutates: false },
+  { handler: "dashboard_tracking_links_list", method: "GET", pattern: /^\/dashboard\/apps\/[^/]+\/tracking-links$/, auth: "dashboard_session", mutates: false },
   { handler: "dashboard_tracking_links_create", method: "POST", pattern: /^\/dashboard\/apps\/[^/]+\/tracking-links$/, auth: "dashboard_session", mutates: true },
   { handler: "dashboard_app", method: "GET", pattern: /^\/dashboard\/apps\/[^/]+$/, auth: "dashboard_session", mutates: false },
   { handler: "dashboard_apps_create", method: "POST", pattern: /^\/dashboard\/apps$/, auth: "dashboard_session", mutates: true },
