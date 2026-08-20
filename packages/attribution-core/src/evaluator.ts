@@ -84,7 +84,7 @@ function attempts(input: Any): Attempt[] {
       batch.records.map((record: Any) => ({ server: batch.server_context, record, batch_id: batch.batch_id })),
     );
   }
-  return input.records.map((record: Any) => ({ server: input.server_context, record, batch_id: "batch-default" }));
+  return (input.records ?? []).map((record: Any) => ({ server: input.server_context, record, batch_id: "batch-default" }));
 }
 
 function assertImportProviderContexts(all: Attempt[]): void {
@@ -367,6 +367,25 @@ function timestampInvalidDecision(attempt: Attempt): Any {
     consent_decision_reason_code: consentReason,
     ...(withdrawal?.withdrawal_recognized_at ? { withdrawal_recognized_at: withdrawal.withdrawal_recognized_at } : {}),
     reason_code: "timestamp_invalid",
+  };
+}
+
+function preIngestionDecision(item: Any): Any {
+  return {
+    record_id: item.record_id,
+    delivery_id: item.delivery_id,
+    tenant_id: item.tenant_id,
+    app_id: item.app_id,
+    received_at: item.received_at,
+    ingestion_status: "rejected",
+    duplicate_resolution: "unique",
+    timeliness: "on_time",
+    clock_skew_suspected: false,
+    payload_disposition: "discarded",
+    reason_code: item.reason_code,
+    processing_purpose_id: item.processing_purpose_id,
+    consent_evaluation_policy_version: item.consent_evaluation_policy_version,
+    consent_decision_reason_code: item.consent_decision_reason_code,
   };
 }
 
@@ -1184,6 +1203,7 @@ export function evaluate(
     }
   });
   const decisions = new Map(all.map((attempt, index) => [attemptDecisionKey(attempt), decisionsList[index]]));
+  const preIngestionDecisions = (input.pre_ingestion_rejections ?? []).map(preIngestionDecision);
   assertInstallationAnchors(all, decisions);
   const lifecycle = privacyIndex(input);
   const acceptedUnique = all.filter((attempt) => {
@@ -1195,7 +1215,7 @@ export function evaluate(
   const logicalEvidence = acceptedUnique.filter((attempt) => !lifecycle.has(attemptEvidenceKey(attempt)));
   const raw_records = sortByKey(rawEvidence.map((attempt) => makeRawRecord(attempt, "available")),
     (record) => [record.record_id, record.tenant_id, record.app_id, record.delivery_id]);
-  const deliveries = sortByKey(all.map((attempt): Delivery => {
+  const deliveries = sortByKey([...all.map((attempt): Delivery => {
     const decision = decisionFor(decisions, attempt);
     return {
       contract_version: CONTRACT_VERSION,
@@ -1225,7 +1245,23 @@ export function evaluate(
         staleness_authority: decision.staleness_authority,
       } : {}),
     };
-  }), (delivery) => [delivery.delivery_id, delivery.record_id, delivery.tenant_id, delivery.app_id]);
+  }), ...preIngestionDecisions.map((decision: Any): Delivery => ({
+    contract_version: CONTRACT_VERSION,
+    delivery_id: decision.delivery_id,
+    record_id: decision.record_id,
+    tenant_id: decision.tenant_id,
+    app_id: decision.app_id,
+    received_at: decision.received_at,
+    ingestion_status: decision.ingestion_status,
+    duplicate_resolution: decision.duplicate_resolution,
+    timeliness: decision.timeliness,
+    clock_skew_suspected: decision.clock_skew_suspected,
+    payload_disposition: decision.payload_disposition,
+    ...(decision.processing_purpose_id ? { processing_purpose_id: decision.processing_purpose_id } : {}),
+    consent_evaluation_policy_version: decision.consent_evaluation_policy_version,
+    consent_decision_reason_code: decision.consent_decision_reason_code,
+    reason_code: decision.reason_code,
+  }))], (delivery) => [delivery.delivery_id, delivery.record_id, delivery.tenant_id, delivery.app_id]);
   const logical_events = sortByKey(logicalEvidence.map((attempt): LogicalEvent => ({
     contract_version: CONTRACT_VERSION,
     logical_event_id: `logical:${attempt.server.tenant_id}:${attempt.server.app_id}:${attempt.record.producer}:${attempt.record.event_id}`,
@@ -1381,7 +1417,7 @@ export function evaluate(
   });
   const fraud_decisions = sortByKey([...transportFraud, ...clickInjectionFraud],
     (decision) => [decision.fraud_decision_id]);
-  const rejections = sortByKey(decisionsList
+  const rejections = sortByKey([...decisionsList, ...preIngestionDecisions]
     .filter((decision) => decision.ingestion_status === "rejected")
     .map((decision): Rejection => ({
       contract_version: CONTRACT_VERSION,

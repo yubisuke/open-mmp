@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import { basename, join, relative } from "node:path";
 import { describe, it } from "node:test";
+import { validateEventPayload } from "@open-mmp/contracts";
 import { Ajv2020Module, addFormatsModule, canonicalize } from "@open-mmp/contracts/validation-tooling";
 import { evaluate, sha256, TimestampInvalidError } from "@open-mmp/attribution-core";
 
@@ -235,7 +236,7 @@ function fixtureAttempts(input: Any): Any[] {
       batch.records.map((record: Any) => ({ server: batch.server_context, record })),
     );
   }
-  return input.records.map((record: Any) => ({ server: input.server_context, record }));
+  return (input.records ?? []).map((record: Any) => ({ server: input.server_context, record }));
 }
 
 function reorderedInput(input: Any): Any {
@@ -547,10 +548,8 @@ if (!summaryOnly) {
           const record = attempt.record;
           check(eventNames.includes(record.event_name), `unknown fixture event_name: ${state.name}`);
           check(producerAllowed(record.producer), `unknown fixture producer: ${state.name}`);
-          const eventId = `urn:open-mmp:schema:event-${record.event_name.replaceAll("_", "-")}:v0.3`;
-          const validator = validatorFor(eventId);
-          const event = { ...record.payload, event_name: record.event_name };
-          check(validator(event), `event schema failure: ${state.name}/${record.record_id}: ${ajv.errorsText(validator.errors)}`);
+          const validation = validateEventPayload(record.event_name, record.payload);
+          check(validation.valid, `event schema failure: ${state.name}/${record.record_id}: ${validation.fields.join(",")}`);
         }
         for (const item of input.reconciliation_inputs ?? []) {
           item.matching_keys.forEach((entry: Any) => validateMatchingKey(entry, state.name));
@@ -559,8 +558,8 @@ if (!summaryOnly) {
         }
       });
     }
-    it("contains 46 fixture directories", () => {
-      check(fixtureDirs.length === 46, `expected 46 fixture directories, found ${fixtureDirs.length}`);
+    it("contains 47 fixture directories", () => {
+      check(fixtureDirs.length === 47, `expected 47 fixture directories, found ${fixtureDirs.length}`);
     });
   });
 
@@ -885,12 +884,18 @@ const scenarios: Array<[string, () => void]> = [
     check(verdicts["app-attest-unavailable-46"].provider === "app_attest" && verdicts["app-attest-unavailable-46"].verdict === "unavailable" && verdicts["app-attest-unavailable-46"].evidence_ref === undefined, "scenario 46 unavailable App Attest evidence");
     check(value.output.attributions.map((item: Any) => item.reason_code).sort().join("|") === "install_referrer_unavailable|no_referrer|platform_referrer_not_available", "scenario 46 integrity does not determine attribution");
   }],
+  ["47 payload schema rejection", () => {
+    const value = fixture("47-payload-schema-invalid").output;
+    check(value.raw_records.length === 0 && value.logical_events.length === 0, "scenario 47 rejected payload entered evidence");
+    check(value.deliveries.length === 1 && value.deliveries[0].reason_code === "payload_schema_invalid" && value.deliveries[0].payload_disposition === "discarded", "scenario 47 delivery disposition");
+    check(value.rejections.length === 1 && value.rejections[0].retained === "non_identifying_metadata", "scenario 47 rejection retention");
+  }],
 ];
 if (!summaryOnly) {
   describe("reviewed scenarios", () => {
     for (const [name, assertion] of scenarios) it(name, assertion);
-    it("contains 46 scenario assertions", () => {
-      check(scenarios.length === 46, "scenario assertion inventory must contain 46 entries");
+    it("contains 47 scenario assertions", () => {
+      check(scenarios.length === 47, "scenario assertion inventory must contain 47 entries");
     });
   });
 
@@ -1451,7 +1456,7 @@ const acceptance: Array<[string, () => void]> = [
     check(corrections.some((item: Any) => item.correction_type === "retraction"), "AC15 retraction");
     check(fixture("17-redaction-recalculation").output.metric_runs.some((item: Any) => item.supersedes_metric_run_id), "AC15 redaction");
   }],
-  ["AC16 clock referrer prefetch and withdrawal fixtures pass", () => check(scenarios.length === 46 && fixture("11-clock-skew").output.deliveries.some((item: Any) => item.clock_skew_suspected) && fixture("13-referrer-unsupported").output.attributions.length === 2 && fixture("19-bot-prefetch").output.fraud_decisions.length === 1 && fixture("41-click-injection-suspected").output.fraud_decisions.length === 1 && fixture("20-timestamp-invalid").output.rejections.some((item: Any) => item.reason_code === "timestamp_invalid"), "AC16")],
+  ["AC16 clock referrer prefetch and withdrawal fixtures pass", () => check(scenarios.length === 47 && fixture("11-clock-skew").output.deliveries.some((item: Any) => item.clock_skew_suspected) && fixture("13-referrer-unsupported").output.attributions.length === 2 && fixture("19-bot-prefetch").output.fraud_decisions.length === 1 && fixture("41-click-injection-suspected").output.fraud_decisions.length === 1 && fixture("20-timestamp-invalid").output.rejections.some((item: Any) => item.reason_code === "timestamp_invalid"), "AC16")],
   ["AC17 server-recognized withdrawal rejects and redacts payload", () => {
     for (const name of ["14-withdrawal-after-occurrence", "15-event-after-withdrawal"]) {
       const value = fixture(name).output;
@@ -1491,7 +1496,7 @@ const acceptance: Array<[string, () => void]> = [
     for (const forbidden of ["threshold", "model_weight", "watchlist", "ip_address", "user_agent", "response_timing"]) check(!schemaText.includes(forbidden), `AC20 ${forbidden}`);
     check(specText.includes("remain private"), "AC20 private boundary");
   }],
-  ["AC21 one command validates every schema registry fixture and golden", () => check(schemaPaths.length === 27 && Object.keys(registries).length === 8 && fixtureDirs.length === 46 && outputArtifactCount === 46 * 13, "AC21")],
+  ["AC21 one command validates every schema registry fixture and golden", () => check(schemaPaths.length === 27 && Object.keys(registries).length === 8 && fixtureDirs.length === 47 && outputArtifactCount === 47 * 13, "AC21")],
   ["AC22 repeated and independent evaluators produce identical JCS", () => {
     for (const { output, python } of results.values()) check(equal(output, python), "AC22 evaluator mismatch");
     const vector = { numbers: [333333333.33333329, 1e30, 4.50, 2e-3, 1e-27, -0], string: "€$\u000f\nA'B\"\\\"/" };

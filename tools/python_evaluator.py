@@ -109,7 +109,7 @@ def flatten_attempts(value: dict[str, Any]) -> list[dict[str, Any]]:
             for record in batch["records"]:
                 result.append({"server": batch["server_context"], "record": record, "batch_id": batch["batch_id"]})
     else:
-        for record in value["records"]:
+        for record in value.get("records", []):
             result.append({"server": value["server_context"], "record": record, "batch_id": "batch-default"})
     return sorted(result, key=lambda item: (
         utf16_key(item["record"]["received_at"]), utf16_key(item["record"]["record_id"]),
@@ -334,6 +334,25 @@ def timestamp_invalid_decision(attempt: dict[str, Any]) -> dict[str, Any]:
     if withdrawal and withdrawal.get("withdrawal_recognized_at"):
         result["withdrawal_recognized_at"] = withdrawal["withdrawal_recognized_at"]
     return result
+
+
+def pre_ingestion_decision(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "record_id": item["record_id"],
+        "delivery_id": item["delivery_id"],
+        "tenant_id": item["tenant_id"],
+        "app_id": item["app_id"],
+        "received_at": item["received_at"],
+        "ingestion_status": "rejected",
+        "duplicate_resolution": "unique",
+        "timeliness": "on_time",
+        "clock_skew_suspected": False,
+        "payload_disposition": "discarded",
+        "reason_code": item["reason_code"],
+        "processing_purpose_id": item.get("processing_purpose_id"),
+        "consent_evaluation_policy_version": item["consent_evaluation_policy_version"],
+        "consent_decision_reason_code": item["consent_decision_reason_code"],
+    }
 
 
 def decide(attempt: dict[str, Any], attempts: list[dict[str, Any]]) -> dict[str, Any]:
@@ -1216,6 +1235,7 @@ def evaluate(value: dict[str, Any]) -> dict[str, Any]:
         except TimestampInvalidError:
             decisions_list.append(timestamp_invalid_decision(attempt))
     decisions = {attempt_decision_key(attempt): decision for attempt, decision in zip(attempts, decisions_list)}
+    pre_ingestion_decisions = [pre_ingestion_decision(item) for item in value.get("pre_ingestion_rejections", [])]
     assert_installation_anchors(attempts, decisions)
     lifecycle = lifecycle_index(value)
     accepted = [
@@ -1259,6 +1279,27 @@ def evaluate(value: dict[str, Any]) -> dict[str, Any]:
             if decision_for(decisions, attempt).get(key) is not None
         }
         for attempt in attempts
+    ], delivery_sort_key)
+    deliveries = sort_by_key(deliveries + [
+        {
+            "contract_version": CONTRACT_VERSION,
+            "delivery_id": decision["delivery_id"],
+            "record_id": decision["record_id"],
+            "tenant_id": decision["tenant_id"],
+            "app_id": decision["app_id"],
+            "received_at": decision["received_at"],
+            "ingestion_status": decision["ingestion_status"],
+            "duplicate_resolution": decision["duplicate_resolution"],
+            "timeliness": decision["timeliness"],
+            "clock_skew_suspected": decision["clock_skew_suspected"],
+            "payload_disposition": decision["payload_disposition"],
+            **({"processing_purpose_id": decision["processing_purpose_id"]}
+               if decision.get("processing_purpose_id") else {}),
+            "consent_evaluation_policy_version": decision["consent_evaluation_policy_version"],
+            "consent_decision_reason_code": decision["consent_decision_reason_code"],
+            "reason_code": decision["reason_code"],
+        }
+        for decision in pre_ingestion_decisions
     ], delivery_sort_key)
     logical = sort_by_key([
         {
@@ -1432,7 +1473,7 @@ def evaluate(value: dict[str, Any]) -> dict[str, Any]:
             )
             if decision.get(key) is not None
         }
-        for decision in decisions_list if decision["ingestion_status"] == "rejected"
+        for decision in decisions_list + pre_ingestion_decisions if decision["ingestion_status"] == "rejected"
     ], rejection_sort_key)
     return {
         "raw_records": raw,

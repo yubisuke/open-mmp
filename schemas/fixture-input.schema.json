@@ -111,6 +111,11 @@
       "type": "array",
       "items": { "$ref": "urn:open-mmp:schema:correction:v0.3" }
     },
+    "pre_ingestion_rejections": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/preIngestionRejection" }
+    },
     "retention_expirations": {
       "type": "array",
       "items": { "$ref": "#/$defs/retentionExpiration" }
@@ -132,6 +137,17 @@
         "anyOf": [
           { "properties": { "server_context": {} }, "required": ["server_context"] },
           { "properties": { "records": {} }, "required": ["records"] }
+        ]
+      }
+    },
+    {
+      "properties": { "pre_ingestion_rejections": {} },
+      "required": ["pre_ingestion_rejections"],
+      "not": {
+        "anyOf": [
+          { "properties": { "server_context": {} }, "required": ["server_context"] },
+          { "properties": { "records": {} }, "required": ["records"] },
+          { "properties": { "batches": {} }, "required": ["batches"] }
         ]
       }
     }
@@ -299,6 +315,25 @@
         "expired_at": { "$ref": "common.schema.json#/$defs/dateTime" },
         "policy_version": { "type": "string", "minLength": 1 },
         "lifecycle_status": { "const": "purged" }
+      }
+    },
+    "preIngestionRejection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "delivery_id", "record_id", "tenant_id", "app_id", "received_at",
+        "reason_code", "consent_evaluation_policy_version", "consent_decision_reason_code"
+      ],
+      "properties": {
+        "delivery_id": { "$ref": "common.schema.json#/$defs/id" },
+        "record_id": { "$ref": "common.schema.json#/$defs/id" },
+        "tenant_id": { "$ref": "common.schema.json#/$defs/id" },
+        "app_id": { "$ref": "common.schema.json#/$defs/id" },
+        "received_at": { "$ref": "common.schema.json#/$defs/dateTime" },
+        "reason_code": { "const": "payload_schema_invalid" },
+        "processing_purpose_id": { "$ref": "common.schema.json#/$defs/processingPurposeId" },
+        "consent_evaluation_policy_version": { "type": "string", "minLength": 1 },
+        "consent_decision_reason_code": { "enum": ["consent_not_required", "consent_valid_before_withdrawal", "documented_alternative_legal_basis", "consent_withdrawn"] }
       }
     },
     "matchingKey": {

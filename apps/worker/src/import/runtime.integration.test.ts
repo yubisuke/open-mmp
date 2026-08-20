@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,6 +7,7 @@ import { after, before, describe, it } from "node:test";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createServer } from "node:http";
 import { createAppPool, createMigrationPool, EncryptedFilePayloadStore, withTenant } from "@open-mmp/runtime";
+import { sha256 } from "@open-mmp/attribution-core";
 import { runMmpImport } from "./runner.js";
 import { persistCostImport } from "./cost.js";
 import { expectedMaxTokenAll, receiveMax, type MaxReceiverConfig } from "../../../api/src/max-receiver.js";
@@ -90,6 +92,40 @@ describe("M1a import integration", () => {
     const afterCount = await ownerPool.query("SELECT count(*)::int AS count FROM control.import_runs");
     assert.equal(afterCount.rows[0].count, beforeCount.rows[0].count);
   });
+
+  it("WO11 rolls back raw, delivery, logical event, and facts as one record unit", async () => {
+    const row = { ...JSON.parse(source)[0], event_id: "synthetic-atomic-event-11", click_id: "synthetic-click-atomicity" };
+    const text = JSON.stringify([row]);
+    const file = join(temporary, "atomic-projection.json");
+    writeFileSync(file, text);
+    const digest = createHash("sha256").update(text).digest("hex");
+    const recordId = `record:${sha256(["synthetic-provider-clicks", digest, 0]).slice(0, 48)}`;
+    await ownerPool.query(`CREATE OR REPLACE FUNCTION testing.reject_synthetic_click() RETURNS trigger
+      LANGUAGE plpgsql AS $$ BEGIN
+        IF NEW.click_id = 'synthetic-click-atomicity' THEN RAISE EXCEPTION 'synthetic projection fault'; END IF;
+        RETURN NEW;
+      END $$`);
+    await ownerPool.query(`CREATE TRIGGER reject_synthetic_click BEFORE INSERT ON ledger.click_facts
+      FOR EACH ROW EXECUTE FUNCTION testing.reject_synthetic_click()`);
+    try {
+      await assert.rejects(
+        runMmpImport({ pool: appPool, mappingPath, filePath: file, now: new Date("2026-08-20T09:00:00.000Z") }),
+        /synthetic projection fault/,
+      );
+      await withTenant(appPool, "tenant-local", async (client) => {
+        const counts = await client.query(`SELECT
+          (SELECT count(*) FROM ledger.raw_records WHERE event_id='synthetic-atomic-event-11')::int AS raw,
+          (SELECT count(*) FROM ledger.logical_events WHERE event_id='synthetic-atomic-event-11')::int AS logical,
+          (SELECT count(*) FROM ledger.click_facts WHERE click_id='synthetic-click-atomicity')::int AS facts,
+          (SELECT count(*) FROM ledger.event_deliveries WHERE record_id=$1)::int AS deliveries,
+          (SELECT count(*) FROM control.import_runs WHERE source_snapshot_digest=$2 AND status='failed')::int AS failed_runs`, [recordId, digest]);
+        assert.deepEqual(counts.rows[0], { raw: 0, logical: 0, facts: 0, deliveries: 0, failed_runs: 1 });
+      });
+    } finally {
+      await ownerPool.query("DROP TRIGGER IF EXISTS reject_synthetic_click ON ledger.click_facts");
+      await ownerPool.query("DROP FUNCTION IF EXISTS testing.reject_synthetic_click()");
+    }
+  });
 });
 
 describe("MAX receiver integration", () => {
@@ -117,6 +153,41 @@ describe("MAX receiver integration", () => {
     await withTenant(appPool, "tenant-local", async (client) => {
       const all = await client.query("SELECT duplicate_resolution, count(*)::int AS count FROM ledger.event_deliveries GROUP BY 1 ORDER BY 1");
       assert.ok(all.rows.some((row) => row.duplicate_resolution === "duplicate_delivery"));
+    });
+  });
+
+  it("WO11 rejects an invalid inbox payload, completes the run, and stays idempotent", async () => {
+    const eventId = "abcdef0123456789abcdef0123456789abcdef11";
+    const parameters = new URLSearchParams({
+      event_id: eventId, revenue: "0.123456", ts: "1787097600",
+      ad_unit_id: "synthetic-unit", network: "synthetic-network", cc: "USA",
+    });
+    parameters.set("event_token_all", expectedMaxTokenAll(parameters, config.eventKey));
+    const response = responseCapture();
+    await receiveMax({ url: `/v1/ingest/max/synthetic-path?${parameters}` } as IncomingMessage, response.value, { pool: appPool, payloadStore, config });
+    assert.equal(response.status(), 204);
+    const inbox = await withTenant(appPool, "tenant-local", async (client) =>
+      (await client.query<{ inbox_id: string; raw_query_ref: string; raw_query_digest: string }>(
+        "SELECT inbox_id::text, raw_query_ref, raw_query_digest FROM ledger.ingest_inbox WHERE event_id=$1",
+        [eventId],
+      )).rows[0]);
+    assert.equal(await processMaxInbox(appPool, payloadStore, "tenant-local"), 1);
+    assert.equal(await processMaxInbox(appPool, payloadStore, "tenant-local"), 0);
+    await assert.rejects(payloadStore.read(inbox.raw_query_ref));
+    await withTenant(appPool, "tenant-local", async (client) => {
+      const result = await client.query(`SELECT
+        (SELECT count(*) FROM ledger.rejections WHERE record_id=$1 AND reason_code='payload_schema_invalid')::int AS rejections,
+        (SELECT count(*) FROM ledger.event_deliveries WHERE record_id=$1 AND ingestion_status='rejected' AND payload_disposition='discarded')::int AS deliveries,
+        (SELECT count(*) FROM ledger.raw_records WHERE record_id=$1)::int AS raw,
+        (SELECT count(*) FROM ledger.logical_events WHERE record_id=$1)::int AS logical,
+        (SELECT count(*) FROM control.import_runs WHERE source_snapshot_digest=$2 AND status='completed')::int AS completed_runs,
+        (SELECT count(*) FROM control.import_attempts a JOIN control.import_runs r USING (import_run_id) WHERE r.source_snapshot_digest=$2)::int AS attempts,
+        (SELECT count(*) FROM control.import_row_rejections x JOIN control.import_runs r USING (import_run_id) WHERE r.source_snapshot_digest=$2 AND x.reason_code='row_schema_invalid')::int AS row_rejections`,
+      [`record:max:${inbox.inbox_id}`, inbox.raw_query_digest]);
+      assert.deepEqual(result.rows[0], {
+        rejections: 1, deliveries: 1, raw: 0, logical: 0,
+        completed_runs: 1, attempts: 0, row_rejections: 1,
+      });
     });
   });
 

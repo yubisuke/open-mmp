@@ -33,6 +33,7 @@ export type OpenMMPEventDeliveryV03 = {
     | "aggregate_installation_join_forbidden"
     | "event_id_conflict"
     | "record_id_collision"
+    | "payload_schema_invalid"
     | "timestamp_invalid"
     | "timestamp_stale";
   processing_purpose_id?: "attribution" | "fraud_prevention" | "analytics" | "revenue_measurement";
@@ -265,6 +266,7 @@ export type OpenMMPRejectionV03 = {
     | "aggregate_installation_join_forbidden"
     | "event_id_conflict"
     | "record_id_collision"
+    | "payload_schema_invalid"
     | "timestamp_invalid"
     | "timestamp_stale";
   reason_code_version: "0.3.0";

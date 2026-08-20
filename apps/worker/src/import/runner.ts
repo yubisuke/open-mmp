@@ -146,27 +146,44 @@ export async function runMmpImport(options: {
     return { status: "skipped", import_run_id: runId, rows: loaded.rows.length, accepted: 0, rejected: 0, deliveries: 0, logical_events: 0 };
   }
 
-  const attempts: CandidateAttempt[] = [];
+  const attemptRows: Array<{ ordinal: number; attempt: CandidateAttempt }> = [];
   const failures: Array<{ ordinal: number; reason: string; fields: string[] }> = [];
   for (const [ordinal, row] of loaded.rows.entries()) {
     if (!rowMatches(mapping, row)) continue;
     try {
-      attempts.push(toAttempt(mapping, mapRow(mapping, row), fileDigest, ordinal, now));
+      attemptRows.push({ ordinal, attempt: toAttempt(mapping, mapRow(mapping, row), fileDigest, ordinal, now) });
     } catch (error) {
       const mappingError = error instanceof MappingError ? error : new MappingError("row mapping failed");
       failures.push({ ordinal, reason: mappingError.message.includes("timestamp") ? "timestamp_invalid" : "mapping_validation_failed", fields: mappingError.fields });
     }
   }
-  const history = await historicalAttempts(options.pool, mapping);
-  const output = await ingestRuntimeBatch(attempts, options.pool, history);
   await withTenant(options.pool, mapping.tenant_id, async (client) => {
     await client.query(
       `INSERT INTO control.import_runs (
         import_run_id, tenant_id, app_id, source_id, source_snapshot_digest,
         status, started_at, completed_at
-      ) VALUES ($1,$2,$3,$4,$5,'completed',$6,$6)`,
+      ) VALUES ($1,$2,$3,$4,$5,'running',$6,NULL)`,
       [runId, mapping.tenant_id, mapping.app_id, mapping.source_id, fileDigest, now],
     );
+  });
+  try {
+    const history = await historicalAttempts(options.pool, mapping);
+    const output = await ingestRuntimeBatch(attemptRows.map(({ attempt }) => attempt), options.pool, history);
+    const invalidKeys = new Set(output.validation_failures.map((failure) => `${failure.record_id}\u0000${failure.delivery_id}`));
+    const acceptedRows = attemptRows.filter(({ attempt }) => !invalidKeys.has(`${attempt.record.record_id}\u0000${attempt.record.delivery_id}`));
+    const rowByAttempt = new Map(attemptRows.map(({ ordinal, attempt }) => [
+      `${attempt.record.record_id}\u0000${attempt.record.delivery_id}`,
+      ordinal,
+    ]));
+    const allFailures = [
+      ...failures,
+      ...output.validation_failures.map((failure) => ({
+        ordinal: rowByAttempt.get(`${failure.record_id}\u0000${failure.delivery_id}`)!,
+        reason: "row_schema_invalid",
+        fields: [...failure.fields],
+      })),
+    ];
+    await withTenant(options.pool, mapping.tenant_id, async (client) => {
     await client.query(
       `INSERT INTO control.import_files (
         import_file_id, tenant_id, app_id, source_id, file_digest, file_bytes,
@@ -174,7 +191,7 @@ export async function runMmpImport(options: {
       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
       [uuidV7(options.now?.valueOf()), mapping.tenant_id, mapping.app_id, mapping.source_id, fileDigest, loaded.bytes, loaded.rows.length, now, runId],
     );
-    for (const [ordinal, attempt] of attempts.entries()) {
+    for (const { ordinal, attempt } of acceptedRows) {
       await client.query(
         `INSERT INTO control.import_attempts (
           import_attempt_id, import_run_id, tenant_id, app_id, source_id,
@@ -183,7 +200,7 @@ export async function runMmpImport(options: {
         [uuidV7(), runId, mapping.tenant_id, mapping.app_id, mapping.source_id, ordinal, JSON.stringify(attempt.server), JSON.stringify(attempt.record), now],
       );
     }
-    for (const failure of failures) {
+    for (const failure of allFailures) {
       await client.query(
         `INSERT INTO control.import_row_rejections (
           import_rejection_id, import_run_id, tenant_id, app_id, source_id,
@@ -192,13 +209,26 @@ export async function runMmpImport(options: {
         [uuidV7(), runId, mapping.tenant_id, mapping.app_id, mapping.source_id, failure.ordinal, failure.reason, JSON.stringify(failure.fields), now],
       );
     }
-  });
-  console.log(`Import ${basename(options.filePath)}: rows=${loaded.rows.length} accepted=${attempts.length} rejected=${failures.length}`);
-  return {
-    status: "completed", import_run_id: runId, rows: loaded.rows.length,
-    accepted: attempts.length, rejected: failures.length,
-    deliveries: output.deliveries.length, logical_events: output.logical_events.length,
-  };
+      await client.query(
+        `UPDATE control.import_runs SET status='completed', completed_at=$2
+         WHERE import_run_id=$1 AND status='running'`,
+        [runId, now],
+      );
+    });
+    console.log(`Import ${basename(options.filePath)}: rows=${loaded.rows.length} accepted=${acceptedRows.length} rejected=${allFailures.length}`);
+    return {
+      status: "completed", import_run_id: runId, rows: loaded.rows.length,
+      accepted: acceptedRows.length, rejected: allFailures.length,
+      deliveries: output.deliveries.length, logical_events: output.logical_events.length,
+    };
+  } catch (error) {
+    await withTenant(options.pool, mapping.tenant_id, (client) => client.query(
+      `UPDATE control.import_runs SET status='failed', completed_at=$2
+       WHERE import_run_id=$1 AND status='running'`,
+      [runId, now],
+    ).then(() => undefined));
+    throw error;
+  }
 }
 
 function argument(name: string): string | undefined {
