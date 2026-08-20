@@ -27,7 +27,20 @@ export type DashboardView = {
   readonly charts: readonly DashboardChart[];
   readonly csrfToken: string;
   readonly nextCursor?: string;
+  readonly metadata: {
+    readonly watermark?: string;
+    readonly snapshotIds: readonly string[];
+    readonly aggregationTimeZones: readonly string[];
+    readonly freshnessStates: readonly string[];
+    readonly metricDefinitionVersions: readonly string[];
+    readonly ruleBundles: readonly string[];
+    readonly policyVersions: readonly string[];
+  };
 };
+
+function unique(values: readonly string[]): string[] {
+  return [...new Set(values)].sort((left, right) => left.localeCompare(right, "en"));
+}
 
 function compare(left: MetricReportRow, right: MetricReportRow): number {
   return left.metric_name.localeCompare(right.metric_name, "en")
@@ -64,5 +77,14 @@ export function buildDashboardView(input: {
     charts: [...byMetric].map(([metric_name, series]) => ({ metric_name, series })),
     csrfToken: input.csrfToken,
     ...(input.metrics?.next_cursor ? { nextCursor: input.metrics.next_cursor } : {}),
+    metadata: {
+      ...(input.query?.watermarkAtMost ? { watermark: input.query.watermarkAtMost } : {}),
+      snapshotIds: unique(rows.map((row) => row.input_snapshot_id)),
+      aggregationTimeZones: unique(rows.map((row) => row.aggregation_time_zone)),
+      freshnessStates: unique(rows.map((row) => row.data_freshness)),
+      metricDefinitionVersions: unique(rows.map((row) => row.metric_definition_version)),
+      ruleBundles: unique(rows.map((row) => `${row.rule_bundle_id}:${row.rule_bundle_hash}`)),
+      policyVersions: unique(rows.flatMap((row) => row.policy_versions)),
+    },
   };
 }

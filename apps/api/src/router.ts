@@ -15,6 +15,7 @@ import {
   encodeMetricReport,
   metricReport,
   recordCounts,
+  supportsRecordCounts,
   type ReportFormat,
 } from "./reporting.js";
 import { parseMetricQuery, ReportQueryError } from "./report-query.js";
@@ -423,7 +424,7 @@ export function createRequestHandler(dependencies: RequestHandlerDependencies): 
           const effectiveQuery = effectiveWatermark
             ? { ...parsed.query, watermarkAtMost: effectiveWatermark }
             : parsed.query;
-          const records = effectiveWatermark
+          const records = effectiveWatermark && supportsRecordCounts(effectiveQuery)
             ? await recordCounts(dependencies.readerPool, appIdentity, effectiveQuery)
             : [];
           const storedDifferences = await differenceAudit(dependencies.readerPool, appIdentity, effectiveQuery);

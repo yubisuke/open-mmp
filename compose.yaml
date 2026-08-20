@@ -24,6 +24,8 @@ services:
       OPENMMP_DATABASE_HOST: postgres
       OPENMMP_DATABASE_PORT: "5432"
       OPENMMP_DATABASE_NAME: openmmp
+      OPENMMP_MAX_TENANT_ID: ${OPENMMP_MAX_TENANT_ID:-tenant-local}
+      OPENMMP_MAX_APP_ID: ${OPENMMP_MAX_APP_ID:-app-local}
     volumes:
       - .:/repository
       - migration-secrets:/run/openmmp/migration

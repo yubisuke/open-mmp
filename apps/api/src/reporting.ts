@@ -5,6 +5,7 @@ import {
   buildDifferenceQuery,
   buildMetricQuery,
   encodeMetricCursor,
+  ReportQueryError,
   type GroupingDimension,
   type MetricQuery,
 } from "./report-query.js";
@@ -70,6 +71,13 @@ export type RecordCountRow = {
   readonly grouping: Readonly<Record<string, string>>;
   readonly count: string;
 };
+
+const recordCountMetricNames = new Set(["daily_click_count", "daily_install_count"]);
+
+export function supportsRecordCounts(query: MetricQuery): boolean {
+  return query.metricNames === undefined
+    || query.metricNames.every((name) => recordCountMetricNames.has(name));
+}
 
 function metricRow(artifact: Any, groupingDigest: string, superseded: boolean): MetricReportRow {
   const valueState = artifact.value_state ?? "present";
@@ -189,6 +197,7 @@ export async function recordCounts(
   query: MetricQuery,
 ): Promise<readonly RecordCountRow[]> {
   if (!query.watermarkAtMost) throw new Error("watermark_required");
+  if (!supportsRecordCounts(query)) throw new ReportQueryError("raw_metric_unsupported");
   const values: unknown[] = [query.tenantId, query.appId, query.watermarkAtMost];
   const basePredicates = [
     "logical.tenant_id=$1",
@@ -198,8 +207,7 @@ export async function recordCounts(
     "logical.event_name IN ('click','install')",
   ];
   const eventPredicates: string[] = [];
-  const requestedMetricNames = query.metricNames?.filter((name) =>
-    name === "daily_click_count" || name === "daily_install_count");
+  const requestedMetricNames = query.metricNames;
   if (requestedMetricNames?.length) {
     const events = requestedMetricNames.map((name) => name === "daily_click_count" ? "click" : "install");
     basePredicates.push(`logical.event_name=ANY(${bind(values, events)}::text[])`);
@@ -241,12 +249,16 @@ export async function recordCounts(
     ) AS attribution ON logical.event_name='install'
     WHERE ${basePredicates.join("\n      AND ")}
   )
-  SELECT CASE event.event_name WHEN 'click' THEN 'daily_click_count' ELSE 'daily_install_count' END AS metric_name,
-    ${groupingExpression} AS grouping,
-    count(*)::text AS count
-  FROM event
-  WHERE ${eventPredicates.length ? eventPredicates.join("\n    AND ") : "true"}
-  GROUP BY event.event_name, ${groupingExpression}
+  , counts AS (
+    SELECT CASE event.event_name WHEN 'click' THEN 'daily_click_count' ELSE 'daily_install_count' END AS metric_name,
+      ${groupingExpression} AS grouping,
+      count(*)::text AS count
+    FROM event
+    WHERE ${eventPredicates.length ? eventPredicates.join("\n      AND ") : "true"}
+    GROUP BY event.event_name, ${groupingExpression}
+  )
+  SELECT metric_name, grouping, count
+  FROM counts
   ORDER BY metric_name COLLATE "C", grouping::text COLLATE "C"`;
 
   return withTenant(pool, identity.tenantId, async (client) => {

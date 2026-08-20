@@ -617,6 +617,12 @@ export async function ingestFixture(
 ): Promise<number> {
   await resetLedger(seedPool);
   await ensureApps(appPool, input);
+  await seedPool.query(
+    `INSERT INTO testing.fixture_runs (fixture_name, input_digest)
+     VALUES ($1,$2) ON CONFLICT (fixture_name)
+     DO UPDATE SET input_digest=EXCLUDED.input_digest, evaluated_at=clock_timestamp()`,
+    [fixtureName, sha256(input)],
+  );
   const candidates = await PostgresCandidateProvider.stageAndLoad(seedPool, fixtureName, input);
   const providerFactory = (values: readonly CandidateAttempt[]): CandidateProvider => {
     candidates.assertEvaluationAttempts(values);
@@ -626,13 +632,6 @@ export async function ingestFixture(
   const output = evaluate(input, providerFactory);
 
   await seedPool.query("DELETE FROM testing.fixture_artifacts WHERE fixture_name = $1", [fixtureName]);
-  await seedPool.query(
-    `INSERT INTO testing.fixture_runs (fixture_name, input_digest)
-     VALUES ($1,$2) ON CONFLICT (fixture_name)
-     DO UPDATE SET input_digest=EXCLUDED.input_digest, evaluated_at=clock_timestamp()`,
-    [fixtureName, sha256(input)],
-  );
-
   for (const raw of baseOutput.raw_records) {
     const stored = await persistRaw(appPool, raw, policyDigestForRecord(input, raw.record_id));
     assertRoundTrip(raw, stored, `${fixtureName}/base raw/${raw.record_id}`);
