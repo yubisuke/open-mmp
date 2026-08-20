@@ -70,7 +70,7 @@ The consistency gate belongs to M3b, because it is the criterion that binds the 
 ### Prerequisites
 
 - **M2a must be merged before WO-7 starts.** M3's route table (M3-D-13) rewrites the dispatcher that M2a just extended; doing it on an unmerged branch guarantees a conflict in the one file where a merge mistake silently removes an authentication check.
-- **One narrow contract item is recommended first** (M3-H-1, `metric_date`). See [Handoffs](#handoffs). This mirrors WO-2/WO-3 → WO-4 and WO-5.5 → WO-6. If the commander declines it, M3-D-22 states the fallback and its cost.
+- **The narrow M3-H-1 contract patch landed first** as contract v0.3.1. It adds `metric_date` and the reviewed daily event-count semantics before the dashboard consumes them.
 
 ---
 
@@ -161,7 +161,7 @@ Two decisions inside that.
 - (a) `Lax` — the cookie rides along on top-level cross-site GET navigations.
 - (b) `Strict` — never sent on a cross-site request of any kind.
 
-Recommend **(b)**. This is an internal operator tool; there is no legitimate cross-site entry point into it, and there is no sign-in-with-redirect flow to break. `Strict` costs one papercut — following a link from a chat client shows the login page, and the second click works — and in exchange it removes the entire class of "was this GET safe?" reasoning. Under `Lax` we would still need the synchronizer token (M3-D-06) *and* an argument that no GET mutates; under `Strict` the token is defence in depth rather than the only line. No environment variable is offered: one more knob means one more `.env.example` row and one more branch to test, for a preference nobody has expressed.
+**Decided (R-25): (b).** This is an internal operator tool; there is no legitimate cross-site entry point into it, and there is no sign-in-with-redirect flow to break. `Strict` costs one papercut — following a link from a chat client shows the login page, and the second click works — and in exchange it removes the entire class of "was this GET safe?" reasoning. Under `Lax` we would still need the synchronizer token (M3-D-06) *and* an argument that no GET mutates; under `Strict` the token is defence in depth rather than the only line. No environment variable is offered: one more knob means one more `.env.example` row and one more branch to test, for a preference nobody has expressed.
 
 **Boot self-check (this is the part that prevents a silent first-run failure).** `Secure` cookies are dropped by the browser on a plain-HTTP non-localhost origin. An operator who binds the API to a LAN address over HTTP would see a login form that accepts the key and then behaves as if it did not — the worst possible failure shape, because it looks like a wrong password. Therefore, at startup:
 
@@ -490,9 +490,7 @@ What each needs:
 - **Installs by attribution status: no contract change.** `cohort_install_count` already exists in `packages/contracts/src/m1b-metric-definitions.ts`, and `attribution_status` is already a closed grouping dimension in `metric-run.schema.json` (contract v0.3, H-12). This is a new grouping instance of an existing definition.
 - **Daily clicks: blocked by a missing dimension.** A click has no cohort. `grouping.dimensions` closes at five properties, the only date-shaped one is `cohort_date`, and M1 M-4 defines `cohort_date` as *the install day in the metric's aggregation time zone*. Using it as a click day would overload a dimension with a second meaning — the class of thing the project rejects (M2-D-27 refused a delimiter inside `producer_version` for the same reason).
 
-  Hence **M3-H-1**: add an optional `metric_date` to `metric-run.grouping.dimensions`. It is additive (one optional property in an object that already requires `minProperties: 1`), it changes no existing golden, and it gives every non-cohort day-keyed metric an honest key. Recommended as a narrow contract work order **before** WO-7b, following the WO-5.5 precedent.
-
-  **Fallback if M3-H-1 is declined:** clicks are shown from the raw-record count surface (M3-D-23), which is watermark-parameterized and therefore still reproducible, but is not a persisted artifact with a definition version. The dashboard must then label the clicks row as an evidence count rather than a metric — a visible, permanent asymmetry on the main screen, which is the cost of declining a one-property schema addition.
+  **M3-H-1 landed in contract v0.3.1:** `metric_date` is an additive dimension for day-keyed event-count metrics. The reviewed `daily_click_count` and `daily_install_count` definitions make both values persisted, snapshot-fixed artifacts instead of mixing metric runs with live evidence counts.
 
 New definitions in `packages/contracts/src/m3-metric-definitions.ts`: `daily_click_count`, `daily_install_count`. Both go through the existing parity gate (`npm run test:metric-parity`), so the SQL and the evaluator must agree byte-for-byte after JCS, exactly as the cohort metrics do.
 

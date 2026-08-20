@@ -129,7 +129,7 @@ for (const state of schemaStates) {
 function validatorFor(id: string): Validator {
   const state = schemaStates.find((candidate) => candidate.id === id);
   check(state, `schema state missing: ${id}`);
-  check(!state.compileError, `schema did not compile: ${id}`);
+  check(!state.compileError, `schema did not compile: ${id}: ${String(state.compileError)}`);
   check(state.validator, `schema validator missing: ${id}`);
   return state.validator;
 }
@@ -446,7 +446,7 @@ if (!summaryOnly) {
         check(value.$schema === DRAFT, `wrong schema dialect: ${relative(root, state.path)}`);
         check(/^urn:open-mmp:schema:[a-z0-9-]+:v0\.3$/.test(value.$id), `unstable schema id: ${relative(root, state.path)}`);
         assertClosedObjects(value, relative(root, state.path));
-        check(!state.compileError, `schema did not compile: ${value.$id}`);
+        check(!state.compileError, `schema did not compile: ${value.$id}: ${String(state.compileError)}`);
         check(state.validator, `schema validator missing: ${value.$id}`);
       });
     }
@@ -1519,6 +1519,33 @@ const validRevenue = {
 };
 if (!summaryOnly) {
   describe("semantic mutations", () => {
+    it("keeps daily event counts bound to one date and one supported event", () => {
+      const definitionValidator = validatorFor("urn:open-mmp:schema:metric-definition:v0.3");
+      const baseline = structuredClone(fixture("42-daily-metric-date").input);
+      const clickDefinition = baseline.metric_definitions.find((definition: Any) => definition.metric_name === "daily_click_count");
+      check(definitionValidator(clickDefinition), "daily click definition baseline invalid");
+
+      const missingDimension = structuredClone(clickDefinition);
+      missingDimension.grouping_dimensions = missingDimension.grouping_dimensions.filter((name: string) => name !== "metric_date");
+      check(!definitionValidator(missingDimension), "event_count accepted a definition without metric_date");
+      check(!definitionValidator({ ...clickDefinition, event_names: ["click", "install"] }), "event_count accepted multiple event names");
+      check(!definitionValidator({ ...clickDefinition, event_names: ["custom_event"] }), "event_count accepted an unsupported event name");
+      check(!definitionValidator({ ...clickDefinition, grouping_dimensions: ["metric_date", "attribution_status"] }), "click event_count accepted attribution_status grouping");
+
+      const revenue = structuredClone(fixture("33-stage-b-cohort-metrics").input.metric_definitions.find((definition: Any) => definition.metric_name === "d1_roas"));
+      revenue.definition.numerator = "events";
+      check(!definitionValidator(revenue), "non-event calculation accepted the events numerator");
+
+      const missingDateEvaluation = structuredClone(baseline);
+      delete missingDateEvaluation.metric_evaluations[0].grouping.metric_date;
+      check(!capture(() => evaluate(missingDateEvaluation)).ok, "TypeScript event_count accepted a missing metric_date evaluation");
+      check(!capture(() => pythonOutputs([missingDateEvaluation])).ok, "Python event_count accepted a missing metric_date evaluation");
+
+      const reservedDate = structuredClone(fixture("33-stage-b-cohort-metrics").input);
+      reservedDate.metric_evaluations[0].grouping.metric_date = "2026-08-01";
+      check(!capture(() => evaluate(reservedDate)).ok, "TypeScript non-event calculation accepted metric_date");
+      check(!capture(() => pythonOutputs([reservedDate])).ok, "Python non-event calculation accepted metric_date");
+    });
     it("enforces present and undefined metric value shapes", () => {
       const validator = validatorFor(outputSchemaIds.metric_runs);
       const present = structuredClone(fixture("33-stage-b-cohort-metrics").output.metric_runs.find((run: Any) => run.metric_run_id === "run-33:d1_roas"));

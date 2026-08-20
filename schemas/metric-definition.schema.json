@@ -133,11 +133,16 @@
         "required": ["definition"]
       },
       "then": {
-        "required": ["event_names"],
+        "required": ["event_names", "grouping_dimensions"],
         "properties": {
           "anchor_event": { "const": "calendar_day" },
           "value_type": { "const": "count" },
-          "event_names": {},
+          "event_names": {
+            "type": "array",
+            "maxItems": 1,
+            "items": { "enum": ["click", "install"] }
+          },
+          "grouping_dimensions": { "type": "array", "contains": { "const": "metric_date" } },
           "definition": {
             "type": "object",
             "additionalProperties": true,
@@ -150,6 +155,31 @@
               }
             }
           }
+        }
+      },
+      "else": {
+        "not": { "required": ["event_names"] },
+        "properties": {
+          "grouping_dimensions": { "type": "array", "not": { "contains": { "const": "metric_date" } } },
+          "definition": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": { "numerator": { "not": { "const": "events" } } }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "definition": { "type": "object", "additionalProperties": true, "properties": { "calculation": { "const": "event_count" } }, "required": ["calculation"] },
+          "grouping_dimensions": { "type": "array", "contains": { "const": "attribution_status" } }
+        },
+        "required": ["definition", "grouping_dimensions"]
+      },
+      "then": {
+        "properties": {
+          "event_names": { "type": "array", "items": { "const": "install" } }
         }
       }
     }

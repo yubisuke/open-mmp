@@ -892,13 +892,23 @@ function metricRuns(
       } else if (definition.definition.calculation === "event_count") {
         const eventNames = new Set<string>(definition.event_names ?? []);
         const metricDate = evaluation.grouping?.metric_date;
+        if (metricDate === undefined) throw new Error(`event_count requires metric_date grouping: ${metricName}`);
+        if (eventNames.size !== 1 || !["click", "install"].some((name) => eventNames.has(name))) {
+          throw new Error(`event_count requires exactly one supported event name: ${metricName}`);
+        }
+        if (evaluation.grouping?.attribution_status !== undefined && !eventNames.has("install")) {
+          throw new Error(`attribution_status event_count requires install events: ${metricName}`);
+        }
         value = BigInt(visible.filter((attempt) =>
           eventNames.has(attempt.record.event_name) &&
           matchesGrouping(attempt, evaluation.grouping, attributionStatuses) &&
-          (metricDate === undefined || dateAt(attempt.record.occurred_at, definition.aggregation_time_zone, "occurred_at") === metricDate),
+          dateAt(attempt.record.occurred_at, definition.aggregation_time_zone, "occurred_at") === metricDate,
         ).length);
       } else {
         throw new Error(`unsupported metric calculation: ${definition.definition.calculation}`);
+      }
+      if (definition.definition.calculation !== "event_count" && evaluation.grouping?.metric_date !== undefined) {
+        throw new Error(`metric_date grouping is reserved for event_count: ${metricName}`);
       }
       const grouping = evaluation.grouping ? {
         dimensions: evaluation.grouping,

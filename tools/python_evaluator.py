@@ -938,17 +938,22 @@ def metric_runs(
             elif calculation == "event_count":
                 event_names = set(definition.get("event_names", []))
                 metric_date = evaluation.get("grouping", {}).get("metric_date")
+                if metric_date is None:
+                    raise ValueError(f"event_count requires metric_date grouping: {metric_name}")
+                if len(event_names) != 1 or not event_names.issubset({"click", "install"}):
+                    raise ValueError(f"event_count requires exactly one supported event name: {metric_name}")
+                if evaluation.get("grouping", {}).get("attribution_status") is not None and "install" not in event_names:
+                    raise ValueError(f"attribution_status event_count requires install events: {metric_name}")
                 amount = sum(
                     1 for item in visible
                     if item["record"]["event_name"] in event_names
                     and matches_grouping(item, evaluation.get("grouping"), attribution_statuses)
-                    and (
-                        metric_date is None
-                        or day(item["record"]["occurred_at"], definition["aggregation_time_zone"], "occurred_at") == metric_date
-                    )
+                    and day(item["record"]["occurred_at"], definition["aggregation_time_zone"], "occurred_at") == metric_date
                 )
             else:
                 raise ValueError(f"unsupported metric calculation: {calculation}")
+            if calculation != "event_count" and evaluation.get("grouping", {}).get("metric_date") is not None:
+                raise ValueError(f"metric_date grouping is reserved for event_count: {metric_name}")
             run = {
                 "metric_run_id": f"{evaluation['metric_run_id_prefix']}:{metric_name}",
                 "metric_name": metric_name,

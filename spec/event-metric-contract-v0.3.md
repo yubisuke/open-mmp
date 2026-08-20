@@ -321,7 +321,7 @@ Environment setup is `npm ci` and `python -m pip install --require-hashes --requ
 ### v0.3.1 patch release
 
 - R-27 and M3-H-1 add the optional `metric_date` grouping dimension to metric definitions, metric runs, and fixture evaluations. Existing groupings and every v0.3.0 golden retain their meaning.
-- Daily event counts use the additive `event_count` calculation with an explicit non-empty `event_names` set. The v0.3.1 `daily_click_count` and `daily_install_count` definitions use a UTC calendar-day anchor and emit count-valued metric runs.
+- Daily event counts use the additive `event_count` calculation with exactly one supported `event_names` value (`click` or `install`) and a required `metric_date` grouping. `metric_date`, the `events` numerator, and `event_names` are reserved for `event_count`; other calculations continue to use cohort dimensions. `attribution_status` is valid only for an install event count, because clicks do not carry installation-attribution status. The v0.3.1 `daily_click_count` and `daily_install_count` definitions use a UTC calendar-day anchor and emit count-valued metric runs.
 - M3-H-2 resolves aggregate attribution-method display without a new artifact field: an aggregate is identified by its rule-bundle id/version/hash and broken down by `attribution_status`. A single attribution method label would be false for an aggregate that may mix decision methods.
 - Schema `$id` values and registry filenames remain on the `v0.3` minor line. Existing event `contract_version`, event `schema_version`, and v0.3.0 outputs remain valid.
 
