@@ -22,6 +22,11 @@ Primary M4 verification recorded on 2026-08-20:
 - [Privacy collected-data type](https://developer.apple.com/documentation/bundleresources/app-privacy-configuration/nsprivacycollecteddatatypes/nsprivacycollecteddatatype) and [collection purposes](https://developer.apple.com/documentation/bundleresources/app-privacy-configuration/nsprivacycollecteddatatypes/nsprivacycollecteddatatypepurposes) define the exact manifest vocabulary used by the SDK.
 - [AppLovin MAX iOS advanced settings](https://developers.applovin.com/en/max/ios/overview/advanced-settings/) and the [pinned 13.6.4 Swift Package manifest](https://raw.githubusercontent.com/AppLovin/AppLovin-MAX-Swift-Package/13.6.4/Package.swift) define the impression-revenue fields and exact compile-only provider dependency.
 
+Primary M5 verification recorded on 2026-08-20:
+
+- [Apple DeviceCheck](https://developer.apple.com/documentation/devicecheck) defines App Attest as app-integrity evidence and cautions that no single policy eliminates fraud.
+- [Validating apps that connect to your server](https://developer.apple.com/documentation/devicecheck/validating-apps-that-connect-to-your-server) defines server challenge, attestation, and assertion verification. The public repository reserves evidence fields only; live key/project setup remains an operator task.
+
 Design implications:
 
 - Use AdAttributionKit as the primary direction for Apple privacy-preserving app attribution while accounting for SKAdNetwork interoperability.
@@ -52,6 +57,18 @@ Primary M2 verification recorded on 2026-08-19:
 - [Install Referrer AIDL response bundle](https://developer.android.com/google/play/installreferrer/igetinstallreferrerservice) lists the server click/install timestamps and install-version fields used by the v0.3 contract.
 - [Google Play Data safety guidance](https://support.google.com/googleplay/android-developer/answer/10787469?hl=en) requires operators to account for SDK collection and location derived from IP; the default redirector does not derive location.
 - [Meta Install Referrer](https://developers.facebook.com/documentation/app-ads/meta-install-referrer) exposes `install_referrer`, `is_ct`, and `actual_timestamp`. Live value semantics remain operator-verified, and synthetic crypto vectors do not establish campaign behavior.
+
+Primary M5 verification recorded on 2026-08-20:
+
+- [Play Integrity overview](https://developer.android.com/google/play/integrity/overview) defines app/device verdicts, request-hash or nonce binding, replay considerations, gradual enforcement, and the requirement to combine integrity evidence with other anti-abuse signals. Live Play project setup remains outside the code gate.
+
+## Operations
+
+Primary M5 verification recorded on 2026-08-20:
+
+- [PostgreSQL 17 SQL dump](https://www.postgresql.org/docs/17/backup-dump.html) defines custom-format `pg_dump` archives and restoration with `pg_restore`.
+- [PostgreSQL 17 pg_restore](https://www.postgresql.org/docs/17/app-pgrestore.html) documents restore into a new database, `--exit-on-error`, archive portability, and the security boundary of executing dump contents.
+- [Prometheus exposition formats](https://prometheus.io/docs/instrumenting/exposition_formats/) defines the UTF-8 line-oriented `text/plain; version=0.0.4` format used by the authenticated `/metrics` route.
 
 ## Licensing and consent
 

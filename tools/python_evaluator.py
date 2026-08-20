@@ -433,6 +433,7 @@ def raw_record(attempt: dict[str, Any], lifecycle: str) -> dict[str, Any]:
         "received_at": record["received_at"],
         "payload_lifecycle_status": lifecycle,
         "raw_payload_ref": f"protected:{record['record_id']}" if lifecycle == "available" else f"tombstone:{record['record_id']}",
+        **({"integrity_verdict": record["integrity_verdict"]} if record.get("integrity_verdict") else {}),
         "consent_evaluation_policy_version": consent["consent_evaluation_policy_version"],
         "consent_decision_reason_code": consent["consent_decision_reason_code"],
     }

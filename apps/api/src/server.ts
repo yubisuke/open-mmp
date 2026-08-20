@@ -1,10 +1,12 @@
 import { createServer } from "node:http";
 import { createAppPool, createReaderPool, EncryptedFilePayloadStore, EnvironmentSecretStore } from "@open-mmp/runtime";
 import { assertSafeMaxTemplate, receiveMax, type MaxReceiverConfig } from "./max-receiver.js";
-import { ensureAdminKeys } from "./admin-auth.js";
+import { ensureAdminKeys, parseAdminRole } from "./admin-auth.js";
 import { HourlyLedgerQuota } from "./apple-postback-receiver.js";
 import { createRequestHandler } from "./router.js";
 import { KeyedTokenBucket, TokenBucket } from "./rate-limit.js";
+import { OperationalMetrics } from "./operational-metrics.js";
+import { writeOperationalLog } from "./observability.js";
 import { ensureSdkKeys } from "./sdk-auth.js";
 
 const port = Number(process.env.OPENMMP_API_PORT ?? "8080");
@@ -42,7 +44,15 @@ assertSafeMaxTemplate(maxTemplate);
 await ensureAdminKeys(
   pool,
   { tenantId: maxConfig.tenantId, appId: maxConfig.appId },
-  [adminKey, secrets.read("OPENMMP_ADMIN_KEY_PREVIOUS")].filter((value): value is string => !!value),
+  [
+    { key: adminKey, role: parseAdminRole(process.env.OPENMMP_ADMIN_ROLE) },
+    ...(secrets.read("OPENMMP_ADMIN_KEY_PREVIOUS")
+      ? [{
+          key: secrets.read("OPENMMP_ADMIN_KEY_PREVIOUS")!,
+          role: parseAdminRole(process.env.OPENMMP_ADMIN_KEY_PREVIOUS_ROLE),
+        }]
+      : []),
+  ],
 );
 const sdkKeyId = process.env.OPENMMP_SDK_KEY_ID ?? "sdk-key-current";
 const previousSdkKey = secrets.read("OPENMMP_SDK_KEY_PREVIOUS");
@@ -50,6 +60,8 @@ await ensureSdkKeys(pool, payloadStore, { tenantId: maxConfig.tenantId, appId: m
   { keyId: sdkKeyId, secret: secrets.require("OPENMMP_SDK_KEY") },
   ...(previousSdkKey ? [{ keyId: process.env.OPENMMP_SDK_KEY_PREVIOUS_ID ?? "sdk-key-previous", secret: previousSdkKey }] : []),
 ]);
+const operationalMetrics = new OperationalMetrics();
+const operationalLogWriter = (line: string) => process.stdout.write(line);
 
 const server = createServer(createRequestHandler({
   pool,
@@ -98,6 +110,8 @@ const server = createServer(createRequestHandler({
       Number(process.env.OPENMMP_POSTBACK_INVALID_LEDGER_QUOTA_PER_HOUR ?? "100"),
     ),
   },
+  operationalMetrics,
+  operationalLogWriter,
   sdk: {
     pool,
     payloadStore,
@@ -130,7 +144,5 @@ const server = createServer(createRequestHandler({
 }));
 
 server.listen(port, "0.0.0.0", () => {
-  console.log(`Open MMP API listening on ${port}`);
-  console.log(`Open MMP dashboard URL: ${baseUrl}/dashboard`);
-  console.log("Open MMP runtime credentials loaded from encrypted configuration.");
+  writeOperationalLog({ event: "service_started", component: "api" }, operationalLogWriter);
 });

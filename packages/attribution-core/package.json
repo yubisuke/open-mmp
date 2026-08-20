@@ -1,6 +1,6 @@
 {
   "name": "@open-mmp/attribution-core",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "private": true,
   "description": "Pure Open MMP contract evaluator",
   "type": "module",
@@ -15,7 +15,7 @@
     }
   },
   "dependencies": {
-    "@open-mmp/contracts": "0.3.4",
+    "@open-mmp/contracts": "0.3.5",
     "json-canonicalize": "2.0.0"
   },
   "devDependencies": {

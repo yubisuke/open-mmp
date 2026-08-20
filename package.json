@@ -1,8 +1,8 @@
 {
   "name": "open-mmp-contract",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "private": true,
-  "description": "Open MMP Event & Metric Contract v0.3.4 reference validation",
+  "description": "Open MMP Event & Metric Contract v0.3.5 reference validation",
   "type": "module",
   "workspaces": [
     "apps/*",
@@ -14,8 +14,10 @@
   },
   "scripts": {
     "benchmark:metric-floor": "npm run benchmark:metric-floor --workspace @open-mmp/worker",
+    "benchmark:m5": "node --import tsx tools/m5-load.ts",
     "bootstrap": "node --import tsx apps/runtime/src/bootstrap.ts",
     "db:migrate": "npm run db:migrate --workspace @open-mmp/runtime",
+    "db:reapply-privacy": "npm run db:reapply-privacy --workspace @open-mmp/worker --",
     "db:schema:dump": "npm run db:schema:dump --workspace @open-mmp/runtime",
     "db:schema:check": "npm run db:schema:check --workspace @open-mmp/runtime",
     "demo:metrics": "npm run demo:metrics --workspace @open-mmp/worker",
@@ -24,9 +26,11 @@
     "seed": "npm run seed --workspace @open-mmp/worker",
     "sbom": "node --import tsx tools/sbom.ts",
     "check:api-runtime-sbom": "node --import tsx tools/check-api-runtime-sbom.ts",
+    "check:operational-logs": "node --import tsx tools/check-no-payload-logs.ts",
     "check:sdk-ios": "node tools/check-ios-sdk.mjs --source-only",
     "check:threat-model": "node --import tsx tools/check-threat-model.ts",
     "test:db-invariants": "npm run test:db-invariants --workspace @open-mmp/runtime",
+    "test:backup-restore": "node --env-file-if-exists=.env --import tsx --test --test-concurrency=1 apps/worker/src/privacy-reapply.integration.test.ts",
     "test:dashboard-parity": "node --env-file-if-exists=.env --import tsx --test apps/api/src/consistency.integration.test.ts",
     "test:env-coverage": "node --import tsx apps/runtime/src/env-coverage.test.ts",
     "test": "node --import tsx --test \"apps/**/*.unit.test.ts\" \"packages/**/*.unit.test.ts\"",

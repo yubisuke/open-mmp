@@ -476,6 +476,7 @@ function makeRawRecord(attempt: Attempt, lifecycle: "available" | "redacted" | "
     received_at: record.received_at,
     payload_lifecycle_status: lifecycle,
     raw_payload_ref: lifecycle === "available" ? `protected:${record.record_id}` : `tombstone:${record.record_id}`,
+    ...(record.integrity_verdict ? { integrity_verdict: record.integrity_verdict } : {}),
     processing_purpose_id: consent.processing_purpose_id,
     consent_evaluation_policy_version: consent.consent_evaluation_policy_version,
     consent_decision_reason_code: consent.consent_decision_reason_code,

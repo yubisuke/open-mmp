@@ -67,6 +67,12 @@ try {
     app_can_select_apple_postback_facts: boolean;
     reader_can_select_apple_postback_facts: boolean;
     apple_postback_fact_rls_forced: boolean;
+    reader_can_select_admin_roles: boolean;
+    reader_can_select_admin_digest: boolean;
+    app_can_insert_rule_bundles: boolean;
+    reader_can_select_rule_bundles: boolean;
+    reader_can_insert_rule_bundles: boolean;
+    rule_bundle_rls_forced: boolean;
   }>(`
     SELECT
       rolbypassrls AS bypass,
@@ -113,7 +119,13 @@ try {
       has_function_privilege('openmmp_app', 'control.list_m4_work_tenants()', 'EXECUTE') AS app_can_list_m4_work_tenants,
       has_table_privilege('openmmp_app', 'ledger.apple_postback_facts', 'SELECT') AS app_can_select_apple_postback_facts,
       has_table_privilege('openmmp_reader', 'ledger.apple_postback_facts', 'SELECT') AS reader_can_select_apple_postback_facts,
-      (SELECT relforcerowsecurity FROM pg_class WHERE oid='ledger.apple_postback_facts'::regclass) AS apple_postback_fact_rls_forced
+      (SELECT relforcerowsecurity FROM pg_class WHERE oid='ledger.apple_postback_facts'::regclass) AS apple_postback_fact_rls_forced,
+      has_table_privilege('openmmp_reader', 'control.admin_key_roles_current', 'SELECT') AS reader_can_select_admin_roles,
+      has_column_privilege('openmmp_reader', 'control.admin_keys', 'scrypt_digest', 'SELECT') AS reader_can_select_admin_digest,
+      has_table_privilege('openmmp_app', 'control.rule_bundle_revisions', 'INSERT') AS app_can_insert_rule_bundles,
+      has_table_privilege('openmmp_reader', 'control.rule_bundle_revisions', 'SELECT') AS reader_can_select_rule_bundles,
+      has_table_privilege('openmmp_reader', 'control.rule_bundle_revisions', 'INSERT') AS reader_can_insert_rule_bundles,
+      (SELECT relforcerowsecurity FROM pg_class WHERE oid='control.rule_bundle_revisions'::regclass) AS rule_bundle_rls_forced
     FROM pg_roles r
     WHERE rolname = 'openmmp_app'
   `);
@@ -147,6 +159,12 @@ try {
   assert.equal(role.rows[0].app_can_select_apple_postback_facts, true);
   assert.equal(role.rows[0].reader_can_select_apple_postback_facts, true);
   assert.equal(role.rows[0].apple_postback_fact_rls_forced, true);
+  assert.equal(role.rows[0].reader_can_select_admin_roles, true);
+  assert.equal(role.rows[0].reader_can_select_admin_digest, false);
+  assert.equal(role.rows[0].app_can_insert_rule_bundles, true);
+  assert.equal(role.rows[0].reader_can_select_rule_bundles, true);
+  assert.equal(role.rows[0].reader_can_insert_rule_bundles, false);
+  assert.equal(role.rows[0].rule_bundle_rls_forced, true);
 
   await withTenant(appPool, tenantA, (client) => client.query(
     "INSERT INTO control.apps (tenant_id, app_id, created_at) VALUES ($1,$2,$3)",

@@ -19,6 +19,11 @@ describe("declarative API route security", () => {
     assert.equal(routes.find((route) => route.handler === "max_ingest")?.mutates, true);
   });
 
+  it("assigns a capability to every administrator or dashboard session route", () => {
+    assert.equal(routes.filter((route) => ["admin_bearer", "dashboard_session"].includes(route.auth))
+      .every((route) => route.capability !== undefined), true);
+  });
+
   it("matches exact route methods and paths", () => {
     assert.equal(matchRoute("GET", "/v1/reports/metrics")?.handler, "report_metrics");
     assert.equal(matchRoute("POST", "/v1/reports/metrics"), undefined);
@@ -33,5 +38,7 @@ describe("declarative API route security", () => {
     assert.equal(matchRoute("POST", "/.well-known/skadnetwork/report-attribution"), undefined);
     assert.equal(matchRoute("POST", "/v1/admin/apps/app-a/apple-registration")?.handler, "admin_apple_registration");
     assert.equal(matchRoute("POST", "/v1/admin/apps/app-a/conversion-schemas")?.handler, "admin_conversion_schema");
+    assert.equal(matchRoute("POST", "/v1/admin/apps/app-a/rule-bundles")?.handler, "admin_rule_bundle");
+    assert.equal(matchRoute("GET", "/metrics")?.handler, "operational_metrics");
   });
 });

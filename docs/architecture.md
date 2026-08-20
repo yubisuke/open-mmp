@@ -172,6 +172,38 @@ Initial Android rule:
 - The authenticated scope fixes the tenant. The request supplies an `app_id` that is validated against that tenant's registered apps; unknown and cross-tenant apps have the same response. Responses use `cache-control: no-store`.
 - Aggregate privacy reports are never presented as installation-level records.
 
+### M5 management and operations
+
+<!-- m1-component:production-control-plane -->
+<!-- m1-component:privacy-restore -->
+<!-- m1-component:operational-observability -->
+<!-- m1-component:integrity-evidence -->
+
+Administrator keys are tenant-wide control-plane identities. Every route still
+resolves and validates the requested app inside that tenant; a role does not
+turn a request-supplied `app_id` into authority. Dashboard sessions inherit the
+backing key role and become invalid when that key is retired.
+
+| Role | Read reports/dashboard/metrics | Operate tracking and imports | Administer apps, keys, privacy, Apple configuration, and rule bundles |
+| --- | --- | --- | --- |
+| `admin` | Yes | Yes | Yes |
+| `operator` | Yes | Yes | No |
+| `read_only` | Yes | No | No |
+
+`GET /metrics` requires a valid administrator bearer identity with read
+capability and returns dependency-free Prometheus text. Labels are closed route,
+method, status-class, and queue vocabularies; tenant, app, installation, record,
+payload, authorization, cookie, and query values are never labels or output.
+Application HTTP logs use a closed event type that structurally cannot accept
+payload/body/authentication/identifier fields.
+
+Rule-bundle activation writes an append-only tenant/app-scoped revision with
+ID, version, hash, predecessor, and an audit row. The registry records which
+version governed a historical result; live rule definitions, thresholds,
+watchlists, weights, and response timing remain deployment-private. Metric
+replay manifests retain exact versioned evaluation inputs for privacy
+recalculation and are intentionally unavailable to the reader role.
+
 ## Data layers
 
 Minimum logical entities:

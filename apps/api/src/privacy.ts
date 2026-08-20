@@ -94,6 +94,29 @@ export async function executePrivacyRequest(
            ORDER BY inbox_id`,
           [body.tenant_id, body.deletion_scope, body.app_id],
         );
+    const rawPayloads = body.deletion_scope === "installation"
+      ? await client.query<{ raw_payload_ref: string }>(
+          `SELECT DISTINCT raw.raw_payload_ref
+             FROM ledger.raw_records AS raw
+            WHERE raw.tenant_id=$1 AND raw.app_id=$2
+              AND raw.record_id=ANY($3::text[])
+              AND raw.raw_payload_ref LIKE 'encrypted:%'
+              AND NOT EXISTS (
+                SELECT 1 FROM ledger.raw_records AS shared
+                 WHERE shared.tenant_id=raw.tenant_id
+                   AND shared.raw_payload_ref=raw.raw_payload_ref
+                   AND NOT (shared.record_id=ANY($3::text[]))
+              )
+            ORDER BY raw.raw_payload_ref`,
+          [body.tenant_id, body.app_id, records],
+        )
+      : await client.query<{ raw_payload_ref: string }>(
+          `SELECT DISTINCT raw_payload_ref FROM ledger.raw_records
+           WHERE tenant_id=$1 AND ($2='tenant' OR app_id=$3)
+             AND raw_payload_ref LIKE 'encrypted:%'
+           ORDER BY raw_payload_ref`,
+          [body.tenant_id, body.deletion_scope, body.app_id],
+        );
     const installationKeyId = "installationKeyId" in identity ? identity.installationKeyId : undefined;
     const batchPayloads = body.deletion_scope === "installation"
       ? await client.query<{ body_ref: string }>(
@@ -104,6 +127,11 @@ export async function executePrivacyRequest(
             AND member.tenant_id=batch.tenant_id AND member.app_id=batch.app_id
            WHERE batch.tenant_id=$1 AND batch.app_id=$2
              AND (member.record_id=ANY($3::text[]) OR batch.installation_key_id=$4)
+             AND NOT EXISTS (
+               SELECT 1 FROM ledger.ingest_batch_records AS shared
+                WHERE shared.ingest_batch_id=batch.ingest_batch_id
+                  AND NOT (shared.record_id=ANY($3::text[]))
+             )
            ORDER BY batch.body_ref`,
           [body.tenant_id, body.app_id, records, installationKeyId ?? null],
         )
@@ -140,6 +168,7 @@ export async function executePrivacyRequest(
           [body.tenant_id, body.deletion_scope, body.app_id],
         );
     for (const reference of new Set([
+      ...rawPayloads.rows.map((payload) => payload.raw_payload_ref),
       ...payloads.rows.map((payload) => payload.raw_query_ref),
       ...batchPayloads.rows.map((payload) => payload.body_ref),
       ...adServicesPayloads.rows.map((payload) => payload.response_ref),

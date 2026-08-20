@@ -82,6 +82,10 @@ Three accepted, deduplicated synthetic postbacks qualify because their aggregate
 
 The synthetic iOS install fixes the bundled conversion policy to version `openmmp-default-v1` and SHA-256 `905cc3a69e7b7e0a2da55439444aed7e67087c1e96c5e958c5650f04606197b5` inside the existing `extensions` evidence surface. Independently reviewed RFC 8785 payload digests are `db1c5fa5ca40a9731b531021f0c34d540fb9f14d2d1836a33fecb7fc36757c87` for the install and `05479c420b0300de0ab0d0d0c50a247e88a6123a6c29f947c1a4f687162ccfc4` for the reserved update. The schema metadata is evidence only: the iOS install remains `unattributed/platform_referrer_not_available`, and the opt-in lifecycle event emits no metric run.
 
+### Fixture 46: platform integrity evidence reservation
+
+Three synthetic installation envelopes exercise the optional server-assigned integrity field. Play Integrity uses `verified` and `failed` with opaque protected references, while App Attest uses `unavailable` without an evidence reference. No raw provider assertion, token, account value, or device identifier appears. The installs retain their independent `organic/no_referrer`, `unattributed/install_referrer_unavailable`, and `unattributed/platform_referrer_not_available` results, proving that the reserved evidence alone does not determine attribution, fraud, or metric eligibility.
+
 ### Processing-purpose coverage
 
 The public purpose catalog is exercised without adding real data: fixture 25 uses `fraud_prevention`, fixture 33 uses `analytics` and `revenue_measurement`, and fixture 34 uses `analytics` and `attribution`. The server contexts deliberately demonstrate deployment overrides of the illustrative registry defaults. Raw and delivery goldens preserve the selected purpose and policy version.
@@ -120,6 +124,7 @@ Each fixture contains the same 13 `expected_*.json` artifacts listed above. Empt
 | `43-m4-ios-contract-handoffs` | Two iOS installs prove the platform-specific first-launch and neutral AdServices outcomes; one development-key AAK envelope and one SKAN 4.1 envelope prove the new optional/environment and minor-version surfaces. All values, identifiers, and signatures are synthetic. |
 | `44-apple-aggregate-metrics` | Two qualified SKAN postbacks and one qualified AAK postback produce distinct receipt-date aggregate counts. Fine and coarse SKAN conversions remain separate scalar rows through the closed `apple_conversion_bucket` grouping. |
 | `45-ios-conversion-schema` | One iOS install carries a synthetic bundled conversion-policy version and digest in `extensions`; one reserved custom event records an opt-in conversion-value update without changing attribution or metric meaning. |
+| `46-integrity-verdict-reservation` | Three server-assigned synthetic integrity envelopes cover both supported platforms and every closed verdict while preserving platform-referrer attribution semantics. |
 
 ## Adding a fixture
 

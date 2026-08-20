@@ -9,10 +9,13 @@ import {
 } from "./apple-postback-receiver.js";
 import { AppNotFoundError, listApps, registerApp, requireRegisteredApp } from "./apps-admin.js";
 import { verifyAdminKey, type AdminIdentity } from "./admin-auth.js";
+import { roleAllows } from "./authorization.js";
 import { dashboardCss } from "./dashboard/css.js";
 import { escapeHtml, renderDashboard } from "./dashboard/render.js";
 import { buildDashboardView } from "./dashboard/view.js";
 import { receiveMax, type MaxReceiverConfig } from "./max-receiver.js";
+import { OperationalMetrics, renderOperationalMetrics } from "./operational-metrics.js";
+import { boundedMethod, writeOperationalLog, type OperationalLogWriter } from "./observability.js";
 import { executePrivacyRequest, type PrivacyRequestBody } from "./privacy.js";
 import {
   differenceAudit,
@@ -26,6 +29,7 @@ import {
 import { parseMetricQuery, ReportQueryError } from "./report-query.js";
 import type { KeyedTokenBucket, TokenBucket } from "./rate-limit.js";
 import { matchRoute, type RouteDefinition } from "./routes.js";
+import { activateRuleBundle } from "./rule-bundles.js";
 import type { SdkRouteDependencies } from "./sdk-routes.js";
 import { handleDevicePrivacy, handleSdkBatch, handleSdkEnrollment } from "./sdk-routes.js";
 import {
@@ -73,6 +77,8 @@ export type RequestHandlerDependencies = {
   readonly reportMaximumRows?: number;
   readonly reportMaximumExportRows?: number;
   readonly applePostback?: ApplePostbackReceiverDependencies;
+  readonly operationalMetrics?: OperationalMetrics;
+  readonly operationalLogWriter?: OperationalLogWriter;
 };
 
 function loginPage(error?: string): string {
@@ -167,7 +173,7 @@ function dashboardAppId(pathname: string): string | undefined {
 }
 
 function adminAppId(pathname: string): string | undefined {
-  const match = /^\/v1\/admin\/apps\/([^/]+)\/(?:apple-registration|conversion-schemas)$/.exec(pathname);
+  const match = /^\/v1\/admin\/apps\/([^/]+)\/(?:apple-registration|conversion-schemas|rule-bundles)$/.exec(pathname);
   if (!match) return undefined;
   try {
     return decodeURIComponent(match[1]);
@@ -199,9 +205,13 @@ async function rejectDashboardCsrf(
 export function createRequestHandler(dependencies: RequestHandlerDependencies): RequestListener {
   assertDashboardBaseUrl(dependencies.dashboard.enabled, dependencies.dashboard.publicBaseUrl);
   return (request, response) => {
+    const startedAt = performance.now();
+    let routeLabel: RouteDefinition["handler"] | "unmatched" = "unmatched";
+    let internalError = false;
     void (async () => {
       const target = new URL(request.url ?? "/", "http://open-mmp.local");
       const route = matchRoute(request.method, target.pathname);
+      routeLabel = route?.handler ?? "unmatched";
       if (!route || (!dependencies.dashboard.enabled && route.handler.startsWith("dashboard_"))) {
         json(response, 404, { error: "not_found" });
         return;
@@ -272,6 +282,7 @@ export function createRequestHandler(dependencies: RequestHandlerDependencies): 
         const apps = await listApps(dependencies.readerPool, {
           keyId: session.adminKeyId,
           tenantId: session.tenantId,
+          role: session.role,
         });
         dashboardHtml(response, 200, renderDashboard(buildDashboardView({
           apps,
@@ -371,7 +382,11 @@ export function createRequestHandler(dependencies: RequestHandlerDependencies): 
           dashboardHtml(response, 401, loginPage("Authentication required."));
           return;
         }
-        const sessionIdentity: AdminIdentity = { keyId: session.adminKeyId, tenantId: session.tenantId };
+        if (!roleAllows(session.role, route.capability)) {
+          dashboardHtml(response, 403, "<!doctype html><html lang=\"en\"><body><h1>Forbidden</h1></body></html>");
+          return;
+        }
+        const sessionIdentity: AdminIdentity = { keyId: session.adminKeyId, tenantId: session.tenantId, role: session.role };
         if (route.handler === "dashboard_apps_create") {
           const body = await formBody(request);
           const appId = body.get("app_id") ?? "";
@@ -494,9 +509,34 @@ export function createRequestHandler(dependencies: RequestHandlerDependencies): 
           response.writeHead(429, { "retry-after": "1", "cache-control": "no-store" }).end();
           return;
         }
-        const identity = await adminIdentity(dependencies, request, pool);
+        // Authentication verifier hashes are intentionally unavailable to the
+        // reader role. Authenticate through the app pool, then execute the
+        // read-only route itself through the reader pool selected above.
+        const identity = await adminIdentity(dependencies, request, dependencies.pool);
         if (!identity) {
           json(response, 401, { error: "unauthorized" });
+          return;
+        }
+        if (!roleAllows(identity.role, route.capability)) {
+          json(response, 403, { error: "forbidden" });
+          return;
+        }
+        if (route.handler === "operational_metrics") {
+          if (!dependencies.operationalMetrics) {
+            json(response, 503, { error: "operational_metrics_unavailable" });
+            return;
+          }
+          const body = await renderOperationalMetrics(
+            dependencies.readerPool,
+            identity.tenantId,
+            dependencies.operationalMetrics,
+          );
+          response.writeHead(200, {
+            "content-type": "text/plain; version=0.0.4; charset=utf-8",
+            "cache-control": "no-store",
+            "x-content-type-options": "nosniff",
+          });
+          response.end(body);
           return;
         }
         if (route.handler === "admin_apps_list") {
@@ -525,7 +565,7 @@ export function createRequestHandler(dependencies: RequestHandlerDependencies): 
           }
           return;
         }
-        if (route.handler === "admin_apple_registration" || route.handler === "admin_conversion_schema") {
+        if (route.handler === "admin_apple_registration" || route.handler === "admin_conversion_schema" || route.handler === "admin_rule_bundle") {
           try {
             const appIdentity = await requireRegisteredApp(dependencies.pool, identity, adminAppId(target.pathname) ?? "");
             const body = await jsonBody(request);
@@ -536,19 +576,23 @@ export function createRequestHandler(dependencies: RequestHandlerDependencies): 
                   appleAppAdamId: body.apple_app_adam_id,
                   appleBundleId: body.apple_bundle_id,
                 })
-              : await registerConversionSchema({
+              : route.handler === "admin_conversion_schema" ? await registerConversionSchema({
                   pool: dependencies.pool,
                   identity: appIdentity,
                   schemaVersion: body.schema_version,
                   definition: body.definition,
+                }) : await activateRuleBundle({
+                  pool: dependencies.pool,
+                  identity: appIdentity,
+                  body,
                 });
             json(response, 201, result);
           } catch (error) {
             if (error instanceof AppNotFoundError) {
               json(response, 404, { error: "app_not_found" });
             } else {
-              const message = error instanceof Error ? error.message : "apple_configuration_invalid";
-              const status = message.endsWith("_already_registered") ? 409 : 400;
+              const message = error instanceof Error ? error.message : "admin_configuration_invalid";
+              const status = message.endsWith("_already_registered") || message === "rule_bundle_predecessor_mismatch" ? 409 : 400;
               json(response, status, { error: message });
             }
           }
@@ -653,10 +697,26 @@ export function createRequestHandler(dependencies: RequestHandlerDependencies): 
       }
 
       json(response, 404, { error: "not_found" });
-    })().catch((error) => {
-      console.error(`Request failed: ${error instanceof Error ? error.message : "unknown error"}`);
+    })().catch(() => {
+      internalError = true;
       if (!response.headersSent) json(response, 500, { error: "internal_error" });
       else response.end();
+    }).finally(() => {
+      const durationMs = Math.max(0, performance.now() - startedAt);
+      if (routeLabel !== "operational_metrics") {
+        dependencies.operationalMetrics?.observe(routeLabel, request.method, response.statusCode, durationMs);
+      }
+      if (dependencies.operationalLogWriter) {
+        writeOperationalLog({
+          event: "http_request",
+          component: "api",
+          route: routeLabel,
+          method: boundedMethod(request.method),
+          status: response.statusCode,
+          duration_ms: Number(durationMs.toFixed(3)),
+          ...(internalError ? { error_code: "internal_error" as const } : {}),
+        }, dependencies.operationalLogWriter);
+      }
     });
   };
 }

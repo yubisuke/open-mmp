@@ -559,8 +559,8 @@ if (!summaryOnly) {
         }
       });
     }
-    it("contains 45 fixture directories", () => {
-      check(fixtureDirs.length === 45, `expected 45 fixture directories, found ${fixtureDirs.length}`);
+    it("contains 46 fixture directories", () => {
+      check(fixtureDirs.length === 46, `expected 46 fixture directories, found ${fixtureDirs.length}`);
     });
   });
 
@@ -877,12 +877,20 @@ const scenarios: Array<[string, () => void]> = [
     check(update.event_key === "openmmp.conversion_value_updated" && update.attributes.schema_version === install.extensions.conversion_schema_version, "scenario 45 conversion update event");
     check(value.output.attributions[0].reason_code === "platform_referrer_not_available" && value.output.metric_runs.length === 0, "scenario 45 attribution and metric boundary");
   }],
+  ["46 platform integrity evidence reservation", () => {
+    const value = fixture("46-integrity-verdict-reservation");
+    const verdicts = Object.fromEntries(value.output.raw_records.map((record: Any) => [record.record_id, record.integrity_verdict]));
+    check(verdicts["play-integrity-verified-46"].provider === "play_integrity" && verdicts["play-integrity-verified-46"].verdict === "verified", "scenario 46 verified Play Integrity evidence");
+    check(verdicts["play-integrity-failed-46"].verdict === "failed" && verdicts["play-integrity-failed-46"].evidence_ref.startsWith("protected:"), "scenario 46 failed Play Integrity evidence");
+    check(verdicts["app-attest-unavailable-46"].provider === "app_attest" && verdicts["app-attest-unavailable-46"].verdict === "unavailable" && verdicts["app-attest-unavailable-46"].evidence_ref === undefined, "scenario 46 unavailable App Attest evidence");
+    check(value.output.attributions.map((item: Any) => item.reason_code).sort().join("|") === "install_referrer_unavailable|no_referrer|platform_referrer_not_available", "scenario 46 integrity does not determine attribution");
+  }],
 ];
 if (!summaryOnly) {
   describe("reviewed scenarios", () => {
     for (const [name, assertion] of scenarios) it(name, assertion);
-    it("contains 45 scenario assertions", () => {
-      check(scenarios.length === 45, "scenario assertion inventory must contain 45 entries");
+    it("contains 46 scenario assertions", () => {
+      check(scenarios.length === 46, "scenario assertion inventory must contain 46 entries");
     });
   });
 
@@ -1443,7 +1451,7 @@ const acceptance: Array<[string, () => void]> = [
     check(corrections.some((item: Any) => item.correction_type === "retraction"), "AC15 retraction");
     check(fixture("17-redaction-recalculation").output.metric_runs.some((item: Any) => item.supersedes_metric_run_id), "AC15 redaction");
   }],
-  ["AC16 clock referrer prefetch and withdrawal fixtures pass", () => check(scenarios.length === 45 && fixture("11-clock-skew").output.deliveries.some((item: Any) => item.clock_skew_suspected) && fixture("13-referrer-unsupported").output.attributions.length === 2 && fixture("19-bot-prefetch").output.fraud_decisions.length === 1 && fixture("41-click-injection-suspected").output.fraud_decisions.length === 1 && fixture("20-timestamp-invalid").output.rejections.some((item: Any) => item.reason_code === "timestamp_invalid"), "AC16")],
+  ["AC16 clock referrer prefetch and withdrawal fixtures pass", () => check(scenarios.length === 46 && fixture("11-clock-skew").output.deliveries.some((item: Any) => item.clock_skew_suspected) && fixture("13-referrer-unsupported").output.attributions.length === 2 && fixture("19-bot-prefetch").output.fraud_decisions.length === 1 && fixture("41-click-injection-suspected").output.fraud_decisions.length === 1 && fixture("20-timestamp-invalid").output.rejections.some((item: Any) => item.reason_code === "timestamp_invalid"), "AC16")],
   ["AC17 server-recognized withdrawal rejects and redacts payload", () => {
     for (const name of ["14-withdrawal-after-occurrence", "15-event-after-withdrawal"]) {
       const value = fixture(name).output;
@@ -1483,7 +1491,7 @@ const acceptance: Array<[string, () => void]> = [
     for (const forbidden of ["threshold", "model_weight", "watchlist", "ip_address", "user_agent", "response_timing"]) check(!schemaText.includes(forbidden), `AC20 ${forbidden}`);
     check(specText.includes("remain private"), "AC20 private boundary");
   }],
-  ["AC21 one command validates every schema registry fixture and golden", () => check(schemaPaths.length === 27 && Object.keys(registries).length === 8 && fixtureDirs.length === 45 && outputArtifactCount === 45 * 13, "AC21")],
+  ["AC21 one command validates every schema registry fixture and golden", () => check(schemaPaths.length === 27 && Object.keys(registries).length === 8 && fixtureDirs.length === 46 && outputArtifactCount === 46 * 13, "AC21")],
   ["AC22 repeated and independent evaluators produce identical JCS", () => {
     for (const { output, python } of results.values()) check(equal(output, python), "AC22 evaluator mismatch");
     const vector = { numbers: [333333333.33333329, 1e30, 4.50, 2e-3, 1e-27, -0], string: "€$\u000f\nA'B\"\\\"/" };
@@ -1759,6 +1767,28 @@ if (!summaryOnly) {
       const rawValidator = validatorFor(outputSchemaIds.raw_records);
       const rawBaseline = fixture("01-valid-install-referrer").output.raw_records[0];
       check(!rawValidator({ ...rawBaseline, occurred_at: "2026-08-12T00:00:00Z" }), "mutation timestamp precision was accepted");
+    });
+    it("keeps platform integrity evidence closed and protected", () => {
+      const fixtureValidator = validatorFor("urn:open-mmp:schema:fixture-input:v0.3");
+      const baseline = structuredClone(fixture("46-integrity-verdict-reservation").input);
+      check(fixtureValidator(baseline), `integrity fixture baseline invalid: ${ajv.errorsText(fixtureValidator.errors)}`);
+
+      const missingEvidence = structuredClone(baseline);
+      delete missingEvidence.records.find((record: Any) => record.record_id === "play-integrity-verified-46").integrity_verdict.evidence_ref;
+      check(!fixtureValidator(missingEvidence), "verified integrity verdict accepted without protected evidence reference");
+
+      const unavailableWithEvidence = structuredClone(baseline);
+      unavailableWithEvidence.records.find((record: Any) => record.record_id === "app-attest-unavailable-46").integrity_verdict.evidence_ref = "protected:unexpected";
+      check(!fixtureValidator(unavailableWithEvidence), "unavailable integrity verdict accepted an evidence reference");
+
+      const unknownProvider = structuredClone(baseline);
+      unknownProvider.records[0].integrity_verdict.provider = "unknown_provider";
+      check(!fixtureValidator(unknownProvider), "unknown integrity provider was accepted");
+
+      const rawValidator = validatorFor(outputSchemaIds.raw_records);
+      const raw = fixture("46-integrity-verdict-reservation").output.raw_records[0];
+      check(rawValidator(raw), `integrity raw-record baseline invalid: ${ajv.errorsText(rawValidator.errors)}`);
+      check(!rawValidator({ ...raw, integrity_verdict: { ...raw.integrity_verdict, raw_token: "forbidden" } }), "integrity verdict accepted raw provider material");
     });
     it("detects golden output removal", () => {
       check(!equal(fixture("01-valid-install-referrer").output, { ...fixture("01-valid-install-referrer").output, raw_records: [] }), "mutation golden comparison did not fail");

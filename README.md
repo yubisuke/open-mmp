@@ -16,7 +16,7 @@ This project is licensed under the [Apache License 2.0](LICENSE); attribution is
 
 ## Current status
 
-This project contains the v0.3.4 contract, the M1a Shadow ledger/import foundation, the M1b cohort metric and difference-audit runtime, M2 Android/Unity measurement, the M3 operator dashboard, and M4 Apple measurement. M4 adds a Swift SDK, Unity iOS source bridge, AdServices lookup, verified SKAdNetwork and AdAttributionKit receiver paths, replay-resistant aggregate evidence, and separate deterministic and Apple aggregate reporting. Real provider connectivity, real-device and campaign validation, Unity Xcode export, App Store review, a production deployment, real-cardinality dashboard usability, and exact 4-vCPU/8-GB capacity validation have not been demonstrated. Immutable baselines are available at the `contract-v0.1` and `contract-v0.2.1` Git tags.
+This project contains the v0.3.5 contract and the synthetic code milestones from M1 through M5: the Shadow ledger and import foundation, cohort metrics and difference audit, Android/Unity and Apple measurement paths, the server-rendered operator dashboard, minimum RBAC, authenticated operational metrics, privacy-safe restore support, rule-bundle history, and release evidence. Real provider connectivity, real-device and campaign validation, Unity Xcode export, App Store review, a production deployment, real backup operations, real production load, real integrity-service configuration, real-cardinality dashboard usability, and exact 4-vCPU/8-GB capacity validation have not been demonstrated. Immutable baselines are available at the `contract-v0.1` and `contract-v0.2.1` Git tags. See [the current status](docs/STATUS.md) for the milestone-by-milestone boundary.
 
 The first product entry point is a Shadow MMP that runs alongside an existing provider. It normalizes first-party events, existing MMP exports, media cost, and revenue into a common contract, then explains neutral differences through candidate evidence, exclusion reasons, attribution windows, ID joins, and recalculation history. Difference reasons describe measurement semantics, not provider quality. It must not be treated as the primary MMP until a real shadow pilot has produced sufficient evidence.
 
@@ -28,6 +28,8 @@ The first native attribution vertical slice targets Android:
 4. The SDK sends an install record to the ingestion API.
 5. The attribution engine deterministically matches the click and install.
 6. Reporting separates organic and non-organic installs and groups results by campaign.
+
+The implemented adapter boundary is deliberately narrow: first-party measurement links and evidence, Meta Install Referrer, and Apple Ads/Apple aggregate evidence. AppLovin MAX integration is revenue evidence, not user-level install attribution. User-level attribution for TikTok, the AppLovin ad network, the Unity Ads network, or Mintegral is outside the supported boundary when it requires a partner MMP relationship or non-public provider evidence.
 
 ## Principles
 
@@ -87,6 +89,12 @@ Implemented runtime code lives in `apps/api`, `apps/redirector`, `apps/worker`, 
 - [M2 device and provider validation checklist](docs/validation/m2-device-checklist.md)
 - [M3 operator validation checklist](docs/validation/m3-operator-checklist.md)
 - [M4 device and Apple-provider validation checklist](docs/validation/m4-device-checklist.md)
+- [M5 integrity-service checklist](docs/validation/m5-integrity-checklist.md)
+- [M5 production-operator checklist](docs/validation/m5-operator-checklist.md)
+- [M5 synthetic load record](docs/validation/m5-load-results.md)
+- [Backup and restore runbook](docs/operations/backup-restore.md)
+- [Release runbook](docs/operations/release.md)
+- [Current milestone status](docs/STATUS.md)
 
 ## Five-minute synthetic quickstart
 
@@ -152,4 +160,4 @@ python -m pip install --require-hashes --requirement requirements-contract.txt
 npm run validate
 ```
 
-Validation is read-only. It checks 27 schemas, 8 registries, 45 reviewed synthetic fixtures, 585 golden output artifacts across 13 classes, 45 scenario assertions, 26 acceptance criteria, semantic and metamorphic mutations, deterministic TypeScript output, independent Python output, and RFC 8785 conformance. See the [fixture provenance note](fixtures/v0.3/README.md).
+Validation is read-only. It checks 27 schemas, 8 registries, 46 reviewed synthetic fixtures, 598 golden output artifacts across 13 classes, 46 scenario assertions, 26 acceptance criteria, semantic and metamorphic mutations, deterministic TypeScript output, independent Python output, and RFC 8785 conformance. See the [fixture provenance note](fixtures/v0.3/README.md).
