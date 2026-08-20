@@ -253,7 +253,7 @@ describe("M4 AdServices server-side lookup", () => {
       `SELECT artifact FROM ledger.attribution_results
        WHERE tenant_id=$1 AND app_id=$2 AND subject_ref=$3
          AND reason_code='adservices_attributed'`,
-      [tenantId, appId, `installation:${install.installationId}`],
+      [tenantId, appId, install.installationId],
     ));
     assert.equal(replacement.rows.length, 1);
     assert.equal(replacement.rows[0].artifact.method, "apple_adservices");
