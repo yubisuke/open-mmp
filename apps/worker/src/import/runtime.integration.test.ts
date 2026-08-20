@@ -170,7 +170,10 @@ describe("M1a import integration", () => {
         { target: "event_id", expression: { source: "shared_id" } },
         { target: "occurred_at", expression: { source: "occurred_at", timestamp: { default_timezone: "UTC", truncate_to_milliseconds: true } } },
         { target: "payload", expression: { object: {
-          click_id: { source: "click_id" }, redirector_time_status: { const: "missing" },
+          click_id: { source: "click_id" },
+          tracking_link_id: { const: "synthetic-cross-type-link-11" },
+          campaign_id: { const: "synthetic-cross-type-campaign-11" },
+          redirector_time_status: { const: "missing" },
         } } },
       ],
     };
