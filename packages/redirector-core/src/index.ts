@@ -90,7 +90,7 @@ export function bindDeepLinkParameters(
   const values: Record<string, string> = {};
   let dropped = 0;
   for (const [name, value] of source) {
-    if (!name.startsWith("dlp_") || !allowed.has(name.slice(4)) || !/^[A-Za-z0-9._~-]{1,128}$/.test(value)) {
+    if (!name.startsWith("dlp_") || !allowed.has(name.slice(4)) || !/^[A-Za-z0-9._~-]{1,64}$/.test(value)) {
       dropped += 1;
       continue;
     }

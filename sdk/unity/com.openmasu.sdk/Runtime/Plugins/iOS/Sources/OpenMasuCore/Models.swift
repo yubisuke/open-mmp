@@ -75,7 +75,7 @@ enum DeepLinkParser {
       guard parameters.count < 10,
             let match = item.name.range(of: "^dlp_[a-z][a-z0-9_]{0,63}$", options: .regularExpression),
             match == item.name.startIndex..<item.name.endIndex,
-            let value = item.value, value.count <= 256
+            let value = item.value, value.range(of: "^[A-Za-z0-9._~-]{1,64}$", options: .regularExpression) != nil
       else { continue }
       parameters[String(item.name.dropFirst(4))] = value
     }

@@ -79,7 +79,7 @@ class GooglePlayReferrerReader(
         it.split('/').drop(1).none { segment -> segment == "." || segment == ".." }
     }
     val deepLinkParameters = fields.entries
-      .filter { (name, value) -> name.matches(Regex("^dlp_[a-z][a-z0-9_]{0,63}$")) && value.length <= 256 }
+      .filter { (name, value) -> name.matches(Regex("^dlp_[a-z][a-z0-9_]{0,63}$")) && value.matches(Regex("^[A-Za-z0-9._~-]{1,64}$")) }
       .sortedBy { it.key }
       .take(10)
       .associate { it.key.removePrefix("dlp_") to it.value }

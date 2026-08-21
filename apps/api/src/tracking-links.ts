@@ -91,6 +91,7 @@ export async function createTrackingLink(input: {
   actorRef: string;
   allowedOrigins: readonly string[];
   body: Any;
+  referrerMaximumEncodedCharacters?: number;
   now?: string;
 }): Promise<Any> {
   const destinationKind = input.body.destination_kind;
@@ -117,9 +118,10 @@ export async function createTrackingLink(input: {
   const deferredTtl = Number(input.body.deferred_deep_link_ttl_seconds ?? 604800);
   if (!Number.isInteger(deferredTtl) || deferredTtl < 0 || deferredTtl > 7776000) throw new Error("deferred_deep_link_ttl_invalid");
   if (deepLinkValue) {
-    const maximumParams = Object.fromEntries(deepLinkParamNames.map((name: string) => [name, "x".repeat(128)]));
+    const maximumParams = Object.fromEntries(deepLinkParamNames.map((name: string) => [name, "x".repeat(64)]));
     const probe = buildDeferredReferrer({
-      clickId: "x".repeat(44), deepLinkValue, deepLinkParams: maximumParams, maximumEncodedCharacters: 512,
+      clickId: "x".repeat(44), deepLinkValue, deepLinkParams: maximumParams,
+      maximumEncodedCharacters: input.referrerMaximumEncodedCharacters ?? 512,
     });
     if (probe.status !== "carried") throw new Error("deep_link_referrer_budget_exceeded");
   }

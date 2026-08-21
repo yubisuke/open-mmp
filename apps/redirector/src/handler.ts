@@ -28,6 +28,8 @@ export type RedirectorDependencies = {
   wellKnownLimiter?: RedirectRateLimiter;
   hostMode?: "host_header" | "fixed_tenant";
   referrerMaximumEncodedCharacters?: number;
+  wellKnownCacheSeconds?: number;
+  wellKnownMaximumBytes?: number;
   clientClassEnabled?: boolean;
   remoteClickParameter?: string;
   clock?: () => Date;
@@ -88,9 +90,9 @@ function normalizedHost(request: IncomingMessage): string | undefined {
   return /^[a-z0-9.-]{3,253}$/.test(value) ? value : undefined;
 }
 
-function sendAssociation(response: ServerResponse, body: Buffer): void {
+function sendAssociation(response: ServerResponse, body: Buffer, cacheSeconds: number): void {
   response.writeHead(200, {
-    "cache-control": "public, max-age=300",
+    "cache-control": `public, max-age=${cacheSeconds}`,
     "content-type": "application/json",
     "content-length": String(body.length),
     "x-content-type-options": "nosniff",
@@ -172,7 +174,13 @@ export function createRedirectorHandler(dependencies: RedirectorDependencies): R
         try { documents = await loadAssociation(dependencies.pool, tenantId, host); }
         catch { response.writeHead(404).end(); return; }
         if (!documents) { response.writeHead(404).end(); return; }
-        sendAssociation(response, target.pathname.endsWith("assetlinks.json") ? documents.assetlinks : documents.aasa);
+        const body = target.pathname.endsWith("assetlinks.json") ? documents.assetlinks : documents.aasa;
+        if (body.length > (dependencies.wellKnownMaximumBytes ?? 65_536)) {
+          response.writeHead(503, { "cache-control": "no-store", "x-content-type-options": "nosniff" });
+          response.end();
+          return;
+        }
+        sendAssociation(response, body, dependencies.wellKnownCacheSeconds ?? 300);
         return;
       }
       const match = request.method === "GET" ? /^\/r\/([A-Za-z0-9_-]{12,64})(\/.*)?$/.exec(target.pathname) : null;

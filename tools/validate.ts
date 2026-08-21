@@ -562,7 +562,7 @@ if (!summaryOnly) {
         }
       });
     }
-    it("contains 53 fixture directories", () => {
+    it("contains 54 fixture directories", () => {
       check(fixtureDirs.length === 54, `expected 54 fixture directories, found ${fixtureDirs.length}`);
     });
   });
@@ -936,6 +936,8 @@ const scenarios: Array<[string, () => void]> = [
     "scenario 54 exercises every deep-link attribution reason");
     check(value.output.metric_runs.length === 2 && value.output.metric_runs.every((run: Any) => run.value_unscaled === "1"),
       "scenario 54 deep-link metrics");
+    check(!JSON.stringify(value.output).includes("days_since_last_session"),
+      "scenario 54 keeps runtime inactivity evidence outside contract artifacts");
   }],
 ];
 if (!summaryOnly) {

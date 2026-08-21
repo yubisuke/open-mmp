@@ -37,7 +37,7 @@ internal object DeepLinkParser {
     for (name in uri.queryParameterNames.sorted()) {
       val match = parameter.matchEntire(name) ?: continue
       val value = uri.getQueryParameter(name) ?: continue
-      if (params.size < 10 && value.length <= 256) params[match.groupValues[1]] = value
+      if (params.size < 10 && value.matches(Regex("^[A-Za-z0-9._~-]{1,64}$"))) params[match.groupValues[1]] = value
     }
     return OpenMasuDeepLink(
       value = destination.takeIf { destinationValid && it.isNotEmpty() }?.joinToString("/", prefix = "/"),

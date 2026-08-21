@@ -76,6 +76,7 @@ export type RequestHandlerDependencies = {
   readonly dashboardLoginGlobalBucket?: TokenBucket;
   readonly sdk?: SdkRouteDependencies;
   readonly trackingDestinationAllowlist?: readonly string[];
+  readonly referrerMaximumEncodedCharacters?: number;
   readonly reportMaximumRows?: number;
   readonly reportMaximumExportRows?: number;
   readonly applePostback?: ApplePostbackReceiverDependencies;
@@ -427,6 +428,7 @@ export function createRequestHandler(dependencies: RequestHandlerDependencies): 
                 appId: appIdentity.appId,
                 actorRef: `admin_key:${session.adminKeyId}`,
                 allowedOrigins: dependencies.trackingDestinationAllowlist ?? [],
+                referrerMaximumEncodedCharacters: dependencies.referrerMaximumEncodedCharacters,
                 body: Object.fromEntries(body),
               });
               const link = measurementLink(dependencies.redirectorBaseUrl, result.slug);
@@ -706,6 +708,7 @@ export function createRequestHandler(dependencies: RequestHandlerDependencies): 
               appId: appIdentity.appId,
               actorRef: `admin_key:${identity.keyId}`,
               allowedOrigins: dependencies.trackingDestinationAllowlist ?? [],
+              referrerMaximumEncodedCharacters: dependencies.referrerMaximumEncodedCharacters,
               body,
             });
             json(response, 201, result);

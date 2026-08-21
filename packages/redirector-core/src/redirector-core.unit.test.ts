@@ -102,17 +102,32 @@ describe("redirector core", () => {
     });
   });
 
-  it("DL-A-03 accepts only the bounded destination grammar", () => {
-    const accepted = ["/a", "/shop/item/1", `/${"a".repeat(32)}/${"b".repeat(32)}/${"c".repeat(32)}/${"d".repeat(32)}`];
-    const rejected = ["..", "//", "a", "/a//b", "/a/../b", "/a?b", "/a#b", "/%2F", "http://x", "//evil.example", `/${"a".repeat(65)}`, "/a/b/c/d/e/f/g/h/i", `/${"a".repeat(64)}/${"b".repeat(64)}/${"c".repeat(64)}/${"d".repeat(64)}`];
+  it("DL-A-03 evaluates a 40-value destination grammar table", () => {
+    const accepted = [
+      "/a", "/shop/item/1", "/A-Z_0.~", "/one/two", "/a/b/c/d/e/f/g/h",
+      `/${Array.from({ length: 8 }, (_, index) => String.fromCharCode(97 + index).repeat(31)).join("/")}`,
+      "/event/summer-2026", "/item/_private", "/dots/are.ok", "/tilde/~ok",
+    ];
+    const rejected = [
+      "..", "//", "a", "", "/", "/a//b", "/a/../b", "/a/./b", "/a?b", "/a#b",
+      "/%2F", "/%2e%2e", "http://x", "https://x/a", "//evil.example", `/${"a".repeat(65)}`,
+      "/a/b/c/d/e/f/g/h/i", `/${"a".repeat(64)}/${"b".repeat(64)}/${"c".repeat(64)}/${"d".repeat(64)}`,
+      "/a b", "/a+b", "/a=b", "/a&b", "/a;b", "/a:b", "/a@b", "/a,b", "/a\\b", "/日本語", "/😀", "/a%20b",
+    ];
+    assert.equal(accepted.length + rejected.length, 40);
+    assert.equal(accepted[5].length, 256);
     for (const value of accepted) assert.equal(assertDeepLinkValue(value), value);
     for (const value of rejected) assert.throws(() => assertDeepLinkValue(value), /deep_link_value_invalid/);
   });
 
-  it("DL-A-05 binds only declared safe parameters", () => {
-    const result = bindDeepLinkParameters(new URLSearchParams("dlp_code=abc&dlp_drop=bad&next=https://invalid&dlp_code=last"), ["code"]);
+  it("DL-A-04 and DL-A-05 bind only declared safe parameters without changing redirect identity", () => {
+    const result = bindDeepLinkParameters(new URLSearchParams("dlp_code=abc&dlp_drop=bad&destination=x&url=x&next=x&dl=x&dlp_bad=space%20value&dlp_code=last"), ["code", "bad"]);
     assert.deepEqual(result.values, { code: "last" });
-    assert.equal(result.dropped, 2);
+    assert.equal(result.dropped, 6);
+    const base = resolveRedirect({ link: activeLink, fallbackDestination: "https://safe.example/", now: "2026-08-21T00:00:00.000Z", clickId: "AbCdEf0123456789_-abcd" });
+    const ignored = resolveRedirect({ link: activeLink, fallbackDestination: "https://safe.example/", now: "2026-08-21T00:00:00.000Z", clickId: "AbCdEf0123456789_-abcd", deepLinkParams: bindDeepLinkParameters(new URLSearchParams("destination=x&url=x&next=x&dl=x"), []).values });
+    assert.equal(JSON.stringify(ignored), JSON.stringify(base));
+    assert.deepEqual(bindDeepLinkParameters(new URLSearchParams(`dlp_code=${"x".repeat(65)}`), ["code"]), { values: {}, dropped: 1 });
   });
 
   it("DL-A-11 keeps click entropy and omits an oversized destination", () => {
@@ -123,6 +138,22 @@ describe("redirector core", () => {
     const omitted = buildDeferredReferrer({ clickId, deepLinkValue: `/${"a".repeat(64)}/${"b".repeat(64)}`, maximumEncodedCharacters: 40 });
     assert.equal(omitted.status, "omitted_length");
     assert.deepEqual(decodeInstallReferrer(omitted.referrer), { omv: "1", cid: clickId });
+  });
+
+  it("DL-A-12 preserves click entropy at the minimum referrer budget", () => {
+    const values = new Set<string>();
+    for (let index = 0; index < 10_000; index += 1) {
+      const result = resolveRedirect({
+        link: activeLink,
+        fallbackDestination: "https://safe.example/",
+        now: "2026-08-21T00:00:00.000Z",
+        referrerMaximumEncodedCharacters: 54,
+      });
+      const clickId = result.click?.click_id ?? "";
+      assert.match(clickId, /^[A-Za-z0-9_-]{22,128}$/);
+      values.add(clickId);
+    }
+    assert.equal(values.size, 10_000);
   });
 
   it("F-A-17 classifies normal and prefetch clicks using only the public bounded classes", () => {
