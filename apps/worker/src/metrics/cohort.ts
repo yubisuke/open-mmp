@@ -210,7 +210,7 @@ async function eventCountValue(
         AND fact.app_id=logical.app_id
         AND fact.logical_event_id=logical.logical_event_id
        JOIN LATERAL (
-         SELECT candidate.status
+         SELECT candidate.status, candidate.reason_code
          FROM ledger.attribution_results AS candidate
          WHERE candidate.tenant_id=logical.tenant_id
            AND candidate.app_id=logical.app_id
@@ -249,6 +249,7 @@ async function eventCountValue(
   const result = await client.query<{ value_unscaled: string }>(
     `WITH event AS (
        SELECT
+         install.installation_id,
          CASE WHEN logical.event_name='click' THEN click.campaign_id ELSE install.campaign_id END AS campaign_id,
          CASE WHEN logical.event_name='click' THEN click.network ELSE install.network END AS network,
          CASE WHEN logical.event_name='click' THEN click.country ELSE install.country END AS country,
@@ -285,7 +286,11 @@ async function eventCountValue(
      WHERE ($8::text IS NULL OR campaign_id=$8)
        AND ($9::text IS NULL OR network=$9)
        AND ($10::text IS NULL OR country=$10)
-       AND ($11::text IS NULL OR attribution_status=$11)`,
+       AND ($11::text IS NULL OR attribution_status=$11)
+       AND ($12::text='gross' OR NOT EXISTS (SELECT 1 FROM ledger.attribution_results AS excluded
+              WHERE excluded.tenant_id=$1 AND excluded.app_id=$2
+                AND excluded.reason_code='fraud_excluded'
+                AND excluded.subject_ref=event.installation_id))`,
     [
       scope.tenant_id,
       scope.app_id,
@@ -298,6 +303,7 @@ async function eventCountValue(
       grouping.network ?? null,
       grouping.country ?? null,
       grouping.attribution_status ?? null,
+      definition.fraud_policy ?? "gross",
     ],
   );
   return { value_state: "present", value_unscaled: result.rows[0].value_unscaled };
@@ -345,7 +351,7 @@ async function metricValue(
           AND raw.tenant_id=logical.tenant_id
           AND raw.app_id=logical.app_id
          LEFT JOIN LATERAL (
-           SELECT candidate.status
+           SELECT candidate.status, candidate.reason_code
            FROM ledger.attribution_results AS candidate
            WHERE candidate.tenant_id=install.tenant_id
              AND candidate.app_id=install.app_id
@@ -362,6 +368,7 @@ async function metricValue(
            AND ($6::text IS NULL OR install.country=$6)
            AND ($7::text IS NULL OR timezone($8, install.occurred_at_ts)::date::text=$7)
            AND ($16::text IS NULL OR attribution.status=$16)
+           AND ($17='gross' OR attribution.reason_code IS DISTINCT FROM 'fraud_excluded')
        ),
        revenue_candidates AS (
          SELECT revenue.*, cohort.installed_at, rate.rate_unscaled, rate.rate_scale
@@ -470,6 +477,7 @@ async function metricValue(
       definition.ratio_scale ?? 0,
       privacyState,
       grouping?.attribution_status ?? null,
+      definition.fraud_policy ?? "gross",
     ],
   );
   const row = result.rows[0];
