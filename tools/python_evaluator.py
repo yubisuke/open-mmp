@@ -32,6 +32,7 @@ FRAUD_BUNDLE = {
     "version": "1.0.0",
     "layers": {"base": {
         "ctit_lower_bound_seconds": 10,
+        "ctit_negative_rate_threshold": 0.05,
         "referrer_redirector_divergence_seconds": 300,
         "source_day_min_clicks": 1000,
         "source_day_cvr_median_multiplier": 0.2,
@@ -40,14 +41,53 @@ FRAUD_BUNDLE = {
         "quarantine_hours": 72,
     }},
     "rules": [
+        {"id": "transport-bot-prefetch-v1", "inputs": ["prefetch_signal"], "action": "exclude"},
+        {"id": "transport-replay-v1", "inputs": ["replay_signal"], "action": "exclude"},
         {"id": "referrer-server-order-v1", "inputs": ["referrer_click_at_server", "install_begin_at_server"], "action": "flag"},
         {"id": "ctit-lower-bound-v1", "inputs": ["redirector_click_at", "install_begin_at_server"], "action": "flag"},
+        {"id": "ctit-clock-anomaly-v1", "inputs": ["redirector_click_at", "install_begin_at_server"], "action": "allow"},
         {"id": "referrer-redirector-divergence-v1", "inputs": ["referrer_click_at_server", "redirector_click_at"], "action": "flag"},
         {"id": "source-day-click-flooding-v1", "inputs": ["source_day_aggregate"], "action": "flag"},
         {"id": "device-integrity-combination-v1", "inputs": ["integrity_verdict", "ctit"], "action": "flag"},
     ],
 }
 FRAUD_BUNDLE_HASH = digest(FRAUD_BUNDLE)
+
+
+def fraud_parameter(bundle: dict[str, Any], name: str, fallback: float) -> float:
+    value = bundle.get("layers", {}).get("base", {}).get(name, fallback)
+    return float(value) if isinstance(value, (int, float)) else fallback
+
+
+def fraud_action(bundle: dict[str, Any], rule_id: str, fallback: str) -> str:
+    return next((rule["action"] for rule in bundle.get("rules", []) if rule.get("id") == rule_id), fallback)
+
+
+def bound_fraud_bundle(server: dict[str, Any]) -> tuple[dict[str, Any], str] | None:
+    if server.get("fraud_enabled") is False:
+        return None
+    bound = server.get("fraud_rule_bundle")
+    if bound is None:
+        return FRAUD_BUNDLE, FRAUD_BUNDLE_HASH
+    definition = bound["definition"]
+    bundle_hash = digest({
+        "id": definition["id"], "version": definition["version"],
+        "layers": definition["layers"], "rules": definition["rules"],
+    })
+    if bound.get("rule_bundle_id") != definition["id"] or bound.get("rule_bundle_version") != definition["version"]:
+        raise ValueError("fraud_rule_bundle_identity_mismatch")
+    if bound.get("definition_digest") != digest(definition):
+        raise ValueError("fraud_rule_bundle_definition_digest_mismatch")
+    if bound.get("rule_bundle_hash") != bundle_hash:
+        raise ValueError("fraud_rule_bundle_hash_mismatch")
+    return definition, bundle_hash
+
+
+def quarantine_deadline(action: str, evaluated_at: str, bundle: dict[str, Any]) -> dict[str, str]:
+    if action != "quarantine":
+        return {}
+    hours = fraud_parameter(bundle, "quarantine_hours", 72)
+    return {"resolution_deadline_at": (timestamp(evaluated_at, "evaluated_at") + timedelta(hours=hours)).isoformat(timespec="milliseconds").replace("+00:00", "Z")}
 
 
 class TimestampInvalidError(ValueError):
@@ -1426,82 +1466,58 @@ def evaluate(value: dict[str, Any]) -> dict[str, Any]:
         if request["status"] == "completed"
         for affected in request.get("affected_records", [])
     ], privacy_tombstone_sort_key)
-    fraud_values = [
-        {
+    fraud_values: list[dict[str, Any]] = []
+    for attempt in accepted:
+        payload = attempt["record"]["payload"]
+        if attempt["record"]["event_name"] != "click" or not (
+            payload.get("bot_prefetch") or payload.get("replay_suspected")
+        ):
+            continue
+        bound = bound_fraud_bundle(attempt["server"])
+        if bound is None:
+            continue
+        bundle, bundle_hash = bound
+        reason = "replay_suspected" if payload.get("replay_suspected") else "bot_prefetch"
+        rule_id = "transport-replay-v1" if reason == "replay_suspected" else "transport-bot-prefetch-v1"
+        action = fraud_action(bundle, rule_id, "exclude")
+        fraud_values.append({
             "fraud_decision_id": f"fraud:{attempt['record']['record_id']}",
             "subject_ref": attempt["record"]["record_id"],
             "decision": "suspected",
-            "action": "exclude",
-            "reason_code": "replay_suspected" if attempt["record"]["payload"].get("replay_suspected") else "bot_prefetch",
+            "action": action,
+            "reason_code": reason,
             "reason_code_version": CONTRACT_VERSION,
             "evidence": [{
-                "type": "replay_category" if attempt["record"]["payload"].get("replay_suspected") else "link_prefetch_category",
+                "type": "replay_category" if reason == "replay_suspected" else "link_prefetch_category",
                 "captured_at": attempt["record"]["received_at"],
-                "digest": digest([
-                    "replay_suspected" if attempt["record"]["payload"].get("replay_suspected") else "bot_prefetch",
-                    attempt["record"]["record_id"],
-                ]),
+                "digest": digest([reason, attempt["record"]["record_id"]]),
                 "access_class": "protected",
             }],
-            "rule_bundle_id": "fraud-public-envelope",
-            "rule_bundle_version": REFERENCE_RULE_VERSION,
-            "rule_bundle_hash": ZERO_HASH,
+            "rule_bundle_id": bundle["id"],
+            "rule_bundle_version": bundle["version"],
+            "rule_bundle_hash": bundle_hash,
+            "rule_id": rule_id,
             "evaluated_at": attempt["record"]["received_at"],
-        }
-        for attempt in accepted
-        if attempt["record"]["event_name"] == "click"
-        and (attempt["record"]["payload"].get("bot_prefetch") or attempt["record"]["payload"].get("replay_suspected"))
-    ]
+        } | quarantine_deadline(action, attempt["record"]["received_at"], bundle))
     for attempt in accepted:
         if attempt["record"]["event_name"] != "install":
             continue
-        payload = attempt["record"]["payload"]
-        if payload.get("referrer_status") != "available" or not payload.get("click_id") or not payload.get("install_begin_at_server"):
+        bound = bound_fraud_bundle(attempt["server"])
+        if bound is None:
             continue
+        bundle, bundle_hash = bound
+        payload = attempt["record"]["payload"]
         matching_clicks = [
             candidate for candidate in accepted
             if candidate["server"]["tenant_id"] == attempt["server"]["tenant_id"]
             and candidate["server"]["app_id"] == attempt["server"]["app_id"]
             and candidate["record"]["event_name"] == "click"
-            and candidate["record"]["payload"].get("click_id") == payload["click_id"]
+            and candidate["record"]["payload"].get("click_id") == payload.get("click_id")
             and candidate["record"]["payload"].get("redirector_time_status") != "invalid"
             and candidate["record"]["payload"].get("redirector_click_at")
         ]
-        if len(matching_clicks) != 1:
-            continue
-        click = matching_clicks[0]
-        try:
-            delta = timestamp(payload["install_begin_at_server"], "install_begin_at_server") - timestamp(
-                click["record"]["payload"]["redirector_click_at"], "redirector_click_at"
-            )
-        except ValueError:
-            # Invalid authority is classified by attribution and cannot support CTIT evidence.
-            continue
-        threshold_seconds = attempt["server"].get("click_injection_policy", {}).get("threshold_seconds", 10)
-        if delta.total_seconds() < 0 or delta.total_seconds() >= threshold_seconds:
-            continue
-        fraud_values.append({
-            "fraud_decision_id": f"fraud:{attempt['record']['record_id']}:click-injection",
-            "subject_ref": attempt["record"]["record_id"],
-            "decision": "suspected",
-            "action": "flag",
-            "reason_code": "click_injection_suspected",
-            "reason_code_version": CONTRACT_VERSION,
-            "evidence": [{
-                "type": "ctit_category",
-                "captured_at": attempt["record"]["received_at"],
-                "digest": digest(["click_injection_suspected", click["record"]["record_id"], attempt["record"]["record_id"]]),
-                "access_class": "protected",
-            }],
-            "rule_bundle_id": "fraud-public-envelope",
-            "rule_bundle_version": REFERENCE_RULE_VERSION,
-            "rule_bundle_hash": ZERO_HASH,
-            "evaluated_at": attempt["record"]["received_at"],
-        })
-    for attempt in accepted:
-        if attempt["record"]["event_name"] != "install":
-            continue
-        payload = attempt["record"]["payload"]
+        click = matching_clicks[0] if len(matching_clicks) == 1 else None
+        hits: list[tuple[str, str, str, str, str]] = []
         if (
             payload.get("referrer_click_at_server_status") == "available"
             and payload.get("referrer_click_at_server")
@@ -1509,46 +1525,80 @@ def evaluate(value: dict[str, Any]) -> dict[str, Any]:
             and timestamp(payload["referrer_click_at_server"], "referrer_click_at_server")
             >= timestamp(payload["install_begin_at_server"], "install_begin_at_server") + timedelta(seconds=1)
         ):
-            rule_id = "referrer-server-order-v1"
+            hits.append(("referrer-server-order-v1", "confirmed", "referrer_time_inconsistent", "server_clock_order", "flag"))
+        if click is not None and payload.get("install_begin_at_server"):
+            try:
+                delta = timestamp(payload["install_begin_at_server"], "install_begin_at_server") - timestamp(
+                    click["record"]["payload"]["redirector_click_at"], "redirector_click_at"
+                )
+                threshold = attempt["server"].get("click_injection_policy", {}).get(
+                    "threshold_seconds", fraud_parameter(bundle, "ctit_lower_bound_seconds", 10)
+                )
+                if delta.total_seconds() < 0:
+                    hits.append(("ctit-clock-anomaly-v1", "clear", "ctit_clock_anomaly", "ctit_clock_diagnostic", "allow"))
+                elif delta.total_seconds() < threshold:
+                    hits.append(("ctit-lower-bound-v1", "suspected", "click_injection_suspected", "ctit_category", "flag"))
+                referrer_click = payload.get("referrer_click_at_server")
+                divergence = fraud_parameter(bundle, "referrer_redirector_divergence_seconds", 300)
+                if referrer_click and abs((timestamp(referrer_click, "referrer_click_at_server") - timestamp(
+                    click["record"]["payload"]["redirector_click_at"], "redirector_click_at"
+                )).total_seconds()) > divergence:
+                    hits.append(("referrer-redirector-divergence-v1", "suspected", "referrer_time_inconsistent", "server_clock_order", "flag"))
+            except ValueError:
+                hits = [hit for hit in hits if hit[0] == "referrer-server-order-v1"]
+        for rule_id, decision, reason, evidence_type, fallback_action in hits:
+            action = fraud_action(bundle, rule_id, fallback_action)
             fraud_values.append({
-                "fraud_decision_id": f"fraud:{attempt['record']['record_id']}:{rule_id}",
+                "fraud_decision_id": (
+                    f"fraud:{attempt['record']['record_id']}:click-injection"
+                    if rule_id == "ctit-lower-bound-v1"
+                    else f"fraud:{attempt['record']['record_id']}:{rule_id}"
+                ),
                 "subject_ref": attempt["record"]["record_id"],
-                "decision": "confirmed",
-                "action": "flag",
-                "reason_code": "referrer_time_inconsistent",
+                "decision": decision,
+                "action": action,
+                "reason_code": reason,
                 "reason_code_version": CONTRACT_VERSION,
                 "evidence": [{
-                    "type": "server_clock_order",
+                    "type": evidence_type,
                     "captured_at": attempt["record"]["received_at"],
-                    "digest": digest([rule_id, attempt["record"]["record_id"]]),
+                    "digest": digest([rule_id, click["record"]["record_id"] if click else "no-redirector-click", attempt["record"]["record_id"]]),
                     "access_class": "protected",
                 }],
-                "rule_bundle_id": FRAUD_BUNDLE["id"],
-                "rule_bundle_version": FRAUD_BUNDLE["version"],
-                "rule_bundle_hash": FRAUD_BUNDLE_HASH,
+                "rule_bundle_id": bundle["id"],
+                "rule_bundle_version": bundle["version"],
+                "rule_bundle_hash": bundle_hash,
                 "rule_id": rule_id,
                 "evaluated_at": attempt["record"]["received_at"],
-            })
+            } | quarantine_deadline(action, attempt["record"]["received_at"], bundle))
     for aggregate in value.get("source_day_aggregates", []):
+        scope_attempt = next((attempt for attempt in accepted
+                              if attempt["server"]["tenant_id"] == aggregate["tenant_id"]
+                              and attempt["server"]["app_id"] == aggregate["app_id"]), None)
+        bound = bound_fraud_bundle(scope_attempt["server"]) if scope_attempt else (FRAUD_BUNDLE, FRAUD_BUNDLE_HASH)
+        if bound is None:
+            continue
+        bundle, bundle_hash = bound
         p50 = aggregate.get("ctitP50Ms")
         p95 = aggregate.get("ctitP95Ms")
         if (
-            aggregate["clicks"] >= 1000
-            and aggregate["installs"] / aggregate["clicks"] <= aggregate["medianCvr"] * 0.2
-            and p50 is not None and p50 >= 86_400_000
-            and p95 is not None and p95 / p50 <= 3
+            aggregate["clicks"] >= fraud_parameter(bundle, "source_day_min_clicks", 1000)
+            and aggregate["installs"] / aggregate["clicks"] <= aggregate["medianCvr"] * fraud_parameter(bundle, "source_day_cvr_median_multiplier", 0.2)
+            and p50 is not None and p50 >= fraud_parameter(bundle, "source_day_ctit_p50_min_seconds", 86400) * 1000
+            and p95 is not None and p95 / p50 <= fraud_parameter(bundle, "source_day_ctit_p95_p50_max_ratio", 3)
         ):
             rule_id = "source-day-click-flooding-v1"
             source_ref = ":".join([
                 "source", aggregate["tenant_id"], aggregate["app_id"], aggregate["metric_date"],
                 aggregate["campaign_id"], aggregate["network"], aggregate["site_id"],
             ])
+            action = fraud_action(bundle, rule_id, "flag")
             fraud_values.append({
                 "fraud_decision_id": f"fraud:{aggregate['input_snapshot_id']}",
                 "subject_scope": "source",
                 "subject_ref": source_ref,
                 "decision": "suspected",
-                "action": "flag",
+                "action": action,
                 "reason_code": "click_flooding_suspected",
                 "reason_code_version": CONTRACT_VERSION,
                 "evidence": [{
@@ -1557,13 +1607,59 @@ def evaluate(value: dict[str, Any]) -> dict[str, Any]:
                     "digest": aggregate["input_snapshot_id"],
                     "access_class": "protected",
                 }],
-                "rule_bundle_id": FRAUD_BUNDLE["id"],
-                "rule_bundle_version": FRAUD_BUNDLE["version"],
-                "rule_bundle_hash": FRAUD_BUNDLE_HASH,
+                "rule_bundle_id": bundle["id"],
+                "rule_bundle_version": bundle["version"],
+                "rule_bundle_hash": bundle_hash,
                 "rule_id": rule_id,
                 "evaluated_at": aggregate["computed_at"],
-            })
+            } | quarantine_deadline(action, aggregate["computed_at"], bundle))
     fraud = sort_by_key(fraud_values, fraud_decision_sort_key)
+    provisional_clock_attributions: list[dict[str, Any]] = []
+    source_days: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+    for aggregate in value.get("source_day_aggregates", []):
+        key = (aggregate["tenant_id"], aggregate["app_id"], aggregate["metric_date"])
+        source_days.setdefault(key, []).append(aggregate)
+    for aggregates in source_days.values():
+        aggregate = aggregates[0]
+        scope_attempt = next((attempt for attempt in accepted
+                              if attempt["server"]["tenant_id"] == aggregate["tenant_id"]
+                              and attempt["server"]["app_id"] == aggregate["app_id"]), None)
+        bound = bound_fraud_bundle(scope_attempt["server"]) if scope_attempt else (FRAUD_BUNDLE, FRAUD_BUNDLE_HASH)
+        install_count = sum(item.get("installs", 0) for item in aggregates)
+        if bound is None or not install_count:
+            continue
+        bundle, _ = bound
+        negative_count = sum(item.get("ctitNegativeCount", 0) for item in aggregates)
+        negative_rate = negative_count / install_count
+        if negative_rate <= fraud_parameter(bundle, "ctit_negative_rate_threshold", 0.05):
+            continue
+        daily_snapshot_id = digest(sorted(str(item["input_snapshot_id"]) for item in aggregates))
+        computed_at = sorted(str(item["computed_at"]) for item in aggregates)[-1]
+        for install in (attempt for attempt in accepted
+                        if attempt["server"]["tenant_id"] == aggregate["tenant_id"]
+                        and attempt["server"]["app_id"] == aggregate["app_id"]
+                        and attempt["record"]["event_name"] == "install"
+                        and attempt["record"]["payload"].get("click_id")):
+            click = next((attempt for attempt in accepted
+                          if attempt["server"]["tenant_id"] == aggregate["tenant_id"]
+                          and attempt["server"]["app_id"] == aggregate["app_id"]
+                          and attempt["record"]["event_name"] == "click"
+                          and attempt["record"]["payload"].get("click_id") == install["record"]["payload"]["click_id"]
+                          and str(attempt["record"]["payload"].get("redirector_click_at", ""))[:10] == aggregate["metric_date"]), None)
+            if click is None:
+                continue
+            prior = next((item for item in attributions
+                          if item["subject_ref"] == install["record"]["payload"]["installation_id"]
+                          and item["reason_code"] == "valid_install_referrer"), None)
+            if prior is None:
+                continue
+            provisional_clock_attributions.append(prior | {
+                "attribution_id": f"{prior['attribution_id']}:ctit-clock-provisional:{daily_snapshot_id[:12]}",
+                "decided_at": computed_at,
+                "input_cutoff_at": computed_at,
+                "finality": "provisional",
+                "supersedes_attribution_id": prior["attribution_id"],
+            })
     excluded_click_ids: dict[str, dict[str, Any]] = {}
     for decision in fraud:
         if decision["action"] != "exclude" or decision.get("subject_scope") == "source":
@@ -1594,7 +1690,7 @@ def evaluate(value: dict[str, Any]) -> dict[str, Any]:
             "fraud_decision_ref": decision["fraud_decision_id"],
             "supersedes_attribution_id": prior["attribution_id"],
         })
-    attributions = sort_by_key(attributions + fraud_attributions, attribution_sort_key)
+    attributions = sort_by_key(attributions + provisional_clock_attributions + fraud_attributions, attribution_sort_key)
     rejections = sort_by_key([
         {
             "contract_version": CONTRACT_VERSION,

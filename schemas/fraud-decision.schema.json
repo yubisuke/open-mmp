@@ -11,7 +11,7 @@
     "subject_ref": { "$ref": "common.schema.json#/$defs/id" },
     "decision": { "enum": ["clear", "suspected", "confirmed"] },
     "action": { "enum": ["allow", "flag", "exclude", "quarantine"] },
-    "reason_code": { "enum": ["bot_prefetch", "replay_suspected", "click_injection_suspected", "click_flooding_suspected", "referrer_time_inconsistent", "device_integrity_failed"] },
+    "reason_code": { "enum": ["bot_prefetch", "replay_suspected", "click_injection_suspected", "ctit_clock_anomaly", "click_flooding_suspected", "referrer_time_inconsistent", "device_integrity_failed"] },
     "reason_code_version": { "const": "0.4.0" },
     "evidence": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["type", "captured_at", "digest", "access_class"], "properties": { "type": { "type": "string" }, "captured_at": { "$ref": "common.schema.json#/$defs/dateTime" }, "digest": { "type": "string", "pattern": "^[a-f0-9]{64}$" }, "access_class": { "enum": ["public", "protected", "private"] } } } },
     "rule_bundle_id": { "$ref": "common.schema.json#/$defs/id" },

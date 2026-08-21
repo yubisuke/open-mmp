@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
 import type { Pool } from "pg";
+import { DEFAULT_FRAUD_BUNDLE, fraudBundleHash, sha256Jcs } from "@openmasu/fraud-rules";
 import {
   createAppPool,
   createMigrationPool,
@@ -291,5 +292,54 @@ describe("M5 RBAC and rule-bundle production controls", { concurrency: false }, 
       "DELETE FROM control.rule_bundle_revisions WHERE rule_bundle_revision_id=$1",
       [first.rule_bundle_revision_id],
     )), /append-only/);
+  });
+
+  it("F-A-12 registers the canonical fraud definition and rejects forged digests", async () => {
+    const definition = structuredClone(DEFAULT_FRAUD_BUNDLE);
+    const revision = await activateRuleBundle({
+      pool: appPool,
+      identity: identities.admin,
+      body: {
+        rule_bundle_id: definition.id,
+        rule_bundle_version: definition.version,
+        rule_bundle_hash: fraudBundleHash(definition),
+        definition,
+        definition_digest: sha256Jcs(definition),
+      },
+      now: new Date("2026-08-20T02:00:00.000Z"),
+    });
+    assert.equal(revision.rule_bundle_hash, fraudBundleHash(definition));
+    assert.equal(revision.definition_digest, sha256Jcs(definition));
+    await assert.rejects(() => activateRuleBundle({
+      pool: appPool,
+      identity: identities.admin,
+      body: {
+        rule_bundle_id: definition.id,
+        rule_bundle_version: "1.1.0",
+        rule_bundle_hash: "f".repeat(64),
+        definition: { ...definition, version: "1.1.0" },
+        definition_digest: sha256Jcs({ ...definition, version: "1.1.0" }),
+        supersedes_rule_bundle_revision_id: revision.rule_bundle_revision_id,
+      },
+    }), /rule_bundle_hash_mismatch/);
+    await assert.rejects(() => activateRuleBundle({
+      pool: appPool,
+      identity: identities.admin,
+      body: {
+        rule_bundle_id: definition.id,
+        rule_bundle_version: "1.1.0",
+        definition: { ...definition, version: "1.1.0" },
+        definition_digest: "0".repeat(64),
+        supersedes_rule_bundle_revision_id: revision.rule_bundle_revision_id,
+      },
+    }), /rule_bundle_definition_digest_mismatch/);
+    const stored = await withTenant(appPool, tenantId, (client) => client.query<{
+      definition: unknown; definition_digest: string;
+    }>(
+      "SELECT definition,definition_digest FROM control.rule_bundle_revisions WHERE rule_bundle_revision_id=$1",
+      [revision.rule_bundle_revision_id],
+    ));
+    assert.deepEqual(stored.rows[0].definition, definition);
+    assert.equal(stored.rows[0].definition_digest, sha256Jcs(definition));
   });
 });

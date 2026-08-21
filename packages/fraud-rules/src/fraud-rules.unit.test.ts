@@ -47,7 +47,13 @@ describe("M6 deterministic fraud rules", () => {
       redirectorClickAt: "2026-08-21T01:00:01.000Z",
       installBeginAtServer: "2026-08-21T01:00:00.000Z",
       policy: policy(),
-    }), []);
+    }), [{
+      ruleId: "ctit-clock-anomaly-v1",
+      decision: "clear",
+      action: "allow",
+      reasonCode: "ctit_clock_anomaly",
+      evidenceType: "ctit_clock_diagnostic",
+    }]);
   });
 
   it("F-A-06 requires all four source-day flooding terms", () => {
@@ -61,13 +67,20 @@ describe("M6 deterministic fraud rules", () => {
   it("F-A-12 and F-A-13 bind the composite while exposing only the private digest", () => {
     const bundle: FraudBundle = {
       id: "fraud-conservative", version: "1.0.0",
-      layers: { base: { threshold: 2 }, private: { secret_threshold: 7, rule_text: "private synthetic" } },
+      layers: { base: { threshold: 2 }, private: { digest: "7".repeat(64) } },
       rules: [{ id: "combined", inputs: ["integrity_verdict", "ctit"], action: "flag" }],
     };
     const publicValue = publicBundleProvenance(bundle);
     assert.notEqual(publicValue.hash, "0".repeat(64));
-    assert.equal(JSON.stringify(publicValue).includes("secret_threshold"), false);
+    assert.equal(publicValue.private_layer_digest, "7".repeat(64));
     assert.notEqual(fraudBundleHash(bundle), fraudBundleHash({ ...bundle, layers: { ...bundle.layers, base: { threshold: 3 } } }));
+  });
+
+  it("F-A-13 rejects private layer contents instead of a digest-only reference", () => {
+    assert.throws(() => fraudBundleHash({
+      id: "fraud-private", version: "1", layers: { base: {}, private: { threshold: 7 } },
+      rules: [{ id: "combined-rule", inputs: ["integrity_verdict", "ctit"], action: "flag" }],
+    }), /private_layer_must_be_digest_only/);
   });
 
   it("F-A-16 rejects integrity-only rules at load time", () => {

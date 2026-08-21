@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+export { classifyClientClass, PUBLIC_BOT_TOKENS, type ClientClass } from "./client-class.js";
 
 export type TrackingLink = {
   tracking_link_id: string;
@@ -32,6 +33,7 @@ export type RedirectClick = {
   remote_click_ref?: string;
   source_rate_class?: "normal" | "elevated" | "saturated";
   client_class?: "mobile_app_eligible" | "bot" | "other";
+  bot_prefetch?: true;
 };
 
 export type RedirectPrefetch = Omit<RedirectClick, "click_id" | "destination_url" | "referrer"> & {
@@ -141,6 +143,7 @@ export function resolveRedirect(options: {
       ...(options.remoteClickRef ? { remote_click_ref: options.remoteClickRef } : {}),
       ...(options.sourceRateClass ? { source_rate_class: options.sourceRateClass } : {}),
       ...(options.clientClass ? { client_class: options.clientClass } : {}),
+      ...(options.clientClass === "bot" ? { bot_prefetch: true as const } : {}),
     },
   };
 }
@@ -151,6 +154,7 @@ export function prefetchEvidence(options: {
   now: string;
   remoteClickRef?: string;
   sourceRateClass?: RedirectClick["source_rate_class"];
+  clientClass?: RedirectClick["client_class"];
 }): RedirectResolution {
   const fallback = fallbackResponse(options.fallbackDestination);
   return {
@@ -168,7 +172,7 @@ export function prefetchEvidence(options: {
       ...(options.link.site_id ? { site_id: options.link.site_id } : {}),
       ...(options.remoteClickRef ? { remote_click_ref: options.remoteClickRef } : {}),
       ...(options.sourceRateClass ? { source_rate_class: options.sourceRateClass } : {}),
-      client_class: "bot",
+      client_class: options.clientClass ?? "bot",
     },
   };
 }

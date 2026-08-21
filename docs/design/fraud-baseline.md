@@ -49,7 +49,7 @@ After it, an operator can:
 - `exclude` and `quarantine` actions that actually act, at both the attribution and metric layers (§F-D-22, §F-D-24).
 - A fraud audit read API, a CSV export, and a dashboard panel.
 - Live Play Integrity and App Attest server verification, producing the `integrity_verdict` that contract v0.3.5 reserved and no runtime code has ever produced (§F-D-18, §F-D-19).
-- Additive contract patches v0.4.1 … v0.4.5 under R-27.
+- Additive contract patches v0.4.1 … v0.4.5 under R-27, followed by the v0.4.6 WO-14R clock-diagnostic correction.
 - `docs/validation/m6-fraud-checklist.md`.
 
 ### Explicitly out of scope
@@ -287,6 +287,8 @@ Each rule is specified as: inputs (all server-authoritative), predicate, decisio
 - *Upper bound:* CTIT is bounded by the 7-day attribution window already. A long CTIT is not per-install evidence; it feeds §F-D-13's distribution instead. **No per-install upper-bound rule is proposed**, because a genuine install four days after a click is ordinary in a retargeting-free hypercasual funnel and flagging it would produce false positives at scale.
 - *Clock guard:* `CTIT < 0` → **not fraud.** It is `ctit_clock_anomaly`, a diagnostic with `decision: clear, action: allow`, and if its rate over a day exceeds a bound the deployment's own clock is wrong and **every CTIT-derived decision that day is marked `provisional` rather than `final`.**
 
+The implemented day rate is app-wide for the UTC click day: `sum(ctit_negative_count) / sum(installs)` across source cells, with zero installs producing no guard. This prevents a healthy source cell from retaining false finality while another cell proves the shared redirector clock unreliable.
+
 **Why the guard is the important half.** The current code returns `[]` for `delta < 0` — it silently drops the case. But a persistent negative CTIT means our redirector's clock is ahead of Google's, which means *every* CTIT is understated, which means the injection rule is over-firing on genuine installs. The rule that detects fraud and the rule that detects the rule being broken are the same measurement, and the design must record both. This is the single most likely way a fraud deployment produces confidently wrong numbers.
 
 **Also fixed here:** G-1 (the `click_injection_threshold_ms` dead field — the runtime must construct a real `click_injection_policy`) and G-2 (the policy digest must be verified against `sha256({threshold_seconds, authority, policy_version})` exactly as `timestamp_stale_policy` is, in `decide()`).
@@ -477,6 +479,8 @@ G-3 is the defect that most undermines the milestone: `rule_bundle_hash` is `"0"
 
 **Recommendation: bind the fraud bundle only in WO-14** — new artifacts, new fixtures, zero golden churn — and record the remaining three placeholders as a named handoff (F-H-3) to be taken in one dedicated change. That makes the statement true where a dispute depends on it, ships the milestone, and **names the remaining lie instead of leaving it undiscovered.** Whether to schedule the full binding is §F-D-26's owner decision.
 
+**WO-14R correction.** Runtime ingestion and source-day evaluation resolve the active fraud definition from `control.rule_bundles_current`, verify its definition digest and composite JCS hash, pass that exact revision through the server context, and reject persistence when the recorded triple does not match the evaluated revision. The in-code definition remains only the fixture and initial-registration default. Transport, CTIT, referrer-order, and source-day decisions all use the same composite hash.
+
 ### F-D-27. Verify the fraud policy digest
 
 Mirror `decide()`'s existing `timestamp_stale_policy` check for `click_injection_policy` and every new policy object: recompute `sha256(JCS(canonical policy fields))` and throw on mismatch. Six lines, and without them a recorded policy digest is a decoration (G-2).
@@ -494,6 +498,7 @@ Mirror `decide()`'s existing `timestamp_stale_policy` check for `click_injection
 | **v0.4.3** | `metric-definition` and `metric-run` gain optional `fraud_policy ∈ {gross, net}`, absent ⇒ `gross` | 50 |
 | **v0.4.4** | `install` gains `referrer_click_at_server_status ∈ {available, missing, invalid}`, mirroring the existing `install_begin_at_server_status`, with the same conditional `required` shape. Without it, F-R-1 cannot distinguish "Play did not supply a server click time" from "the field is absent because the SDK is old" | 51 |
 | **v0.4.5** | `click` gains `source_rate_class ∈ {normal, elevated, saturated}` and `client_class ∈ {mobile_app_eligible, bot, other}`, both optional and both **server-assigned** (the same "not client-authored" property `integrity_verdict` has). `site_id`, `network`, `remote_click_ref` already exist and need no change | 52 |
+| **v0.4.6** | `fraud_public_categories` gains the non-fraud diagnostic `ctit_clock_anomaly`; negative CTIT rate is evaluated per tenant/app/UTC day from `ctit_negative_count / installs`, and affected CTIT-derived attributions become provisional | 53 |
 
 **Three additions to `fraud_public_categories` and no more.** Each has a real producer in this milestone. `install_farm_suspected`, `emulator_detected`, `incentivized_suspected`, and similar are deliberately absent: a public category with no producer is exactly the state G-6 describes, and the contract already carries two of those.
 
@@ -587,9 +592,7 @@ New variables, all required in `.env.example` because `npm run test:env-coverage
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `OPENMASU_FRAUD_ENABLED` | `1` | master switch; `0` produces no decisions at all |
-| `OPENMASU_FRAUD_BUNDLE_PATH` | `config/fraud-bundles/conservative-v1.json` | the shipped base layer |
 | `OPENMASU_FRAUD_AGGREGATE_HOUR_UTC` | `2` | when the daily source aggregate runs |
-| `OPENMASU_FRAUD_QUARANTINE_HOURS` | `72` | default resolution deadline |
 | `OPENMASU_REDIRECTOR_CLIENT_CLASS` | `on` | UA classification; `off` emits nothing |
 | `OPENMASU_REDIRECTOR_REMOTE_CLICK_PARAM` | `cid` | the single accepted network click-reference parameter name |
 | `OPENMASU_INTEGRITY_PROVIDER` | `off` | `off \| play_integrity \| app_attest \| both` |
@@ -646,7 +649,7 @@ The M1 D-30 principle applies: **anything requiring a real device, a real Play/A
 
 **F-A-20 — the chargeback report leaks nothing.** The JSON and CSV forms of `/v1/audit/fraud` contain no `installation_id`, `click_id`, `record_id`, payload reference, IP, or User-Agent; they do contain `remote_click_ref` values; JSON and CSV agree row for row; the route rejects a bearer token on the dashboard namespace and a cookie on the `/v1` namespace, as M3 requires.
 
-**F-A-21 — contract gate.** `npm run validate` prints its summary line with 52 fixtures and the new assertion count, and `git diff --stat -- fixtures/v0.4/0*/expected_*` is empty for fixtures 01–47.
+**F-A-21 — contract gate.** `npm run validate` prints its summary line with 53 fixtures and the new assertion count. Only the seven existing fraud-decision goldens listed in `docs/contract-v0.4-migration.md` change for the corrected bundle binding; other existing artifact classes remain unchanged.
 
 **F-A-22 — configuration and threat-model coverage.** `npm run test:env-coverage` and `npm run check:threat-model` pass with `fraud-engine` and `integrity-verifier`.
 
