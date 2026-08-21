@@ -321,7 +321,9 @@ function validateRegistryReferences(output: Any, label: string): void {
     const aggregateMetricNames = new Set([
       "skan_attributed_installs", "skan_conversion_value_distribution", "aak_attributed_installs",
     ]);
-    const expectedVersion = aggregateMetricNames.has(definition.metric_name)
+    const expectedVersion = definition.fraud_policy
+      ? "0.4.3"
+      : aggregateMetricNames.has(definition.metric_name)
       ? "0.3.3"
       : definition.definition.calculation === "event_count" ? "0.3.1" : "0.3.0";
     check(definition.metric_definition_version === expectedVersion, `wrong metric definition version in ${label}`);
@@ -558,8 +560,8 @@ if (!summaryOnly) {
         }
       });
     }
-    it("contains 47 fixture directories", () => {
-      check(fixtureDirs.length === 47, `expected 47 fixture directories, found ${fixtureDirs.length}`);
+    it("contains 52 fixture directories", () => {
+      check(fixtureDirs.length === 52, `expected 52 fixture directories, found ${fixtureDirs.length}`);
     });
   });
 
@@ -890,12 +892,37 @@ const scenarios: Array<[string, () => void]> = [
     check(value.deliveries.length === 1 && value.deliveries[0].reason_code === "payload_schema_invalid" && value.deliveries[0].payload_disposition === "discarded", "scenario 47 delivery disposition");
     check(value.rejections.length === 1 && value.rejections[0].retained === "non_identifying_metadata", "scenario 47 rejection retention");
   }],
+  ["48 source scoped flooding fraud", () => {
+    const value = fixture("48-source-scoped-fraud").output;
+    check(value.fraud_decisions.length === 1 && value.fraud_decisions[0].subject_scope === "source", "scenario 48 source scope");
+    check(value.fraud_decisions[0].reason_code === "click_flooding_suspected" && value.fraud_decisions[0].subject_ref.startsWith("source:"), "scenario 48 flooding decision");
+  }],
+  ["49 fraud exclusion supersedes attribution", () => {
+    const value = fixture("49-fraud-excluded-attribution").output;
+    const replacement = value.attributions.find((item: Any) => item.reason_code === "fraud_excluded");
+    check(replacement?.fraud_decision_ref === "fraud:click-49" && replacement.supersedes_attribution_id === "attr:install-49", "scenario 49 fraud supersession");
+    check(value.rejections.length === 0 && value.deliveries.every((item: Any) => item.ingestion_status === "accepted"), "scenario 49 ingestion remains accepted");
+  }],
+  ["50 gross and net fraud metrics", () => {
+    const runs = Object.fromEntries(fixture("50-gross-net-metrics").output.metric_runs.map((item: Any) => [item.fraud_policy, item]));
+    check(runs.gross.value_unscaled === "1" && runs.net.value_unscaled === "0", "scenario 50 gross net values");
+  }],
+  ["51 Play server referrer ordering", () => {
+    const value = fixture("51-referrer-server-order").output;
+    check(value.fraud_decisions.length === 1 && value.fraud_decisions[0].decision === "confirmed", "scenario 51 confirmed ordering");
+    check(value.fraud_decisions[0].reason_code === "referrer_time_inconsistent" && value.fraud_decisions[0].rule_id === "referrer-server-order-v1", "scenario 51 reason and rule");
+  }],
+  ["52 bounded edge evidence", () => {
+    const input = fixture("52-bounded-edge-evidence").input.records[0].payload;
+    check(input.source_rate_class === "saturated" && input.client_class === "mobile_app_eligible", "scenario 52 bounded classes");
+    check(input.remote_click_ref === "synthetic-remote-52" && !JSON.stringify(input).match(/user-agent|ip_address/i), "scenario 52 no raw edge signal");
+  }],
 ];
 if (!summaryOnly) {
   describe("reviewed scenarios", () => {
     for (const [name, assertion] of scenarios) it(name, assertion);
-    it("contains 47 scenario assertions", () => {
-      check(scenarios.length === 47, "scenario assertion inventory must contain 47 entries");
+    it("contains 52 scenario assertions", () => {
+      check(scenarios.length === 52, "scenario assertion inventory must contain 52 entries");
     });
   });
 
@@ -1456,7 +1483,7 @@ const acceptance: Array<[string, () => void]> = [
     check(corrections.some((item: Any) => item.correction_type === "retraction"), "AC15 retraction");
     check(fixture("17-redaction-recalculation").output.metric_runs.some((item: Any) => item.supersedes_metric_run_id), "AC15 redaction");
   }],
-  ["AC16 clock referrer prefetch and withdrawal fixtures pass", () => check(scenarios.length === 47 && fixture("11-clock-skew").output.deliveries.some((item: Any) => item.clock_skew_suspected) && fixture("13-referrer-unsupported").output.attributions.length === 2 && fixture("19-bot-prefetch").output.fraud_decisions.length === 1 && fixture("41-click-injection-suspected").output.fraud_decisions.length === 1 && fixture("20-timestamp-invalid").output.rejections.some((item: Any) => item.reason_code === "timestamp_invalid"), "AC16")],
+  ["AC16 clock referrer prefetch and withdrawal fixtures pass", () => check(scenarios.length === 52 && fixture("11-clock-skew").output.deliveries.some((item: Any) => item.clock_skew_suspected) && fixture("13-referrer-unsupported").output.attributions.length === 2 && fixture("19-bot-prefetch").output.fraud_decisions.length === 1 && fixture("41-click-injection-suspected").output.fraud_decisions.length === 1 && fixture("20-timestamp-invalid").output.rejections.some((item: Any) => item.reason_code === "timestamp_invalid"), "AC16")],
   ["AC17 server-recognized withdrawal rejects and redacts payload", () => {
     for (const name of ["14-withdrawal-after-occurrence", "15-event-after-withdrawal"]) {
       const value = fixture(name).output;
@@ -1496,7 +1523,7 @@ const acceptance: Array<[string, () => void]> = [
     for (const forbidden of ["threshold", "model_weight", "watchlist", "ip_address", "user_agent", "response_timing"]) check(!schemaText.includes(forbidden), `AC20 ${forbidden}`);
     check(specText.includes("remain private"), "AC20 private boundary");
   }],
-  ["AC21 one command validates every schema registry fixture and golden", () => check(schemaPaths.length === 27 && Object.keys(registries).length === 8 && fixtureDirs.length === 47 && outputArtifactCount === 47 * 13, "AC21")],
+  ["AC21 one command validates every schema registry fixture and golden", () => check(schemaPaths.length === 27 && Object.keys(registries).length === 8 && fixtureDirs.length === 52 && outputArtifactCount === 52 * 13, "AC21")],
   ["AC22 repeated and independent evaluators produce identical JCS", () => {
     for (const { output, python } of results.values()) check(equal(output, python), "AC22 evaluator mismatch");
     const vector = { numbers: [333333333.33333329, 1e30, 4.50, 2e-3, 1e-27, -0], string: "€$\u000f\nA'B\"\\\"/" };

@@ -59,6 +59,10 @@
       "type": "array",
       "items": { "$ref": "urn:openmasu:schema:cost-record:v0.4" }
     },
+    "source_day_aggregates": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/sourceDayAggregate" }
+    },
     "metric_definitions": {
       "type": "array",
       "items": { "$ref": "urn:openmasu:schema:metric-definition:v0.4" }
@@ -184,6 +188,27 @@
     }
   ],
   "$defs": {
+    "sourceDayAggregate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tenant_id", "app_id", "metric_date", "campaign_id", "network", "site_id", "clicks", "installs", "medianCvr", "ctitP50Ms", "ctitP95Ms", "input_snapshot_id", "computed_at"],
+      "properties": {
+        "tenant_id": { "$ref": "common.schema.json#/$defs/id" },
+        "app_id": { "$ref": "common.schema.json#/$defs/id" },
+        "metric_date": { "type": "string", "format": "date" },
+        "campaign_id": { "$ref": "common.schema.json#/$defs/id" },
+        "network": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "site_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "clicks": { "type": "integer", "minimum": 0 },
+        "installs": { "type": "integer", "minimum": 0 },
+        "medianCvr": { "type": "number", "minimum": 0, "maximum": 1 },
+        "ctitP50Ms": { "type": "integer", "minimum": 0 },
+        "ctitP95Ms": { "type": "integer", "minimum": 0 },
+        "ctitNegativeCount": { "type": "integer", "minimum": 0 },
+        "input_snapshot_id": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "computed_at": { "$ref": "common.schema.json#/$defs/dateTime" }
+      }
+    },
     "serverContext": {
       "type": "object",
       "additionalProperties": false,
@@ -260,7 +285,8 @@
             "policy_version": { "type": "string", "minLength": 1 },
             "policy_digest": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
           }
-        }
+        },
+        "fraud_actions_enabled": { "type": "boolean", "default": false }
       }
     },
     "record": {

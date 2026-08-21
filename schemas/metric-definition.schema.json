@@ -47,6 +47,7 @@
       "uniqueItems": true,
       "items": { "enum": ["campaign_id", "network", "country", "cohort_date", "metric_date", "attribution_status", "apple_conversion_bucket"] }
     },
+    "fraud_policy": { "enum": ["gross", "net"], "default": "gross" },
     "rule_bundle_id": { "$ref": "common.schema.json#/$defs/id" },
     "rule_bundle_version": { "type": "string" },
     "rule_bundle_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" }

@@ -27,6 +27,29 @@ def digest(value: Any) -> str:
     return hashlib.sha256(rfc8785.dumps(value)).hexdigest()
 
 
+FRAUD_BUNDLE = {
+    "id": "fraud-conservative",
+    "version": "1.0.0",
+    "layers": {"base": {
+        "ctit_lower_bound_seconds": 10,
+        "referrer_redirector_divergence_seconds": 300,
+        "source_day_min_clicks": 1000,
+        "source_day_cvr_median_multiplier": 0.2,
+        "source_day_ctit_p50_min_seconds": 86400,
+        "source_day_ctit_p95_p50_max_ratio": 3,
+        "quarantine_hours": 72,
+    }},
+    "rules": [
+        {"id": "referrer-server-order-v1", "inputs": ["referrer_click_at_server", "install_begin_at_server"], "action": "flag"},
+        {"id": "ctit-lower-bound-v1", "inputs": ["redirector_click_at", "install_begin_at_server"], "action": "flag"},
+        {"id": "referrer-redirector-divergence-v1", "inputs": ["referrer_click_at_server", "redirector_click_at"], "action": "flag"},
+        {"id": "source-day-click-flooding-v1", "inputs": ["source_day_aggregate"], "action": "flag"},
+        {"id": "device-integrity-combination-v1", "inputs": ["integrity_verdict", "ctit"], "action": "flag"},
+    ],
+}
+FRAUD_BUNDLE_HASH = digest(FRAUD_BUNDLE)
+
+
 class TimestampInvalidError(ValueError):
     """A contract timestamp failed exact calendar round-trip validation."""
 
@@ -368,6 +391,15 @@ def decide(attempt: dict[str, Any], attempts: list[dict[str, Any]]) -> dict[str,
         })
         if policy["policy_digest"] != expected_digest:
             raise ValueError("timestamp_stale_policy.policy_digest does not match its canonical policy fields")
+    if server.get("click_injection_policy"):
+        policy = server["click_injection_policy"]
+        expected_digest = digest({
+            "threshold_seconds": policy["threshold_seconds"],
+            "authority": policy["authority"],
+            "policy_version": policy["policy_version"],
+        })
+        if policy["policy_digest"] != expected_digest:
+            raise ValueError("click_injection_policy.policy_digest does not match its canonical policy fields")
     same_record_id = [candidate for candidate in attempts if candidate["record"]["record_id"] == record["record_id"]]
     matches = [candidate for candidate in attempts if scope_key(candidate) == scope_key(attempt)]
     first = matches[0]
@@ -828,7 +860,9 @@ def metric_runs(
     decisions: dict[str, dict[str, Any]],
     lifecycle: dict[tuple[str, str, str], str],
     attributions: list[dict[str, Any]],
+    excluded_installation_ids: set[str] | None = None,
 ) -> list[dict[str, Any]]:
+    excluded_installation_ids = excluded_installation_ids or set()
     policy = value["fx_policy"]
     definitions = metric_definitions(value)
     definitions_by_name = {definition["metric_name"]: definition for definition in definitions}
@@ -932,6 +966,11 @@ def metric_runs(
             if metric_name not in definitions_by_name:
                 raise ValueError(f"unknown metric definition: {metric_name}")
             definition = definitions_by_name[metric_name]
+            eligible_installs = [
+                item for item in installs
+                if definition.get("fraud_policy") != "net"
+                or item["record"]["payload"]["installation_id"] not in excluded_installation_ids
+            ]
             unsupported = [
                 dimension for dimension in evaluation.get("grouping", {})
                 if definition.get("grouping_dimensions") is not None
@@ -943,7 +982,7 @@ def metric_runs(
             for item in revenue:
                 installation = next(
                     (
-                        candidate for candidate in installs
+                        candidate for candidate in eligible_installs
                         if candidate["server"]["tenant_id"] == item["server"]["tenant_id"]
                         and candidate["server"]["app_id"] == item["server"]["app_id"]
                         and candidate["record"]["payload"]["installation_id"] == item["record"]["payload"]["installation_id"]
@@ -952,7 +991,7 @@ def metric_runs(
                 )
                 if installation and eligible_revenue(definition, installation["record"], item["record"]):
                     revenue_value += convert_money(item["record"]["payload"], policy)
-            cohort_ids = {install["record"]["payload"]["installation_id"] for install in installs}
+            cohort_ids = {install["record"]["payload"]["installation_id"] for install in eligible_installs}
             cohort_size = len(cohort_ids)
             calculation = definition["definition"]["calculation"]
             amount: int | None = None
@@ -976,7 +1015,7 @@ def metric_runs(
                     event_names = set(definition.get("activity_events", ["session_start"]))
                     active: set[str] = set()
                     for activity in (item for item in activities if item["record"]["event_name"] in event_names):
-                        installation = next((candidate for candidate in installs
+                        installation = next((candidate for candidate in eligible_installs
                                              if candidate["server"]["tenant_id"] == activity["server"]["tenant_id"]
                                              and candidate["server"]["app_id"] == activity["server"]["app_id"]
                                              and candidate["record"]["payload"]["installation_id"] == activity["record"]["payload"].get("installation_id")), None)
@@ -1057,6 +1096,11 @@ def metric_runs(
                     amount = sum(
                         1 for item in visible
                         if item["record"]["event_name"] in event_names
+                        and (
+                            definition.get("fraud_policy") != "net"
+                            or item["record"]["event_name"] != "install"
+                            or item["record"]["payload"]["installation_id"] not in excluded_installation_ids
+                        )
                         and matches_grouping(item, evaluation.get("grouping"), attribution_statuses)
                         and day(item["record"]["occurred_at"], definition["aggregation_time_zone"], "occurred_at") == metric_date
                     )
@@ -1082,6 +1126,8 @@ def metric_runs(
                 "value_type": definition["value_type"],
                 "evidence_refs": evidence,
             }
+            if definition.get("fraud_policy"):
+                run["fraud_policy"] = definition["fraud_policy"]
             if amount is None:
                 run |= {"value_state": "undefined", "undefined_reason": undefined_reason}
             else:
@@ -1452,7 +1498,103 @@ def evaluate(value: dict[str, Any]) -> dict[str, Any]:
             "rule_bundle_hash": ZERO_HASH,
             "evaluated_at": attempt["record"]["received_at"],
         })
+    for attempt in accepted:
+        if attempt["record"]["event_name"] != "install":
+            continue
+        payload = attempt["record"]["payload"]
+        if (
+            payload.get("referrer_click_at_server_status") == "available"
+            and payload.get("referrer_click_at_server")
+            and payload.get("install_begin_at_server")
+            and timestamp(payload["referrer_click_at_server"], "referrer_click_at_server")
+            >= timestamp(payload["install_begin_at_server"], "install_begin_at_server") + timedelta(seconds=1)
+        ):
+            rule_id = "referrer-server-order-v1"
+            fraud_values.append({
+                "fraud_decision_id": f"fraud:{attempt['record']['record_id']}:{rule_id}",
+                "subject_ref": attempt["record"]["record_id"],
+                "decision": "confirmed",
+                "action": "flag",
+                "reason_code": "referrer_time_inconsistent",
+                "reason_code_version": CONTRACT_VERSION,
+                "evidence": [{
+                    "type": "server_clock_order",
+                    "captured_at": attempt["record"]["received_at"],
+                    "digest": digest([rule_id, attempt["record"]["record_id"]]),
+                    "access_class": "protected",
+                }],
+                "rule_bundle_id": FRAUD_BUNDLE["id"],
+                "rule_bundle_version": FRAUD_BUNDLE["version"],
+                "rule_bundle_hash": FRAUD_BUNDLE_HASH,
+                "rule_id": rule_id,
+                "evaluated_at": attempt["record"]["received_at"],
+            })
+    for aggregate in value.get("source_day_aggregates", []):
+        p50 = aggregate.get("ctitP50Ms")
+        p95 = aggregate.get("ctitP95Ms")
+        if (
+            aggregate["clicks"] >= 1000
+            and aggregate["installs"] / aggregate["clicks"] <= aggregate["medianCvr"] * 0.2
+            and p50 is not None and p50 >= 86_400_000
+            and p95 is not None and p95 / p50 <= 3
+        ):
+            rule_id = "source-day-click-flooding-v1"
+            source_ref = ":".join([
+                "source", aggregate["tenant_id"], aggregate["app_id"], aggregate["metric_date"],
+                aggregate["campaign_id"], aggregate["network"], aggregate["site_id"],
+            ])
+            fraud_values.append({
+                "fraud_decision_id": f"fraud:{aggregate['input_snapshot_id']}",
+                "subject_scope": "source",
+                "subject_ref": source_ref,
+                "decision": "suspected",
+                "action": "flag",
+                "reason_code": "click_flooding_suspected",
+                "reason_code_version": CONTRACT_VERSION,
+                "evidence": [{
+                    "type": "source_day_distribution",
+                    "captured_at": aggregate["computed_at"],
+                    "digest": aggregate["input_snapshot_id"],
+                    "access_class": "protected",
+                }],
+                "rule_bundle_id": FRAUD_BUNDLE["id"],
+                "rule_bundle_version": FRAUD_BUNDLE["version"],
+                "rule_bundle_hash": FRAUD_BUNDLE_HASH,
+                "rule_id": rule_id,
+                "evaluated_at": aggregate["computed_at"],
+            })
     fraud = sort_by_key(fraud_values, fraud_decision_sort_key)
+    excluded_click_ids: dict[str, dict[str, Any]] = {}
+    for decision in fraud:
+        if decision["action"] != "exclude" or decision.get("subject_scope") == "source":
+            continue
+        click = next((item for item in accepted
+                      if item["record"]["record_id"] == decision["subject_ref"]
+                      and item["record"]["event_name"] == "click"), None)
+        if click and click["server"].get("fraud_actions_enabled") and click["record"]["payload"].get("click_id"):
+            excluded_click_ids[click["record"]["payload"]["click_id"]] = decision
+    excluded_installation_ids: set[str] = set()
+    fraud_attributions: list[dict[str, Any]] = []
+    for install in (item for item in accepted if item["record"]["event_name"] == "install"):
+        decision = excluded_click_ids.get(install["record"]["payload"].get("click_id"))
+        if decision is None:
+            continue
+        installation_id = install["record"]["payload"]["installation_id"]
+        prior = next((item for item in attributions if item["subject_ref"] == installation_id), None)
+        if prior is None:
+            continue
+        excluded_installation_ids.add(installation_id)
+        fraud_attributions.append(prior | {
+            "attribution_id": f"{prior['attribution_id']}:fraud",
+            "status": "unattributed",
+            "method": "none",
+            "model": "none",
+            "reason_code": "fraud_excluded",
+            "finality": "final",
+            "fraud_decision_ref": decision["fraud_decision_id"],
+            "supersedes_attribution_id": prior["attribution_id"],
+        })
+    attributions = sort_by_key(attributions + fraud_attributions, attribution_sort_key)
     rejections = sort_by_key([
         {
             "contract_version": CONTRACT_VERSION,
@@ -1487,7 +1629,7 @@ def evaluate(value: dict[str, Any]) -> dict[str, Any]:
         "attributions": attributions,
         "cost_records": cost_records(value),
         "metric_definitions": metric_definitions(value),
-        "metric_runs": metric_runs(value, attempts, decisions, lifecycle, attributions),
+        "metric_runs": metric_runs(value, attempts, decisions, lifecycle, attributions, excluded_installation_ids),
         "fraud_decisions": fraud,
         "rejections": rejections,
         "reconciliation": reconciliation_results(value, accepted),
