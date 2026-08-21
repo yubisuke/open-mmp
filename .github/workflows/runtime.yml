@@ -88,12 +88,12 @@ jobs:
           export OPENMASU_MAX_RATE_BURST=12000
           docker compose up -d --wait
           docker compose --env-file /dev/null --profile seed run --rm seed
-          worker_id=$(docker compose --env-file /dev/null ps -q worker)
+          worker_id=$(docker compose --env-file /dev/null ps -aq worker)
           test -n "$worker_id"
           sleep 12
+          docker compose --env-file /dev/null logs --no-color worker
           test "$(docker inspect --format '{{.State.Status}}' "$worker_id")" = running
           test "$(docker inspect --format '{{.RestartCount}}' "$worker_id")" = 0
-          docker compose --env-file /dev/null logs --no-color worker
           docker compose --env-file /dev/null exec -T api sh -c 'set -a && . /run/openmasu/app/runtime.env && set +a && OPENMASU_API_HOST_PORT=8080 node --import tsx tools/runtime-smoke.ts'
       - name: Measure synthetic ingestion and MAX postback load
         run: |
