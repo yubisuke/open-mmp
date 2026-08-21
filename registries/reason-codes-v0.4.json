@@ -9,7 +9,8 @@
     "meta_referrer_decrypted", "meta_referrer_decrypt_failed",
     "adservices_attributed", "adservices_token_expired", "adservices_not_attributed", "adservices_lookup_unavailable",
     "skan_postback_verified", "skan_signature_invalid", "postback_not_winner",
-    "crowd_anonymity_suppressed", "conversion_value_null", "fraud_excluded"
+    "crowd_anonymity_suppressed", "conversion_value_null", "fraud_excluded",
+    "deep_link_open_attributed", "deep_link_unknown_link", "deep_link_link_inactive", "deep_link_install_click_reused"
   ],
   "rejection": [
     "client_scope_mismatch", "consent_withdrawn",

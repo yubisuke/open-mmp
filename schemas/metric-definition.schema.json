@@ -39,7 +39,7 @@
       "type": "array",
       "minItems": 1,
       "uniqueItems": true,
-      "items": { "enum": ["click", "install", "skan_postback", "adattributionkit_postback"] }
+      "items": { "enum": ["click", "install", "skan_postback", "adattributionkit_postback", "deep_link_open"] }
     },
     "grouping_dimensions": {
       "type": "array",
@@ -146,7 +146,7 @@
           "event_names": {
             "type": "array",
             "maxItems": 1,
-            "items": { "enum": ["click", "install", "skan_postback", "adattributionkit_postback"] }
+            "items": { "enum": ["click", "install", "skan_postback", "adattributionkit_postback", "deep_link_open"] }
           },
           "grouping_dimensions": { "type": "array", "contains": { "const": "metric_date" } },
           "definition": {
@@ -185,7 +185,7 @@
       },
       "then": {
         "properties": {
-          "event_names": { "type": "array", "items": { "const": "install" } }
+          "event_names": { "type": "array", "items": { "enum": ["install", "deep_link_open"] } }
         }
       }
     },
