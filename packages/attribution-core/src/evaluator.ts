@@ -144,19 +144,31 @@ function assertRevenueAnchorSources(all: Attempt[]): void {
 }
 
 export function compareCandidateAttempts(a: CandidateAttempt, b: CandidateAttempt): number {
-  const aKey = [
-    a.record.received_at, a.record.record_id, a.record.delivery_id,
-    a.server.tenant_id, a.server.app_id, a.record.schema_version, sha256(a.record),
+  const aKey = candidateAttemptSortKey(a);
+  const bKey = candidateAttemptSortKey(b);
+  return compareCandidateAttemptSortKeys(aKey, bKey);
+}
+
+function candidateAttemptSortKey(attempt: CandidateAttempt): string[] {
+  return [
+    attempt.record.received_at, attempt.record.record_id, attempt.record.delivery_id,
+    attempt.server.tenant_id, attempt.server.app_id, attempt.record.schema_version, sha256(attempt.record),
   ];
-  const bKey = [
-    b.record.received_at, b.record.record_id, b.record.delivery_id,
-    b.server.tenant_id, b.server.app_id, b.record.schema_version, sha256(b.record),
-  ];
+}
+
+function compareCandidateAttemptSortKeys(aKey: readonly string[], bKey: readonly string[]): number {
   for (let index = 0; index < aKey.length; index += 1) {
     const comparison = compareText(aKey[index], bKey[index]);
     if (comparison !== 0) return comparison;
   }
   return 0;
+}
+
+export function sortCandidateAttempts(values: readonly CandidateAttempt[]): CandidateAttempt[] {
+  return values
+    .map((attempt) => ({ attempt, key: candidateAttemptSortKey(attempt) }))
+    .sort((a, b) => compareCandidateAttemptSortKeys(a.key, b.key))
+    .map(({ attempt }) => attempt);
 }
 
 function scopeKey(attempt: Attempt): string {
@@ -922,7 +934,7 @@ function metricRuns(
       decisionFor(decisions, attempt).duplicate_resolution === "unique" &&
       compareText(attempt.record.received_at, evaluation.input_received_at_watermark) <= 0,
     );
-    const recordSnapshotRows = [...included].sort(compareCandidateAttempts).map((attempt) => [
+    const recordSnapshotRows = sortCandidateAttempts(included).map((attempt) => [
       attempt.record.received_at,
       attempt.record.record_id,
       evaluation.privacy_state === "after" ? (lifecycle.get(attemptEvidenceKey(attempt)) ?? "available") : "available",
@@ -941,7 +953,7 @@ function metricRuns(
       ? "redaction_affected"
       : affectedStates.includes("purged") ? "retention_affected" : "fully_reproducible";
     const ledger = recordSnapshotRows.at(-1);
-    const recordEvidence: MetricRun["evidence_refs"] = [...included].sort(compareCandidateAttempts).map((attempt) => ({
+    const recordEvidence: MetricRun["evidence_refs"] = sortCandidateAttempts(included).map((attempt) => ({
       tenant_id: attempt.server.tenant_id,
       app_id: attempt.server.app_id,
       ref: attempt.record.record_id,
@@ -1298,7 +1310,7 @@ export function evaluate(
   input: Any,
   candidateProviderFactory: CandidateProviderFactory = createFixtureCandidateProvider,
 ): EvaluationOutput {
-  const all = attempts(input).sort(compareCandidateAttempts);
+  const all = sortCandidateAttempts(attempts(input));
   const candidates = candidateProviderFactory(all);
   assertImportProviderContexts(all);
   assertRevenueAnchorSources(all);

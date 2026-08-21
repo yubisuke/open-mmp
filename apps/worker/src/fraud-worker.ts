@@ -242,7 +242,8 @@ export async function resolveExpiredQuarantines(pool: Pool, tenantId: string, no
          FROM ephemeral.fraud_quarantines quarantine
          JOIN ledger.fraud_decisions decision USING (fraud_decision_id,tenant_id,app_id)
          WHERE quarantine.tenant_id=$1 AND quarantine.resolve_after <= $2
-         ORDER BY quarantine.resolve_after,quarantine.fraud_decision_id FOR UPDATE SKIP LOCKED`,
+         ORDER BY quarantine.resolve_after,quarantine.fraud_decision_id
+         FOR UPDATE OF quarantine SKIP LOCKED`,
         [tenantId, now.toISOString()],
       );
     for (const row of due.rows) {

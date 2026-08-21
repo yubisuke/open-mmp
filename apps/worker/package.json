@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "benchmark:metric-floor": "cd ../.. && node --env-file-if-exists=.env --import tsx apps/worker/src/metrics/benchmark.ts",
+    "benchmark:import": "cd ../.. && node --env-file-if-exists=.env --import tsx apps/worker/src/import/benchmark.ts",
     "import": "cd ../.. && node --env-file-if-exists=.env --import tsx apps/worker/src/import/runner.ts",
     "import:cost": "cd ../.. && node --env-file-if-exists=.env --import tsx apps/worker/src/import/cost-cli.ts",
     "metrics:run": "cd ../.. && node --env-file-if-exists=.env --import tsx apps/worker/src/metrics/run.ts",

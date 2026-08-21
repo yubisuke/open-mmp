@@ -95,7 +95,15 @@ const tick = async (): Promise<void> => {
   finally { busy = false; }
 };
 await tick();
-const timer = setInterval(() => void tick(), interval);
+const poll = async (): Promise<void> => {
+  try {
+    await tick();
+  }
+  catch {
+    process.stderr.write('{"event":"worker_tick_failed","component":"worker","retry":"next_poll"}\n');
+  }
+};
+const timer = setInterval(() => void poll(), interval);
 
 async function stop(): Promise<void> {
   clearInterval(timer);

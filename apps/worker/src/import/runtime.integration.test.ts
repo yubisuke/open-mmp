@@ -95,6 +95,73 @@ describe("M1a import integration", () => {
     assert.equal(afterCount.rows[0].count, beforeCount.rows[0].count);
   });
 
+  it("WO16 accepts mixed empty optional columns through one CSV mapping", async () => {
+    const file = join(temporary, "synthetic-optional-columns.csv");
+    writeFileSync(file, [
+      "event_id,occurred_at,click_id,network",
+      "synthetic-optional-event-a,2026-08-21T00:00:00,synthetic-optional-click-a,synthetic-network",
+      "synthetic-optional-event-b,2026-08-21T00:01:00,synthetic-optional-click-b,",
+      "",
+    ].join("\n"));
+    const imported = await runMmpImport({
+      pool: appPool,
+      mappingPath: "examples/mappings/synthetic-optional-columns-click.json",
+      filePath: file,
+      now: new Date("2026-08-21T01:00:00.000Z"),
+    });
+    assert.deepEqual(
+      { status: imported.status, rows: imported.rows, accepted: imported.accepted, rejected: imported.rejected },
+      { status: "completed", rows: 2, accepted: 2, rejected: 0 },
+    );
+    await withTenant(appPool, "tenant-local", async (client) => {
+      const rows = await client.query<{ event_id: string; network: string | null }>(`
+        SELECT raw.event_id, click.network
+          FROM ledger.raw_records AS raw
+          JOIN ledger.logical_events AS logical ON logical.record_id=raw.record_id
+          JOIN ledger.click_facts AS click ON click.logical_event_id=logical.logical_event_id
+         WHERE raw.event_id LIKE 'synthetic-optional-event-%'
+         ORDER BY raw.event_id`);
+      assert.deepEqual(rows.rows, [
+        { event_id: "synthetic-optional-event-a", network: "synthetic-network" },
+        { event_id: "synthetic-optional-event-b", network: null },
+      ]);
+    });
+  });
+
+  it("WO16 keeps row-level schema rejection inside a mixed bulk import", async () => {
+    const mapping = JSON.parse(readFileSync(mappingPath, "utf8"));
+    mapping.source_id = "synthetic-bulk-rejection-clicks";
+    const mixedMappingPath = join(temporary, "synthetic-bulk-rejection-mapping.json");
+    writeFileSync(mixedMappingPath, JSON.stringify(mapping));
+    const valid = { ...JSON.parse(source)[0], event_id: "synthetic-bulk-valid", click_id: "synthetic-bulk-click-valid" };
+    const invalid = { ...valid, event_id: "synthetic-bulk-invalid", click_id: "synthetic-bulk-click-invalid", country: "usa" };
+    const file = join(temporary, "synthetic-bulk-rejection.json");
+    const text = JSON.stringify([valid, invalid]);
+    writeFileSync(file, text);
+    const digest = createHash("sha256").update(text).digest("hex");
+    const invalidRecordId = `record:${sha256([mapping.source_id, digest, 1]).slice(0, 48)}`;
+    const imported = await runMmpImport({
+      pool: appPool, mappingPath: mixedMappingPath, filePath: file,
+      now: new Date("2026-08-21T02:00:00.000Z"),
+    });
+    assert.deepEqual(
+      { accepted: imported.accepted, rejected: imported.rejected, logical: imported.logical_events },
+      { accepted: 1, rejected: 1, logical: 1 },
+    );
+    await withTenant(appPool, "tenant-local", async (client) => {
+      const counts = await client.query(`SELECT
+        (SELECT count(*) FROM ledger.logical_events WHERE event_id='synthetic-bulk-valid')::int AS accepted,
+        (SELECT count(*) FROM ledger.logical_events WHERE event_id='synthetic-bulk-invalid')::int AS invalid_logical,
+        (SELECT count(*) FROM ledger.rejections WHERE reason_code='payload_schema_invalid'
+          AND artifact->>'record_id'=$1)::int AS invalid_rejections,
+        (SELECT count(*) FROM control.import_row_rejections WHERE source_id='synthetic-bulk-rejection-clicks' AND reason_code='row_schema_invalid')::int AS row_rejections`,
+      [invalidRecordId]);
+      assert.deepEqual(counts.rows[0], {
+        accepted: 1, invalid_logical: 0, invalid_rejections: 1, row_rejections: 1,
+      });
+    });
+  });
+
   it("WO11 wires a synthetic cost CSV through cost_records to a present D0 ROAS run", async () => {
     const file = join(temporary, "synthetic-cli-cost.csv");
     writeFileSync(file, [
@@ -124,6 +191,53 @@ describe("M1a import integration", () => {
         (SELECT count(*) FROM ledger.metric_runs WHERE metric_name='d0_roas' AND value_state='present' AND grouping->>'campaign_id'='synthetic-cli-campaign')::int AS runs`);
       assert.deepEqual(result.rows[0], { costs: 1, runs: 1 });
     });
+  });
+
+  it("WO16 backfills a historical cohort with an explicit late-input watermark", async () => {
+    const file = join(temporary, "synthetic-backfill-install.json");
+    writeFileSync(file, JSON.stringify([{
+      primary_event_id: "synthetic-backfill-event", legacy_event_id: "",
+      occurred_at: "2026-07-01T12:00:00", installation_id: "synthetic-backfill-installation",
+    }]));
+    await runMmpImport({
+      pool: appPool,
+      mappingPath: "examples/mappings/synthetic-fallback-install.json",
+      filePath: file,
+      now: new Date("2026-08-21T12:00:00.000Z"),
+    });
+    const definitions = join(temporary, "synthetic-backfill-metrics.json");
+    writeFileSync(definitions, JSON.stringify({
+      tenant_id: "tenant-local", app_id: "app-local",
+      fx_policy: {
+        policy_version: "synthetic-backfill-fx", target_currency: "USD", target_scale: 6,
+        rounding_mode: "half_even", rates: [{
+          currency: "USD", rate_unscaled: "100000000", rate_scale: 8,
+          source: "synthetic-backfill-rate", as_of: "2026-08-21T00:00:00.000Z",
+        }],
+      },
+      metric_definitions: [{
+        metric_name: "synthetic_backfill_cohort_size",
+        metric_definition_version: "0.4.0",
+        anchor_event: "install", aggregation_time_zone: "UTC", value_type: "count",
+        definition: {
+          calculation: "cohort_size", window: { type: "elapsed", day: 0 }, numerator: "cohort_size",
+        },
+        rule_bundle_id: "synthetic-backfill-metric", rule_bundle_version: "0.4.0",
+        rule_bundle_hash: "2222222222222222222222222222222222222222222222222222222222222222",
+      }],
+      evaluations: [{ metric_names: ["synthetic_backfill_cohort_size"], grouping: { cohort_date: "2026-07-01" } }],
+    }));
+    const legacy = await runMetricDefinitionsFile({
+      pool: appPool, date: "2026-07-01", definitionsPath: definitions, persist: false,
+    });
+    const backfilled = await runMetricDefinitionsFile({
+      pool: appPool, date: "2026-08-01", watermark: "2026-08-22T00:00:00.000Z",
+      definitionsPath: definitions, persist: false,
+    });
+    assert.equal(legacy[0].value_unscaled, "0");
+    assert.equal(backfilled[0].value_unscaled, "1");
+    assert.equal(backfilled[0].grouping.dimensions.cohort_date, "2026-07-01");
+    assert.equal(backfilled[0].input_received_at_watermark, "2026-08-22T00:00:00.000Z");
   });
 
   it("WO12 imports an exact synthetic decimal cost CSV without rounding", async () => {
