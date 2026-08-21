@@ -18,7 +18,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.time.Duration
 import java.time.Instant
 
-data class OpenMasuConfiguration(
+data class OpenMasuConfiguration @JvmOverloads constructor(
   val endpoint: String,
   val sdkKeyId: String,
   val sdkSecret: String,

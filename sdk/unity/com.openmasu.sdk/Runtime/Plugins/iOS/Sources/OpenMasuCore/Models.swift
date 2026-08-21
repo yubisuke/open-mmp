@@ -62,9 +62,9 @@ enum DeepLinkParser {
           parts[1].range(of: "^[A-Za-z0-9_-]{12,64}$", options: .regularExpression) != nil
     else { return nil }
     let destination = Array(parts.dropFirst(2))
-    guard destination.count <= 8, destination.allSatisfy({
+    let destinationValid = destination.count <= 8 && destination.allSatisfy({
       $0 != "." && $0 != ".." && $0.range(of: "^[A-Za-z0-9._~-]{1,64}$", options: .regularExpression) != nil
-    }) else { return nil }
+    })
     var parameters: [String: String] = [:]
     for item in (URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []).sorted(by: { $0.name < $1.name }) {
       guard parameters.count < 10,
@@ -75,10 +75,10 @@ enum DeepLinkParser {
       parameters[String(item.name.dropFirst(4))] = value
     }
     return OpenMasuDeepLink(
-      value: destination.isEmpty ? nil : "/" + destination.joined(separator: "/"),
+      value: destinationValid && !destination.isEmpty ? "/" + destination.joined(separator: "/") : nil,
       parameters: parameters,
       openSource: "ios_universal_link",
-      destinationStatus: destination.isEmpty ? "absent" : "delivered",
+      destinationStatus: !destinationValid ? "rejected" : (destination.isEmpty ? "absent" : "delivered"),
       linkSlug: parts[1]
     )
   }

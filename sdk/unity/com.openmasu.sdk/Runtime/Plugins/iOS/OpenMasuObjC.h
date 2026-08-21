@@ -37,5 +37,10 @@ void openmasu_ios_ping_from_background(
   int64_t request_id,
   OpenMasuCStringCallback callback
 );
+void openmasu_ios_handle_deep_link(
+  const char *url,
+  int64_t request_id,
+  OpenMasuCStringCallback callback
+);
 
 #endif

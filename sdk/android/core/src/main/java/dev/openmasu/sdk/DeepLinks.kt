@@ -30,7 +30,7 @@ internal object DeepLinkParser {
     val parts = uri.pathSegments
     if (parts.size < 2 || parts[0] != "r" || !slug.matches(parts[1])) return null
     val destination = parts.drop(2)
-    if (destination.size > 8 || destination.any { !segment.matches(it) || it == "." || it == ".." }) return null
+    val destinationValid = destination.size <= 8 && destination.all { segment.matches(it) && it != "." && it != ".." }
     val params = linkedMapOf<String, String>()
     for (name in uri.queryParameterNames.sorted()) {
       val match = parameter.matchEntire(name) ?: continue
@@ -38,10 +38,14 @@ internal object DeepLinkParser {
       if (params.size < 10 && value.length <= 256) params[match.groupValues[1]] = value
     }
     return OpenMasuDeepLink(
-      value = destination.takeIf { it.isNotEmpty() }?.joinToString("/", prefix = "/"),
+      value = destination.takeIf { destinationValid && it.isNotEmpty() }?.joinToString("/", prefix = "/"),
       parameters = params,
       openSource = "android_app_link",
-      destinationStatus = if (destination.isEmpty()) "absent" else "delivered",
+      destinationStatus = when {
+        !destinationValid -> "rejected"
+        destination.isEmpty() -> "absent"
+        else -> "delivered"
+      },
       linkSlug = parts[1],
     )
   }

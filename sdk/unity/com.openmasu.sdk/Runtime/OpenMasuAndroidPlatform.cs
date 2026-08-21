@@ -27,6 +27,12 @@ namespace OpenMasu.Unity
             EnsureBridge().CallStatic("resetInstallationId", new BooleanCallback(completion));
         public void PingFromBackground(string value, Action<string> completion) =>
             EnsureBridge().CallStatic("pingFromBackground", value, new StringCallback(completion));
+        public void SetDeepLinkListener(Action<string> listener) =>
+            EnsureBridge().CallStatic("setDeepLinkListener", new StringCallback(listener));
+        public void HandleDeepLink(string url)
+        {
+            using (var activity = CurrentActivity()) EnsureBridge().CallStatic("handleDeepLink", activity, url);
+        }
 
         private AndroidJavaClass EnsureBridge()
         {

@@ -80,15 +80,16 @@ public func openmasuIOSHandleDeepLink(
     callback(callbackValue, requestId: requestId, value: "error:deep_link_unhandled")
     return
   }
-  let object: [String: Any] = [
-    "value": value.value as Any,
-    "parameters": value.parameters,
-    "open_source": value.openSource,
-    "destination_status": value.destinationStatus,
-    "link_slug": value.linkSlug,
-  ]
-  let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes])
-  callback(callbackValue, requestId: requestId, value: data.flatMap { String(data: $0, encoding: .utf8) } ?? "error:deep_link_encoding")
+  var components = URLComponents()
+  components.queryItems = [
+    value.value.map { URLQueryItem(name: "value", value: $0) },
+    URLQueryItem(name: "open_source", value: value.openSource),
+    URLQueryItem(name: "destination_status", value: value.destinationStatus),
+    URLQueryItem(name: "link_slug", value: value.linkSlug),
+  ].compactMap { $0 } + value.parameters.sorted(by: { $0.key < $1.key }).map {
+    URLQueryItem(name: "p_\($0.key)", value: $0.value)
+  }
+  callback(callbackValue, requestId: requestId, value: components.percentEncodedQuery ?? "error:deep_link_encoding")
 }
 
 @_cdecl("openmasu_ios_track_custom_event")

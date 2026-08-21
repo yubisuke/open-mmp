@@ -108,6 +108,10 @@ class OpenMasuSdkTest {
     assertEquals("/shop/item/53", delivered.get().value)
     assertEquals(mapOf("code" to "abc"), delivered.get().parameters)
     await { sdk.pendingEvents().any { it.eventName == "deep_link_open" } }
+    assertTrue(sdk.handleDeepLink(Intent(Intent.ACTION_VIEW,
+      Uri.parse("https://links.synthetic.invalid/r/Synthetic123/rejected/bad!suffix"))))
+    assertEquals(null, delivered.get().value)
+    assertEquals("rejected", delivered.get().destinationStatus)
     assertFalse(sdk.handleDeepLink(Intent(Intent.ACTION_VIEW,
       Uri.parse("https://unconfigured.invalid/r/Synthetic123/shop"))))
   }

@@ -135,6 +135,11 @@ final class OpenMasuCoreTests: XCTestCase {
     XCTAssertEqual(delivered[0].value, "/shop/item/53")
     XCTAssertEqual(delivered[0].parameters, ["code": "abc"])
     XCTAssertTrue(threads.allSatisfy { $0 === caller })
+    let rejectedURL = try XCTUnwrap(URL(string: "https://links.synthetic.invalid/r/Synthetic123/rejected/bad%21suffix"))
+    XCTAssertTrue(sdk.handleDeepLink(rejectedURL))
+    let (withRejected, _) = recorder.snapshot()
+    XCTAssertNil(withRejected.last?.value)
+    XCTAssertEqual(withRejected.last?.destinationStatus, "rejected")
     XCTAssertFalse(sdk.handleDeepLink(URL(string: "https://unconfigured.invalid/r/Synthetic123/shop")!))
   }
 
