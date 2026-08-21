@@ -1,6 +1,6 @@
 # Contract v0.4 fixture provenance
 
-The JSON files in the 47 numbered directories are reviewed, immutable golden contract examples. They are committed as source artifacts; the validation command never creates, updates, or regenerates them.
+The JSON files in the 52 numbered directories are reviewed, immutable golden contract examples. They are committed as source artifacts; the validation command never creates, updates, or regenerates them.
 
 Each fixture has one synthetic input and 13 independently asserted output classes:
 
@@ -130,6 +130,11 @@ Each fixture contains the same 13 `expected_*.json` artifacts listed above. Empt
 | `45-ios-conversion-schema` | One iOS install carries a synthetic bundled conversion-policy version and digest in `extensions`; one reserved custom event records an opt-in conversion-value update without changing attribution or metric meaning. |
 | `46-integrity-verdict-reservation` | Three server-assigned synthetic integrity envelopes cover both supported platforms and every closed verdict while preserving platform-referrer attribution semantics. |
 | `47-payload-schema-invalid` | One synthetic normalized runtime row fails the compiled event schema before ledger admission. It yields only a discarded delivery and non-identifying rejection; every raw, logical, and derived output remains empty. |
+| `48-source-scoped-fraud` | One reviewed source-day has exactly 1,000 clicks, CVR 0.001 against median 0.01, CTIT p50 24 hours, and p95/p50 2. All four F-R-4 terms hold, so one `source`-scoped `click_flooding_suspected` decision names the aggregate snapshot and no individual record. |
+| `49-fraud-excluded-attribution` | A synthetic server-classified prefetch click is excluded. Its same-click install keeps the original immutable attribution and adds one superseding `unattributed/fraud_excluded` result carrying the fraud-decision reference. Ingestion artifacts remain accepted and unchanged. |
+| `50-gross-net-metrics` | The same excluded synthetic install is counted by the explicit gross daily definition and omitted by the explicit net daily definition. Both use the same snapshot and grouping digest; gross is 1 and net is 0. |
+| `51-referrer-server-order` | The Play server click timestamp is exactly one second after the Play install-begin timestamp, so the threshold-free ordering rule emits a confirmed, flag-only `referrer_time_inconsistent` decision. No redirector timestamp is needed. |
+| `52-bounded-edge-evidence` | One redirector click carries only the permitted server-assigned bounded evidence: saturated source rate, mobile-app-eligible client class, and a synthetic remote click reference. No IP, User-Agent, hash-derived identity, or device signal is stored. |
 
 ## Adding a fixture
 

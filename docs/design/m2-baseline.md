@@ -401,7 +401,7 @@ This section preserves the pre-v0.3 gap analysis that motivated WO-5.5. Every C-
 
 | Artifact | Producer | Notes |
 | --- | --- | --- |
-| `click` | `redirector` | `tracking_link_id`, `campaign_id`, `redirector_click_at`, `redirector_time_status`; optional `ad_group_id`, `creative_id`, `network`, `country`, `site_id` from the link row. |
+| `click` | `redirector` | `tracking_link_id`, `campaign_id`, `redirector_click_at`, `redirector_time_status`; optional `ad_group_id`, `creative_id`, `network`, `country`, `site_id` from the link row; bounded `remote_click_ref`, `source_rate_class`, `client_class`, and prefetch evidence added by M6. |
 | `install` | `sdk-android` | `referrer_status`, `install_begin_at_server(_status)`, `referrer_click_at_server`, device timestamps as evidence, `click_id`, `protected_referrer_evidence_ref`, `country`, `app_version`, `os_version`, `sdk_version`, `meta_referrer_status`, `meta_referrer_context`. |
 | `session_start` | `sdk-android` | `installation_id`, `session_id`. Feeds M1b retention, which M1b could only emit as `undefined / no_activity_events`. |
 | `ad_revenue` | `sdk-android` | `subject_scope=installation_level` with a real `installation_id`; `revenue_source=client_estimated`; `ad_network`, `mediation_provider=applovin-max`, `ad_unit_id`, `country`, `currency_source`. `anchor_source` is **not** set — the spec restricts it to `postback:<kind>` producers, and an SDK-delivered impression needs no synthesised anchor. |

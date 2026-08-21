@@ -89,3 +89,17 @@ Fixture 45 has the only derived digest changes:
 | Conversion-update payload JCS | `b702b0728fbe7d6bf6155c711c515457c27c03e08a9fdd535cb657ed4bf98cba` |
 
 No attribution status, reason meaning, candidate set, window, join, metric value, money value, snapshot digest, grouping digest, evidence reference, privacy state, or fraud decision changes. `SEMANTIC_DIFF=0` is a hard failure condition, not a descriptive claim.
+
+## Additive M6 patch ledger
+
+The active v0.4 schema identifiers and artifact `contract_version` values remain unchanged under R-27. These release-package patches are additive and are exercised only by new synthetic fixtures:
+
+| Patch | Additive surface | Fixture |
+| --- | --- | --- |
+| `0.4.1` | Source-scoped fraud decisions, rule identity, quarantine deadline, and three produced public fraud categories | 48 |
+| `0.4.2` | `fraud_excluded` attribution provenance | 49 |
+| `0.4.3` | Optional `fraud_policy` on metric definitions and runs | 50 |
+| `0.4.4` | Explicit Play referrer click-time availability | 51 |
+| `0.4.5` | Server-assigned `source_rate_class` and `client_class` click evidence | 52 |
+
+Fixtures 48 through 52 add 65 reviewed golden files. Fixtures 01 through 47 and their 611 golden artifacts are byte-identical to the v0.4.0 baseline.

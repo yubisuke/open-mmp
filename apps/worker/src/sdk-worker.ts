@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Pool } from "pg";
 import { sha256, type CandidateAttempt } from "@openmasu/attribution-core";
+import { clickInjectionPolicyDigest } from "@openmasu/fraud-rules";
 import { decryptMetaInstallReferrer, type MetaKey } from "@openmasu/meta-install-referrer";
 import { withTenant, type PayloadStore } from "@openmasu/runtime";
 import { queueAdServicesLookup, type PendingAdServicesLookup } from "./adservices-worker.js";
@@ -29,6 +30,11 @@ type Withdrawal = {
 function serverContext(row: InboxRow, record: Any, withdrawals: Withdrawal[]): Any {
   const aggregatePostback = row.producer === "postback:skadnetwork"
     || row.producer === "postback:adattributionkit";
+  const clickInjectionPolicy = {
+    threshold_seconds: Number(process.env.OPENMASU_FRAUD_CTIT_LOWER_BOUND_SECONDS ?? "10"),
+    authority: "server" as const,
+    policy_version: "fraud-conservative-v1",
+  };
   return {
     tenant_id: row.tenant_id,
     app_id: row.app_id,
@@ -41,7 +47,11 @@ function serverContext(row: InboxRow, record: Any, withdrawals: Withdrawal[]): A
     }],
     withdrawals,
     alternative_legal_bases: [],
-    click_injection_threshold_ms: 2_000,
+    click_injection_policy: {
+      ...clickInjectionPolicy,
+      policy_digest: clickInjectionPolicyDigest(clickInjectionPolicy),
+    },
+    fraud_actions_enabled: process.env.OPENMASU_FRAUD_ACTIONS_ENABLED === "1",
   };
 }
 

@@ -51,6 +51,8 @@ R-27 also covers the additive platform-integrity reservation in `0.3.5`. Raw rec
 
 R-27 also covers the additive import-hardening patch in `0.3.6`. Delivery and rejection reason enums add `payload_schema_invalid`, and the fixture envelope adds an independent pre-ingestion rejection input used only to prove that output. Runtime imports dispatch normalized payloads through the same compiled event schemas as the contract gate before any raw or logical evidence write. Existing schema `$id` values remain on the `v0.3` minor line, existing event-version constants retain `0.3.0`, and all 598 earlier goldens remain unchanged.
 
+R-27 also authorizes the additive M6 fraud patches in `0.4.1` through `0.4.5`. They add source-scoped fraud decisions and three produced public categories (`0.4.1`), fraud-exclusion attribution provenance (`0.4.2`), gross/net metric policy (`0.4.3`), explicit Play referrer click-time availability (`0.4.4`), and two server-assigned bounded edge classifications (`0.4.5`). Existing schema `$id` values remain on the `v0.4` minor line, existing event-version constants retain `0.4.0`, and fixtures 01 through 47 retain byte-identical golden output.
+
 ## Compatibility registry
 
 `registries/compatibility-v0.4.json` closes the allowed attribution combinations of subject scope, method, model, and status. It does not replace schema versioning. Schemas define artifact shape, registries define closed cross-field vocabularies and metadata, and the validator proves that duplicated enum surfaces agree.

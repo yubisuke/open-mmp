@@ -178,6 +178,10 @@ Initial Android rule:
 <!-- m1-component:privacy-restore -->
 <!-- m1-component:operational-observability -->
 <!-- m1-component:integrity-evidence -->
+<!-- m1-component:fraud-engine -->
+<!-- m1-component:integrity-verifier -->
+
+The M6 `fraud-engine` is a deterministic worker-side rule evaluator over server-authoritative record evidence and append-only source-day aggregates. It persists versioned decisions, resolves every expired quarantine exactly once, supersedes excluded installation attribution, and exposes aggregate-only audit rows through `/v1/audit/fraud`. Ingestion is never rejected by a fraud action. The `integrity-verifier` is a separate protected-token boundary; M6b normalizes server-verification outcomes without turning provider outages into failures.
 
 Administrator keys are tenant-wide control-plane identities. Every route still
 resolves and validates the requested app inside that tenant; a role does not

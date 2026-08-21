@@ -1,5 +1,12 @@
 import { createHash } from "node:crypto";
 import { canonicalize } from "json-canonicalize";
+import {
+  clickInjectionPolicyDigest,
+  evaluateInstallRules,
+  evaluateSourceDay,
+  fraudBundleHash,
+  type FraudBundle,
+} from "@openmasu/fraud-rules";
 import type { OpenMasuEvaluationOutputV04 as EvaluationOutput } from "@openmasu/contracts";
 
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
@@ -24,6 +31,27 @@ const CONTRACT_VERSION = "0.4.0" as const;
 // Rule bundles and metric definitions retain their independent v0.3 identities.
 const REFERENCE_RULE_VERSION = "0.3.0" as const;
 const HASH = "0".repeat(64);
+const FRAUD_BUNDLE: FraudBundle = {
+  id: "fraud-conservative",
+  version: "1.0.0",
+  layers: { base: {
+    ctit_lower_bound_seconds: 10,
+    referrer_redirector_divergence_seconds: 300,
+    source_day_min_clicks: 1000,
+    source_day_cvr_median_multiplier: 0.2,
+    source_day_ctit_p50_min_seconds: 86400,
+    source_day_ctit_p95_p50_max_ratio: 3,
+    quarantine_hours: 72,
+  } },
+  rules: [
+    { id: "referrer-server-order-v1", inputs: ["referrer_click_at_server", "install_begin_at_server"], action: "flag" },
+    { id: "ctit-lower-bound-v1", inputs: ["redirector_click_at", "install_begin_at_server"], action: "flag" },
+    { id: "referrer-redirector-divergence-v1", inputs: ["referrer_click_at_server", "redirector_click_at"], action: "flag" },
+    { id: "source-day-click-flooding-v1", inputs: ["source_day_aggregate"], action: "flag" },
+    { id: "device-integrity-combination-v1", inputs: ["integrity_verdict", "ctit"], action: "flag" },
+  ],
+};
+const FRAUD_BUNDLE_HASH = fraudBundleHash(FRAUD_BUNDLE);
 const DAY_MS = 86_400_000;
 
 export function jcs(value: unknown): string {
@@ -401,6 +429,16 @@ function decide(attempt: Attempt, candidates: CandidateProvider): Any {
     });
     if (server.timestamp_stale_policy.policy_digest !== expectedDigest) {
       throw new Error("timestamp_stale_policy.policy_digest does not match its canonical policy fields");
+    }
+  }
+  if (server.click_injection_policy) {
+    const expectedDigest = clickInjectionPolicyDigest({
+      threshold_seconds: server.click_injection_policy.threshold_seconds,
+      authority: server.click_injection_policy.authority,
+      policy_version: server.click_injection_policy.policy_version,
+    });
+    if (server.click_injection_policy.policy_digest !== expectedDigest) {
+      throw new Error("click_injection_policy.policy_digest does not match its canonical policy fields");
     }
   }
   const sameRecordId = candidates.byRecordId(record.record_id);
@@ -804,6 +842,7 @@ function metricRuns(
   decisions: Map<string, Any>,
   lifecycle: Map<string, LifecycleStatus>,
   attributions: Attribution[],
+  excludedInstallationIds: ReadonlySet<string> = new Set(),
 ): MetricRun[] {
   const evaluations = input.metric_evaluations ?? [];
   if (!evaluations.length) return [];
@@ -891,8 +930,11 @@ function metricRuns(
           .filter((dimension) => !groupingDimensions.has(dimension));
         if (unsupported.length) throw new Error(`unsupported grouping for ${metricName}: ${unsupported.join(",")}`);
       }
+      const eligibleInstalls = definition.fraud_policy === "net"
+        ? installs.filter((candidate) => !excludedInstallationIds.has(candidate.record.payload.installation_id))
+        : installs;
       const revenueValue = revenue.reduce((sum, item) => {
-        const installation = installs.find((candidate) =>
+        const installation = eligibleInstalls.find((candidate) =>
           candidate.server.tenant_id === item.server.tenant_id && candidate.server.app_id === item.server.app_id &&
           candidate.record.payload.installation_id === item.record.payload.installation_id,
         );
@@ -900,7 +942,7 @@ function metricRuns(
           ? sum + convertMoney(item.record.payload, fxPolicy)
           : sum;
       }, 0n);
-      const cohortSize = BigInt(new Set(installs.map((install) => install.record.payload.installation_id)).size);
+      const cohortSize = BigInt(new Set(eligibleInstalls.map((install) => install.record.payload.installation_id)).size);
       let value: bigint | undefined;
       let undefined_reason: "no_attributed_cost" | "no_activity_events" | "empty_cohort" | undefined;
       if (definition.definition.calculation === "revenue_sum") {
@@ -997,6 +1039,8 @@ function metricRuns(
           }
           value = BigInt(visible.filter((attempt) =>
             eventNames.has(attempt.record.event_name) &&
+            (definition.fraud_policy !== "net" || attempt.record.event_name !== "install" ||
+              !excludedInstallationIds.has(attempt.record.payload.installation_id)) &&
             matchesGrouping(attempt, evaluation.grouping, attributionStatuses) &&
             dateAt(attempt.record.occurred_at, definition.aggregation_time_zone, "occurred_at") === metricDate,
           ).length);
@@ -1037,6 +1081,7 @@ function metricRuns(
         rounding_mode: fxPolicy.rounding_mode,
         reproducibility_status,
         value_type: definition.value_type,
+        ...(definition.fraud_policy ? { fraud_policy: definition.fraud_policy } : {}),
         ...(value === undefined
           ? { value_state: "undefined" as const, undefined_reason }
           : { value_unscaled: value.toString() }),
@@ -1276,7 +1321,7 @@ export function evaluate(
     record_lifecycle: "active",
     timeliness: attempt.record.late ? "late" : "on_time",
   })), (event) => [event.logical_event_id, event.tenant_id, event.app_id]);
-  const attributions = sortByKey([
+  const initialAttributions = sortByKey([
     ...acceptedUnique
       .filter((attempt) => attempt.record.event_name === "install")
       .map((attempt) => makeAttribution(attempt, candidates, decisions, lifecycle)),
@@ -1417,8 +1462,101 @@ export function evaluate(
       evaluated_at: attempt.record.received_at,
     }];
   });
-  const fraud_decisions = sortByKey([...transportFraud, ...clickInjectionFraud],
+  const referrerOrderingFraud = acceptedUnique.flatMap((attempt): FraudDecision[] => {
+    if (attempt.record.event_name !== "install") return [];
+    const payload = attempt.record.payload;
+    const configured = attempt.server.click_injection_policy ?? {
+      threshold_seconds: 10,
+      authority: "server",
+      policy_version: "reference-v1",
+      policy_digest: clickInjectionPolicyDigest({ threshold_seconds: 10, authority: "server", policy_version: "reference-v1" }),
+    };
+    const hits = evaluateInstallRules({
+      installBeginAtServer: payload.install_begin_at_server,
+      referrerClickAtServer: payload.referrer_click_at_server,
+      referrerClickAtServerStatus: payload.referrer_click_at_server_status,
+      policy: configured,
+    }).filter((hit) => hit.ruleId === "referrer-server-order-v1");
+    return hits.map((hit): FraudDecision => ({
+      fraud_decision_id: `fraud:${attempt.record.record_id}:${hit.ruleId}`,
+      subject_ref: attempt.record.record_id,
+      decision: hit.decision,
+      action: hit.action,
+      reason_code: hit.reasonCode,
+      reason_code_version: CONTRACT_VERSION,
+      evidence: [{
+        type: hit.evidenceType,
+        captured_at: attempt.record.received_at,
+        digest: sha256([hit.ruleId, attempt.record.record_id]),
+        access_class: "protected",
+      }],
+      rule_bundle_id: FRAUD_BUNDLE.id,
+      rule_bundle_version: FRAUD_BUNDLE.version,
+      rule_bundle_hash: FRAUD_BUNDLE_HASH,
+      rule_id: hit.ruleId,
+      evaluated_at: attempt.record.received_at,
+    }));
+  });
+  const sourceDayFraud = (input.source_day_aggregates ?? []).flatMap((aggregate: Any): FraudDecision[] => {
+    const hit = evaluateSourceDay({
+      clicks: aggregate.clicks,
+      installs: aggregate.installs,
+      medianCvr: aggregate.medianCvr,
+      ctitP50Ms: aggregate.ctitP50Ms,
+      ctitP95Ms: aggregate.ctitP95Ms,
+    });
+    if (!hit) return [];
+    const sourceRef = `source:${aggregate.tenant_id}:${aggregate.app_id}:${aggregate.metric_date}:${aggregate.campaign_id}:${aggregate.network}:${aggregate.site_id}`;
+    return [{
+      fraud_decision_id: `fraud:${aggregate.input_snapshot_id}`,
+      subject_scope: "source",
+      subject_ref: sourceRef,
+      decision: hit.decision,
+      action: hit.action,
+      reason_code: hit.reasonCode,
+      reason_code_version: CONTRACT_VERSION,
+      evidence: [{
+        type: hit.evidenceType,
+        captured_at: aggregate.computed_at,
+        digest: aggregate.input_snapshot_id,
+        access_class: "protected",
+      }],
+      rule_bundle_id: FRAUD_BUNDLE.id,
+      rule_bundle_version: FRAUD_BUNDLE.version,
+      rule_bundle_hash: FRAUD_BUNDLE_HASH,
+      rule_id: hit.ruleId,
+      evaluated_at: aggregate.computed_at,
+    }];
+  });
+  const fraud_decisions = sortByKey([...transportFraud, ...clickInjectionFraud, ...referrerOrderingFraud, ...sourceDayFraud],
     (decision) => [decision.fraud_decision_id]);
+  const excludedClickIds = new Map<string, FraudDecision>();
+  for (const decision of fraud_decisions.filter((item) => item.action === "exclude" && item.subject_scope !== "source")) {
+    const click = acceptedUnique.find((attempt) => attempt.record.record_id === decision.subject_ref && attempt.record.event_name === "click");
+    if (click?.server.fraud_actions_enabled && click.record.payload.click_id) excludedClickIds.set(click.record.payload.click_id, decision);
+  }
+  const excludedInstallationIds = new Set<string>();
+  const fraudAttributions: Attribution[] = [];
+  for (const install of acceptedUnique.filter((attempt) => attempt.record.event_name === "install")) {
+    const decision = excludedClickIds.get(install.record.payload.click_id);
+    if (!decision) continue;
+    excludedInstallationIds.add(install.record.payload.installation_id);
+    const prior = initialAttributions.find((item) => item.subject_ref === install.record.payload.installation_id);
+    if (!prior) continue;
+    fraudAttributions.push({
+      ...prior,
+      attribution_id: `${prior.attribution_id}:fraud`,
+      status: "unattributed",
+      method: "none",
+      model: "none",
+      reason_code: "fraud_excluded",
+      finality: "final",
+      fraud_decision_ref: decision.fraud_decision_id,
+      supersedes_attribution_id: prior.attribution_id,
+    });
+  }
+  const attributions = sortByKey([...initialAttributions, ...fraudAttributions],
+    (attribution) => [attribution.attribution_id, attribution.tenant_id, attribution.app_id]);
   const rejections = sortByKey([...decisionsList, ...preIngestionDecisions]
     .filter((decision) => decision.ingestion_status === "rejected")
     .map((decision): Rejection => ({
@@ -1453,7 +1591,7 @@ export function evaluate(
     attributions,
     cost_records: costRecords(input),
     metric_definitions: metricDefinitions(input),
-    metric_runs: metricRuns(input, all, decisions, lifecycle, attributions),
+    metric_runs: metricRuns(input, all, decisions, lifecycle, attributions, excludedInstallationIds),
     fraud_decisions,
     rejections,
     reconciliation: reconciliationResults(input, acceptedUnique),

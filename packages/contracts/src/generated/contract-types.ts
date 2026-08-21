@@ -123,7 +123,8 @@ export type OpenMasuAttributionResultV04 = {
     | "skan_signature_invalid"
     | "postback_not_winner"
     | "crowd_anonymity_suppressed"
-    | "conversion_value_null";
+    | "conversion_value_null"
+    | "fraud_excluded";
   reason_code_version: "0.4.0";
   evidence_refs: EvidenceRef[];
   effective_at: string;
@@ -133,6 +134,7 @@ export type OpenMasuAttributionResultV04 = {
   rule_bundle_id: string;
   rule_bundle_version: string;
   rule_bundle_hash: string;
+  fraud_decision_ref?: string;
   supersedes_attribution_id?: string;
 };
 export type OpenMasuCostRecordV04 = Money & {
@@ -200,6 +202,7 @@ export type OpenMasuMetricDefinitionV04 = {
     | "attribution_status"
     | "apple_conversion_bucket"
   )[];
+  fraud_policy?: "gross" | "net";
   rule_bundle_id: string;
   rule_bundle_version: string;
   rule_bundle_hash: string;
@@ -234,6 +237,7 @@ export type OpenMasuMetricRunV04 = {
   value_state?: "present" | "undefined";
   undefined_reason?: "no_attributed_cost" | "no_activity_events" | "empty_cohort";
   value_unscaled?: string;
+  fraud_policy?: "gross" | "net";
   amount_scale?: number;
   ratio_scale?: number;
   currency?: string;
@@ -251,6 +255,36 @@ export type OpenMasuMetricRunV04 = {
   };
   supersedes_metric_run_id?: string;
   evidence_refs: EvidenceRef[];
+};
+export type OpenMasuFraudDecisionV04 = {
+  [k: string]: unknown;
+} & {
+  fraud_decision_id: string;
+  subject_scope?: "record" | "source";
+  subject_ref: string;
+  decision: "clear" | "suspected" | "confirmed";
+  action: "allow" | "flag" | "exclude" | "quarantine";
+  reason_code:
+    | "bot_prefetch"
+    | "replay_suspected"
+    | "click_injection_suspected"
+    | "click_flooding_suspected"
+    | "referrer_time_inconsistent"
+    | "device_integrity_failed";
+  reason_code_version: "0.4.0";
+  evidence: {
+    type: string;
+    captured_at: string;
+    digest: string;
+    access_class: "public" | "protected" | "private";
+  }[];
+  rule_bundle_id: string;
+  rule_bundle_version: string;
+  rule_bundle_hash: string;
+  rule_id?: string;
+  resolution_deadline_at?: string;
+  evaluated_at: string;
+  supersedes_fraud_decision_id?: string;
 };
 export type OpenMasuRejectionV04 = {
   [k: string]: unknown;
@@ -433,23 +467,4 @@ export interface Money {
   amount_scale: number;
   currency: string;
   [k: string]: unknown;
-}
-export interface OpenMasuFraudDecisionV04 {
-  fraud_decision_id: string;
-  subject_ref: string;
-  decision: "clear" | "suspected" | "confirmed";
-  action: "allow" | "flag" | "exclude" | "quarantine";
-  reason_code: "bot_prefetch" | "replay_suspected" | "click_injection_suspected";
-  reason_code_version: "0.4.0";
-  evidence: {
-    type: string;
-    captured_at: string;
-    digest: string;
-    access_class: "public" | "protected" | "private";
-  }[];
-  rule_bundle_id: string;
-  rule_bundle_version: string;
-  rule_bundle_hash: string;
-  evaluated_at: string;
-  supersedes_fraud_decision_id?: string;
 }

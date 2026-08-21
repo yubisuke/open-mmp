@@ -1,0 +1,23 @@
+[
+  {
+    "fraud_decision_id": "fraud:install-51:referrer-server-order-v1",
+    "subject_ref": "install-51",
+    "decision": "confirmed",
+    "action": "flag",
+    "reason_code": "referrer_time_inconsistent",
+    "reason_code_version": "0.4.0",
+    "evidence": [
+      {
+        "type": "server_clock_order",
+        "captured_at": "2026-08-21T03:00:10.000Z",
+        "digest": "2e791838a979ae89be9b46a50cbe3aa4e1237c5ff8ec14eab434ae14925bddfc",
+        "access_class": "protected"
+      }
+    ],
+    "rule_bundle_id": "fraud-conservative",
+    "rule_bundle_version": "1.0.0",
+    "rule_bundle_hash": "2f121ebedc3a6457ec35343df9de8c3fff5fb6dc27f698df6daf173a139f3262",
+    "rule_id": "referrer-server-order-v1",
+    "evaluated_at": "2026-08-21T03:00:10.000Z"
+  }
+]

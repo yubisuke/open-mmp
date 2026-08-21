@@ -268,18 +268,23 @@ async function persistProjectionWithClient(client: PoolClient, logical: Any, inp
       await client.query(
         `INSERT INTO ledger.click_facts (
           logical_event_id, tenant_id, app_id, click_id, redirector_click_at,
-          campaign_id, network, country, artifact
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb) ON CONFLICT (logical_event_id) DO NOTHING`,
+          campaign_id, network, country, site_id, remote_click_ref, artifact
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb) ON CONFLICT (logical_event_id) DO NOTHING`,
         [
           logical.logical_event_id, logical.tenant_id, logical.app_id,
-          payload.click_id, payload.redirector_click_at ?? null,
-          campaignId, network, country,
+          payload.click_id ?? null, payload.redirector_click_at ?? null,
+          campaignId, network, country, payload.site_id ?? null, payload.remote_click_ref ?? null,
           projected({
-            click_id: payload.click_id,
+            ...(payload.click_id ? { click_id: payload.click_id } : {}),
             redirector_click_at: payload.redirector_click_at ?? null,
             campaign_id: campaignId,
             network,
             country,
+            site_id: payload.site_id ?? null,
+            remote_click_ref: payload.remote_click_ref ?? null,
+            bot_prefetch: payload.bot_prefetch === true,
+            source_rate_class: payload.source_rate_class ?? null,
+            client_class: payload.client_class ?? null,
           }),
         ],
       );
@@ -501,17 +506,34 @@ async function persistAttribution(appPool: Pool, artifact: Any): Promise<Any> {
 }
 
 async function persistFraud(appPool: Pool, artifact: Any, scope: { tenant_id: string; app_id: string }): Promise<Any> {
-  return withTenant(appPool, scope.tenant_id, (client) => storedArtifact(
-    client,
-    `INSERT INTO ledger.fraud_decisions (
-      fraud_decision_id, tenant_id, app_id, subject_ref, decision, action,
-      reason_code, evaluated_at, artifact
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb)
+  return withTenant(appPool, scope.tenant_id, async (client) => {
+    const stored = await storedArtifact(
+      client,
+      `INSERT INTO ledger.fraud_decisions (
+      fraud_decision_id, tenant_id, app_id, subject_ref, subject_scope, rule_id,
+      decision, action, reason_code, evaluated_at, resolution_deadline_at,
+      supersedes_fraud_decision_id, artifact
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb)
     ON CONFLICT (fraud_decision_id) DO NOTHING RETURNING artifact`,
-    [artifact.fraud_decision_id, scope.tenant_id, scope.app_id, artifact.subject_ref, artifact.decision, artifact.action, artifact.reason_code, artifact.evaluated_at, JSON.stringify(artifact)],
-    "SELECT artifact FROM ledger.fraud_decisions WHERE fraud_decision_id = $1",
-    [artifact.fraud_decision_id],
-  ));
+      [artifact.fraud_decision_id, scope.tenant_id, scope.app_id, artifact.subject_ref,
+        artifact.subject_scope ?? "record", artifact.rule_id ?? null, artifact.decision,
+        artifact.action, artifact.reason_code, artifact.evaluated_at,
+        artifact.resolution_deadline_at ?? null, artifact.supersedes_fraud_decision_id ?? null,
+        JSON.stringify(artifact)],
+      "SELECT artifact FROM ledger.fraud_decisions WHERE fraud_decision_id = $1",
+      [artifact.fraud_decision_id],
+    );
+    if (artifact.action === "quarantine") {
+      await client.query(
+        `INSERT INTO ephemeral.fraud_quarantines (
+          fraud_decision_id,tenant_id,app_id,subject_ref,resolve_after
+        ) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (fraud_decision_id) DO NOTHING`,
+        [artifact.fraud_decision_id, scope.tenant_id, scope.app_id,
+          artifact.subject_ref, artifact.resolution_deadline_at],
+      );
+    }
+    return stored;
+  });
 }
 
 async function persistMetric(appPool: Pool, artifact: Any, scope: { tenant_id: string; app_id: string }): Promise<Any> {

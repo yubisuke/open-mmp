@@ -4,6 +4,7 @@ import { EncryptedFilePayloadStore, EnvironmentSecretStore, uuidV7, withTenant }
 import { AdServicesLookupLimiter, processAdServicesLookups } from "./adservices-worker.js";
 import { processMaxInbox } from "./import/max-worker.js";
 import { listRuntimeWorkTenants, processSdkInbox } from "./sdk-worker.js";
+import { aggregateSourceDay, loadFraudBundle, resolveExpiredQuarantines } from "./fraud-worker.js";
 
 const connectionString = process.env.OPENMASU_APP_DATABASE_URL;
 if (!connectionString) throw new Error("OPENMASU_APP_DATABASE_URL is required");
@@ -28,6 +29,8 @@ const payloadStore = new EncryptedFilePayloadStore(
   process.env.OPENMASU_PAYLOAD_STORE_DIR ?? ".openmasu/payloads",
   secrets.require("OPENMASU_PAYLOAD_MASTER_KEY"),
 );
+const fraudEnabled = process.env.OPENMASU_FRAUD_ENABLED !== "0";
+const fraudBundle = fraudEnabled ? await loadFraudBundle(process.env.OPENMASU_FRAUD_BUNDLE_PATH) : undefined;
 async function sweepDashboardSessions(): Promise<void> {
   const now = new Date();
   await withTenant(pool, maxTenantId, async (client) => {
@@ -69,6 +72,11 @@ const tick = async (): Promise<void> => {
         endpoint: process.env.OPENMASU_ADSERVICES_ENDPOINT,
         limiter: adServicesLimiter,
       });
+      if (fraudBundle) {
+        const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+        await aggregateSourceDay(pool, tenantId, yesterday, fraudBundle);
+        await resolveExpiredQuarantines(pool, tenantId);
+      }
     }
     await sweepDashboardSessions();
   }

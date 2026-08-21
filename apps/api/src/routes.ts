@@ -8,6 +8,7 @@ export type RouteHandler =
   | "report_metrics"
   | "report_records"
   | "audit_differences"
+  | "audit_fraud"
   | "sdk_enrollment"
   | "sdk_batch"
   | "device_privacy"
@@ -28,6 +29,7 @@ export type RouteHandler =
   | "dashboard_app"
   | "dashboard_export"
   | "dashboard_differences"
+  | "dashboard_fraud"
   | "dashboard_tracking_links_list"
   | "dashboard_tracking_links_create"
   | "dashboard_apps_create";
@@ -48,6 +50,7 @@ export const routes: readonly RouteDefinition[] = [
   { handler: "report_metrics", method: "GET", pattern: /^\/v1\/reports\/metrics$/, auth: "admin_bearer", mutates: false, capability: "read" },
   { handler: "report_records", method: "GET", pattern: /^\/v1\/reports\/records$/, auth: "admin_bearer", mutates: false, capability: "read" },
   { handler: "audit_differences", method: "GET", pattern: /^\/v1\/audit\/differences$/, auth: "admin_bearer", mutates: false, capability: "read" },
+  { handler: "audit_fraud", method: "GET", pattern: /^\/v1\/audit\/fraud$/, auth: "admin_bearer", mutates: false, capability: "read" },
   { handler: "sdk_enrollment", method: "POST", pattern: /^\/v1\/installations$/, auth: "sdk_hmac", mutates: true },
   { handler: "sdk_batch", method: "POST", pattern: /^\/v1\/events\/batch$/, auth: "sdk_hmac", mutates: true },
   { handler: "device_privacy", method: "POST", pattern: /^\/v1\/privacy\/on-device$/, auth: "sdk_hmac", mutates: true },
@@ -67,6 +70,7 @@ export const routes: readonly RouteDefinition[] = [
   { handler: "dashboard_logout", method: "POST", pattern: /^\/dashboard\/session\/delete$/, auth: "dashboard_session", mutates: true, capability: "read" },
   { handler: "dashboard_export", method: "GET", pattern: /^\/dashboard\/apps\/[^/]+\/cohorts\.csv$/, auth: "dashboard_session", mutates: false, capability: "read" },
   { handler: "dashboard_differences", method: "GET", pattern: /^\/dashboard\/apps\/[^/]+\/differences$/, auth: "dashboard_session", mutates: false, capability: "read" },
+  { handler: "dashboard_fraud", method: "GET", pattern: /^\/dashboard\/apps\/[^/]+\/fraud$/, auth: "dashboard_session", mutates: false, capability: "read" },
   { handler: "dashboard_tracking_links_list", method: "GET", pattern: /^\/dashboard\/apps\/[^/]+\/tracking-links$/, auth: "dashboard_session", mutates: false, capability: "read" },
   { handler: "dashboard_tracking_links_create", method: "POST", pattern: /^\/dashboard\/apps\/[^/]+\/tracking-links$/, auth: "dashboard_session", mutates: true, capability: "operate" },
   { handler: "dashboard_app", method: "GET", pattern: /^\/dashboard\/apps\/[^/]+$/, auth: "dashboard_session", mutates: false, capability: "read" },

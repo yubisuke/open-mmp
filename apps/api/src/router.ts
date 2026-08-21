@@ -27,6 +27,7 @@ import {
   type ReportFormat,
 } from "./reporting.js";
 import { parseMetricQuery, ReportQueryError } from "./report-query.js";
+import { encodeFraudAudit, fraudAudit, FraudAuditQueryError, parseFraudAuditQuery } from "./fraud-reporting.js";
 import type { KeyedTokenBucket, TokenBucket } from "./rate-limit.js";
 import { matchRoute, type RouteDefinition } from "./routes.js";
 import { activateRuleBundle } from "./rule-bundles.js";
@@ -163,7 +164,7 @@ async function dashboardSessionFor(
 }
 
 function dashboardAppId(pathname: string): string | undefined {
-  const match = /^\/dashboard\/apps\/([^/]+)(?:\/(?:cohorts\.csv|differences|tracking-links))?$/.exec(pathname);
+  const match = /^\/dashboard\/apps\/([^/]+)(?:\/(?:cohorts\.csv|differences|fraud|tracking-links))?$/.exec(pathname);
   if (!match) return undefined;
   try {
     return decodeURIComponent(match[1]);
@@ -372,7 +373,7 @@ export function createRequestHandler(dependencies: RequestHandlerDependencies): 
         return;
       }
 
-      if (["dashboard_app", "dashboard_export", "dashboard_differences", "dashboard_tracking_links_list", "dashboard_tracking_links_create", "dashboard_apps_create"].includes(route.handler)) {
+      if (["dashboard_app", "dashboard_export", "dashboard_differences", "dashboard_fraud", "dashboard_tracking_links_list", "dashboard_tracking_links_create", "dashboard_apps_create"].includes(route.handler)) {
         const session = await dashboardSessionFor(dependencies, request);
         if (!session) {
           dashboardHtml(response, 401, loginPage("Authentication required."));
@@ -432,6 +433,19 @@ export function createRequestHandler(dependencies: RequestHandlerDependencies): 
             } catch (error) {
               dashboardHtml(response, 400, `<!doctype html><html lang="en"><body><h1>Tracking link creation failed</h1><p>${escapeHtml(error instanceof Error ? error.message : "tracking_link_invalid")}</p></body></html>`);
             }
+            return;
+          }
+          if (route.handler === "dashboard_fraud") {
+            const from = target.searchParams.get("from") ?? "2000-01-01";
+            const to = target.searchParams.get("to") ?? "9999-12-31";
+            const rows = await fraudAudit(dependencies.readerPool, appIdentity, { from, to });
+            const apps = await listApps(dependencies.readerPool, sessionIdentity);
+            dashboardHtml(response, 200, renderDashboard(buildDashboardView({
+              apps,
+              selectedAppId: appIdentity.appId,
+              fraudRows: rows,
+              csrfToken: csrfToken(session.token),
+            })));
             return;
           }
           const params = new URLSearchParams(target.searchParams);
@@ -591,6 +605,28 @@ export function createRequestHandler(dependencies: RequestHandlerDependencies): 
               const status = message.endsWith("_already_registered") || message === "rule_bundle_predecessor_mismatch" ? 409 : 400;
               json(response, status, { error: message });
             }
+          }
+          return;
+        }
+        if (route.handler === "audit_fraud") {
+          try {
+            const query = parseFraudAuditQuery(target.searchParams);
+            const appIdentity = await requireRegisteredApp(pool, identity, query.appId);
+            const rows = await fraudAudit(pool, appIdentity, query);
+            const encoded = encodeFraudAudit(rows, query.format);
+            response.writeHead(200, {
+              "content-type": encoded.contentType,
+              "cache-control": "no-store",
+              "x-content-type-options": "nosniff",
+              ...(query.format === "csv" ? {
+                "content-disposition": `attachment; filename="openmasu-fraud-${appIdentity.appId}-${query.from}-${query.to}.csv"`,
+              } : {}),
+            });
+            response.end(encoded.body);
+          } catch (error) {
+            if (error instanceof AppNotFoundError) json(response, 404, { error: "app_not_found" });
+            else if (error instanceof FraudAuditQueryError) json(response, 400, { error: error.message });
+            else throw error;
           }
           return;
         }

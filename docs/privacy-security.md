@@ -112,6 +112,21 @@ Before implementation, legal and operational requirements must validate these de
 
 ## Open-core fraud boundary
 
+### Fraud capability boundary
+
+OpenMasu detects deterministic inconsistencies in server timestamps, redirector evidence, replay controls, and source-day aggregates. It does not claim parity with a cross-advertiser commercial MMP.
+
+| Capability | OpenMasu boundary |
+| --- | --- |
+| Real-device device farms | Cannot be detected from the permitted evidence. |
+| Device-reset fraud | Intentionally not detected; a reset creates a new installation by design. |
+| Cross-advertiser intelligence | Structurally unavailable because a self-hosted deployment sees one advertiser. |
+| Third-party IP or device intelligence | Permanently not used. No reputation feed, device graph, watchlist, or fingerprint is introduced. |
+
+The only unkeyed, bounded edge classifications are `source_rate_class`, `bot_prefetch` evidence derived from `prefetch_signal`, and `client_class`. They use signals already present on the click request, introduce no new raw input or persistent IP/User-Agent storage, and are not identifiers. The residual risk is that a classification still describes aggregate co-resident traffic, especially behind carrier NAT or shared proxies; operators must treat it as weak evidence and never as an identity.
+
+Fraud prevention retains source-day aggregates for 90 days by default. Decisions remain with the attribution history they govern. Shorter tenant retention is supported; longer retention requires a documented purpose.
+
 Public:
 
 - Fraud-decision schema
@@ -131,6 +146,8 @@ Private and access-controlled:
 - Detection-response timing
 
 Each decision records its reason, evidence references, policy digest, evaluation time, action, and supersession history. Public auditability does not require publishing live attack thresholds.
+
+Only the fraud bundle is bound to its real composite JCS hash in M6. The remaining `attribution-default`, `metric-default`, and `apple-postback-default` bundles still use a 64-zero placeholder. This known, golden-changing repair is tracked as F-H-3 and is outside WO-14.
 
 ## Release gates
 

@@ -159,4 +159,10 @@ contract gates. A production pilot remains an operator gate.
 
 ## Immediate next step
 
+## M6 Deterministic fraud controls
+
+M6a adds deterministic server-time and source-day fraud evidence, conservative flag-only defaults, real fraud-bundle binding, explicit gross/net metrics, deadline-bound quarantine, and an aggregate-only audit surface. M6b adds protected server verification boundaries for Play Integrity and App Attest. Synthetic CI cannot establish live provider availability, threshold accuracy, device-farm detection, network acceptance, or false-positive rates; those remain in the [M6 operator checklist](validation/m6-fraud-checklist.md).
+
+Evidence gate: the pure rule package, contract fixtures, PostgreSQL aggregate/action paths, audit API/dashboard, provider normalization vectors, threat-model coverage, and existing runtime parity all pass without changing ingestion acceptance. Real traffic and real device/provider projects are not code gates.
+
 Run the operator checklists and a controlled shadow pilot. Real provider connectivity, device validation, platform approval, production TLS, backup operations, capacity, integrity-service configuration, and incident response remain separate states.
