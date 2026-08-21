@@ -674,7 +674,7 @@ export async function computeSqlMetricRunsWithClient(
         rule_bundle_hash: definition.rule_bundle_hash,
         rounding_mode: fxPolicy.rounding_mode,
         reproducibility_status: reproducibilityStatus,
-        fraud_policy: definition.fraud_policy ?? "gross",
+        ...(definition.fraud_policy ? { fraud_policy: definition.fraud_policy } : {}),
         value_type: definition.value_type,
         ...(value.value_state === "undefined"
           ? { value_state: "undefined", undefined_reason: value.undefined_reason }
