@@ -215,8 +215,17 @@ describe("M1a import integration", () => {
           source: "synthetic-backfill-rate", as_of: "2026-08-21T00:00:00.000Z",
         }],
       },
-      metric_definitions: [],
-      evaluations: [{ metric_names: ["cohort_size"], grouping: { cohort_date: "2026-07-01" } }],
+      metric_definitions: [{
+        metric_name: "synthetic_backfill_cohort_size",
+        metric_definition_version: "0.4.0",
+        anchor_event: "install", aggregation_time_zone: "UTC", value_type: "count",
+        definition: {
+          calculation: "cohort_size", window: { type: "elapsed", day: 0 }, numerator: "cohort_size",
+        },
+        rule_bundle_id: "synthetic-backfill-metric", rule_bundle_version: "0.4.0",
+        rule_bundle_hash: "2222222222222222222222222222222222222222222222222222222222222222",
+      }],
+      evaluations: [{ metric_names: ["synthetic_backfill_cohort_size"], grouping: { cohort_date: "2026-07-01" } }],
     }));
     const legacy = await runMetricDefinitionsFile({
       pool: appPool, date: "2026-07-01", definitionsPath: definitions, persist: false,
