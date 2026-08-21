@@ -364,7 +364,6 @@ async function metricValue(
              AND candidate.app_id=install.app_id
              AND candidate.subject_scope='installation_level'
              AND candidate.subject_ref=install.installation_id
-             AND candidate.decided_at <= $3
            ORDER BY candidate.decided_at DESC, candidate.attribution_id DESC
            LIMIT 1
          ) AS attribution ON true
