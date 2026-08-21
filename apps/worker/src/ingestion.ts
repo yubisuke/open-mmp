@@ -865,6 +865,26 @@ export async function ingestRuntimeBatch(
   if (attempts.length === 0) {
     return { raw_records: [], deliveries: [], logical_events: [], rejections: [], attributions: [], fraud_decisions: [], reconciliation: [], validation_failures: [] };
   }
+  const scopes = [...new Set(attempts.map((attempt) =>
+    `${attempt.server.tenant_id}\u0000${attempt.server.app_id}`))];
+  if (scopes.length > 1) {
+    const combined: RuntimeIngestionResult = {
+      raw_records: [], deliveries: [], logical_events: [], rejections: [], attributions: [],
+      fraud_decisions: [], reconciliation: [], validation_failures: [],
+    };
+    for (const scope of scopes.sort()) {
+      const [tenantId, appId] = scope.split("\u0000");
+      const scopedAttempts = attempts.filter((attempt) =>
+        attempt.server.tenant_id === tenantId && attempt.server.app_id === appId);
+      const scopedHistory = historicalAttempts.filter((attempt) =>
+        attempt.server.tenant_id === tenantId && attempt.server.app_id === appId);
+      const result = await ingestRuntimeBatch(scopedAttempts, appPool, scopedHistory);
+      for (const key of Object.keys(combined) as Array<keyof RuntimeIngestionResult>) {
+        (combined[key] as Any[]).push(...result[key]);
+      }
+    }
+    return combined;
+  }
   const invalid = attempts.map(schemaInvalidArtifacts).filter((value): value is NonNullable<typeof value> => value !== undefined);
   const invalidAttempts = new Set(invalid.map(({ failure }) => `${failure.record_id}\u0000${failure.delivery_id}`));
   const validAttempts = attempts.filter((attempt) => !invalidAttempts.has(`${attempt.record.record_id}\u0000${attempt.record.delivery_id}`));
@@ -920,7 +940,18 @@ export async function ingestRuntimeBatch(
     await persistAttribution(appPool, attribution);
   }
   for (const fraud of selected.fraud_decisions) {
-    await persistFraud(appPool, fraud, { tenant_id: attempts[0].server.tenant_id, app_id: attempts[0].server.app_id });
+    const matchingScopes = attempts.filter((attempt) => {
+      const payload = attempt.record.payload ?? {};
+      return [attempt.record.record_id, attempt.record.event_id, payload.installation_id, payload.click_id]
+        .includes(fraud.subject_ref)
+        || (fraud.evidence ?? []).some((evidence: Any) =>
+          [attempt.record.record_id, attempt.record.event_id].includes(evidence.record_id ?? evidence.ref));
+    }).map((attempt) => ({ tenant_id: attempt.server.tenant_id, app_id: attempt.server.app_id }));
+    const uniqueScopes = [...new Map(matchingScopes.map((scope) => [
+      `${scope.tenant_id}\u0000${scope.app_id}`, scope,
+    ])).values()];
+    if (uniqueScopes.length !== 1) throw new Error(`fraud_scope_ambiguous:${fraud.fraud_decision_id}`);
+    await persistFraud(appPool, fraud, uniqueScopes[0]);
   }
   for (const reconciliation of selected.reconciliation) await persistReconciliation(appPool, reconciliation);
   return selected;

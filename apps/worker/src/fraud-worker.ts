@@ -10,8 +10,10 @@ type SourceAggregate = {
   site_id: string;
   clicks: string;
   installs: string;
+  ctit_p05_ms: string | null;
   ctit_p50_ms: string | null;
   ctit_p95_ms: string | null;
+  ctit_negative_count: string;
   median_cvr: string;
 };
 
@@ -33,18 +35,21 @@ async function persistAggregate(client: PoolClient, tenantId: string, appId: str
     site_id: row.site_id,
     clicks: Number(row.clicks),
     installs: Number(row.installs),
+    ctit_p05_ms: row.ctit_p05_ms === null ? null : Number(row.ctit_p05_ms),
     ctit_p50_ms: row.ctit_p50_ms === null ? null : Number(row.ctit_p50_ms),
     ctit_p95_ms: row.ctit_p95_ms === null ? null : Number(row.ctit_p95_ms),
+    ctit_negative_count: Number(row.ctit_negative_count),
   };
   const snapshot = sha256Jcs(artifact);
   await client.query(
     `INSERT INTO ledger.source_day_aggregates (
       tenant_id,app_id,metric_date,campaign_id,network,site_id,clicks,installs,
-      ctit_p50_ms,ctit_p95_ms,input_snapshot_id,computed_at,artifact
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb)
+      ctit_p05_ms,ctit_p50_ms,ctit_p95_ms,ctit_negative_count,input_snapshot_id,computed_at,artifact
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb)
     ON CONFLICT DO NOTHING`,
     [tenantId, appId, row.metric_date, row.campaign_id, row.network, row.site_id,
-      row.clicks, row.installs, row.ctit_p50_ms, row.ctit_p95_ms, snapshot, now,
+      row.clicks, row.installs, row.ctit_p05_ms, row.ctit_p50_ms, row.ctit_p95_ms,
+      row.ctit_negative_count, snapshot, now,
       JSON.stringify(artifact)],
   );
 }
@@ -115,12 +120,19 @@ export async function aggregateSourceDay(
              coalesce(click.site_id,'unattributed') AS site_id,
              count(DISTINCT click.logical_event_id)::text AS clicks,
              count(DISTINCT install.logical_event_id)::text AS installs,
+             (percentile_cont(0.05) WITHIN GROUP (ORDER BY
+               extract(epoch FROM (control.canonical_timestamp_value(install.install_begin_at_server)-control.canonical_timestamp_value(click.redirector_click_at)))*1000)
+               FILTER (WHERE control.canonical_timestamp_value(install.install_begin_at_server) >= control.canonical_timestamp_value(click.redirector_click_at)))::bigint::text AS ctit_p05_ms,
              (percentile_cont(0.5) WITHIN GROUP (ORDER BY
                extract(epoch FROM (control.canonical_timestamp_value(install.install_begin_at_server)-control.canonical_timestamp_value(click.redirector_click_at)))*1000)
                FILTER (WHERE control.canonical_timestamp_value(install.install_begin_at_server) >= control.canonical_timestamp_value(click.redirector_click_at)))::bigint::text AS ctit_p50_ms,
              (percentile_cont(0.95) WITHIN GROUP (ORDER BY
                extract(epoch FROM (control.canonical_timestamp_value(install.install_begin_at_server)-control.canonical_timestamp_value(click.redirector_click_at)))*1000)
                FILTER (WHERE control.canonical_timestamp_value(install.install_begin_at_server) >= control.canonical_timestamp_value(click.redirector_click_at)))::bigint::text AS ctit_p95_ms
+             ,count(DISTINCT install.logical_event_id) FILTER (
+               WHERE control.canonical_timestamp_value(install.install_begin_at_server)
+                 < control.canonical_timestamp_value(click.redirector_click_at)
+             )::text AS ctit_negative_count
            FROM ledger.click_facts click
            LEFT JOIN ledger.install_facts install
              ON install.tenant_id=click.tenant_id AND install.app_id=click.app_id AND install.click_id=click.click_id

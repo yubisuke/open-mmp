@@ -290,7 +290,14 @@ async function eventCountValue(
        AND ($12::text='gross' OR NOT EXISTS (SELECT 1 FROM ledger.attribution_results AS excluded
               WHERE excluded.tenant_id=$1 AND excluded.app_id=$2
                 AND excluded.reason_code='fraud_excluded'
-                AND excluded.subject_ref=event.installation_id))`,
+                AND excluded.subject_ref=event.installation_id
+                AND excluded.decided_at <= $3
+                AND NOT EXISTS (
+                  SELECT 1 FROM ledger.attribution_results AS newer
+                  WHERE newer.tenant_id=excluded.tenant_id AND newer.app_id=excluded.app_id
+                    AND newer.supersedes_attribution_id=excluded.attribution_id
+                    AND newer.decided_at <= $3
+                )))`,
     [
       scope.tenant_id,
       scope.app_id,
@@ -357,6 +364,7 @@ async function metricValue(
              AND candidate.app_id=install.app_id
              AND candidate.subject_scope='installation_level'
              AND candidate.subject_ref=install.installation_id
+             AND candidate.decided_at <= $3
            ORDER BY candidate.decided_at DESC, candidate.attribution_id DESC
            LIMIT 1
          ) AS attribution ON true
@@ -666,6 +674,7 @@ export async function computeSqlMetricRunsWithClient(
         rule_bundle_hash: definition.rule_bundle_hash,
         rounding_mode: fxPolicy.rounding_mode,
         reproducibility_status: reproducibilityStatus,
+        fraud_policy: definition.fraud_policy ?? "gross",
         value_type: definition.value_type,
         ...(value.value_state === "undefined"
           ? { value_state: "undefined", undefined_reason: value.undefined_reason }

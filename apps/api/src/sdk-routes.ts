@@ -100,6 +100,28 @@ function normalizedRecord(
       throw new Error("adservices_token_invalid");
     }
   }
+  const integrityToken = payload.extensions?.integrity_token_protected;
+  const integrityProvider = payload.extensions?.integrity_provider;
+  const integrityBindingMode = payload.extensions?.integrity_binding_mode;
+  const integrityBinding = payload.extensions?.integrity_binding;
+  const integrityFields = [integrityToken, integrityProvider, integrityBindingMode, integrityBinding];
+  if (integrityFields.some((value) => value !== undefined)) {
+    if (integrityFields.some((value) => value === undefined)) throw new Error("integrity_evidence_incomplete");
+    const expectedProvider = identity.platform === "ios" ? "app_attest" : "play_integrity";
+    if (integrityProvider !== expectedProvider) throw new Error("integrity_provider_scope_invalid");
+    if (typeof integrityToken !== "string" || integrityToken.length < 1
+      || Buffer.byteLength(integrityToken, "utf8") > 64 * 1024) {
+      throw new Error("integrity_token_invalid");
+    }
+    const expectedMode = source.event_name === "install" ? "challenge" : "request_hash";
+    if (integrityBindingMode !== expectedMode) throw new Error("integrity_binding_mode_invalid");
+    if (typeof integrityBinding !== "string"
+      || (expectedMode === "challenge"
+        ? !/^[A-Za-z0-9_-]{32,256}$/.test(integrityBinding)
+        : !/^[a-f0-9]{64}$/.test(integrityBinding))) {
+      throw new Error("integrity_binding_invalid");
+    }
+  }
   if (typeof payload.installation_id === "string"
     && installationIdDigest(config, payload.installation_id) !== identity.installationIdDigest) {
     throw new Error("installation_scope_mismatch");
