@@ -42,6 +42,11 @@ try {
   assert.equal(summary.accepted, rows);
   assert.equal(summary.rejected, 0);
   assert.equal(summary.logical_events, rows);
+  const retry = await runMmpImport({
+    pool, mappingPath, filePath, now: new Date("2026-08-21T12:01:00.000Z"),
+  });
+  assert.equal(retry.status, "skipped");
+  assert.equal(retry.accepted, 0);
   const counts = await withTenant(pool, `tenant-benchmark-${suffix}`, async (client) =>
     (await client.query<{ raw: number; deliveries: number; logical: number; facts: number }>(`SELECT
       (SELECT count(*)::int FROM ledger.raw_records)::int AS raw,
