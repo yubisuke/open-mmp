@@ -1888,6 +1888,18 @@ ALTER TABLE control.tracking_links
   ADD COLUMN deferred_deep_link_ttl_seconds integer NOT NULL DEFAULT 604800
     CHECK (deferred_deep_link_ttl_seconds BETWEEN 0 AND 7776000);
 
+-- Refresh the projection because PostgreSQL expands SELECT * at view creation.
+DROP VIEW control.tracking_links_current;
+
+CREATE VIEW control.tracking_links_current
+WITH (security_invoker = true)
+AS
+SELECT DISTINCT ON (link.tracking_link_id)
+  link.*, state.status, state.changed_at AS status_changed_at, state.reason_code
+FROM control.tracking_links AS link
+JOIN control.tracking_link_states AS state USING (tracking_link_id, tenant_id, app_id)
+ORDER BY link.tracking_link_id, state.tracking_link_state_seq DESC;
+
 ALTER TABLE ledger.click_facts
   ADD COLUMN tracking_link_id control.identifier REFERENCES control.tracking_links (tracking_link_id);
 

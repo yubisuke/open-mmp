@@ -285,6 +285,13 @@ async function persistProjectionWithClient(client: PoolClient, logical: Any, inp
       const campaignId = payload.campaign_id ?? importContext.provider_campaign_ref ?? null;
       const network = payload.network ?? importContext.provider_network ?? null;
       const country = payload.country ?? importContext.provider_country ?? null;
+      const trackingLinkId = attempt.record.producer === "redirector" && typeof payload.tracking_link_id === "string"
+        ? (await client.query<{ tracking_link_id: string }>(
+          `SELECT tracking_link_id FROM control.tracking_links
+            WHERE tenant_id=$1 AND app_id=$2 AND tracking_link_id=$3`,
+          [logical.tenant_id, logical.app_id, payload.tracking_link_id],
+        )).rows[0]?.tracking_link_id ?? null
+        : null;
       await client.query(
         `INSERT INTO ledger.click_facts (
           logical_event_id, tenant_id, app_id, click_id, redirector_click_at,
@@ -294,7 +301,7 @@ async function persistProjectionWithClient(client: PoolClient, logical: Any, inp
           logical.logical_event_id, logical.tenant_id, logical.app_id,
           payload.click_id ?? null, payload.redirector_click_at ?? null,
           campaignId, network, country, payload.site_id ?? null, payload.remote_click_ref ?? null,
-          payload.tracking_link_id ?? null,
+          trackingLinkId,
           projected({
             ...(payload.click_id ? { click_id: payload.click_id } : {}),
             redirector_click_at: payload.redirector_click_at ?? null,
@@ -303,6 +310,7 @@ async function persistProjectionWithClient(client: PoolClient, logical: Any, inp
             country,
             site_id: payload.site_id ?? null,
             remote_click_ref: payload.remote_click_ref ?? null,
+            tracking_link_id: trackingLinkId,
             bot_prefetch: payload.bot_prefetch === true,
             source_rate_class: payload.source_rate_class ?? null,
             client_class: payload.client_class ?? null,

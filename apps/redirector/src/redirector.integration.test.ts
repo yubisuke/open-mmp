@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
-import { createServer } from "node:http";
+import { createServer, request as httpRequest } from "node:http";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -31,6 +31,31 @@ let slug = "";
 let deepSlug = "";
 const linkHost = `links-${suffix}.synthetic.example`;
 const precedenceSlug = "well-known000";
+
+async function fetchWithHost(baseUrl: string, path: string, host: string): Promise<Response> {
+  const target = new URL(path, baseUrl);
+  return new Promise<Response>((resolve, reject) => {
+    const request = httpRequest({
+      hostname: target.hostname,
+      port: target.port,
+      path: `${target.pathname}${target.search}`,
+      method: "GET",
+      headers: { host, "user-agent": "Synthetic Android" },
+    }, (response) => {
+      const chunks: Buffer[] = [];
+      response.on("data", (chunk: Buffer) => chunks.push(chunk));
+      response.on("end", () => {
+        const headers = new Headers();
+        for (const [name, value] of Object.entries(response.headers)) {
+          if (value !== undefined) headers.set(name, Array.isArray(value) ? value.join(", ") : value);
+        }
+        resolve(new Response(Buffer.concat(chunks), { status: response.statusCode ?? 500, headers }));
+      });
+    });
+    request.on("error", reject);
+    request.end();
+  });
+}
 
 describe("M2a redirector HTTP shell", () => {
   before(async () => {
@@ -137,9 +162,7 @@ describe("M2a redirector HTTP shell", () => {
     hosted.listen(0, "127.0.0.1");
     await once(hosted, "listening");
     const hostedBase = `http://127.0.0.1:${(hosted.address() as AddressInfo).port}`;
-    const get = (path: string, host = linkHost) => fetch(`${hostedBase}${path}`, {
-      redirect: "manual", headers: { host, "user-agent": "Synthetic Android" },
-    });
+    const get = (path: string, host = linkHost) => fetchWithHost(hostedBase, path, host);
     const assetlinks = await get("/.well-known/assetlinks.json");
     const assetBytes = Buffer.from(await assetlinks.arrayBuffer());
     const dotted = await get("/.well-known/assetlinks.json", `${linkHost}.`);
@@ -188,7 +211,7 @@ describe("M2a redirector HTTP shell", () => {
     denied.listen(0, "127.0.0.1");
     await once(denied, "listening");
     const deniedBase = `http://127.0.0.1:${(denied.address() as AddressInfo).port}`;
-    assert.equal((await fetch(`${deniedBase}/.well-known/assetlinks.json`, { headers: { host: linkHost } })).status, 429);
+    assert.equal((await fetchWithHost(deniedBase, "/.well-known/assetlinks.json", linkHost)).status, 429);
     denied.close();
     await once(denied, "close");
 
@@ -200,7 +223,7 @@ describe("M2a redirector HTTP shell", () => {
     oversized.listen(0, "127.0.0.1");
     await once(oversized, "listening");
     const oversizedBase = `http://127.0.0.1:${(oversized.address() as AddressInfo).port}`;
-    assert.equal((await fetch(`${oversizedBase}/.well-known/assetlinks.json`, { headers: { host: linkHost } })).status, 503);
+    assert.equal((await fetchWithHost(oversizedBase, "/.well-known/assetlinks.json", linkHost)).status, 503);
     oversized.close();
     await once(oversized, "close");
     hosted.close();

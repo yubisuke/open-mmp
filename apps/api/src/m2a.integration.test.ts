@@ -390,6 +390,17 @@ describe("M2a signed SDK ingestion", () => {
   });
 
   it("DL-A-15, DL-A-16, and DL-A-25 resolve signed deep-link opens only from tenant-scoped server state", async () => {
+    const deepInstallationId = `installation:m7-${run}`;
+    const enrollment = await signed("/v1/installations", { installation_id: deepInstallationId });
+    assert.equal(enrollment.status, 201);
+    const deepCredential = await enrollment.json() as {
+      installation_key_id: string;
+      installation_secret: string;
+    };
+    const deepSigned = (records: unknown[]) => signed("/v1/events/batch", { records }, {
+      secret: deepCredential.installation_secret,
+      installationKeyId: deepCredential.installation_key_id,
+    });
     const link = await createTrackingLink({
       pool,
       tenantId,
@@ -406,33 +417,27 @@ describe("M2a signed SDK ingestion", () => {
       },
     });
     const session = sourceEvent(`event:m7-session:${run}`, "session_start", {
-      installation_id: installationId,
+      installation_id: deepInstallationId,
       session_id: `session:m7-${run}`,
     }, "2026-08-17T03:00:00.000Z");
-    assert.equal((await signed("/v1/events/batch", { records: [session] }, {
-      secret: installationSecret,
-      installationKeyId,
-    })).status, 202);
+    assert.equal((await deepSigned([session])).status, 202);
     await processSdkInbox(pool, payloadStore, tenantId);
 
     const active = sourceEvent(`event:m7-active:${run}`, "deep_link_open", {
-      installation_id: installationId,
+      installation_id: deepInstallationId,
       open_source: "android_app_link",
       destination_status: "delivered",
       link_slug: link.slug,
       deep_link_value: "/synthetic/m7",
     }, "2026-08-19T03:00:00.000Z");
     const unknown = sourceEvent(`event:m7-unknown:${run}`, "deep_link_open", {
-      installation_id: installationId,
+      installation_id: deepInstallationId,
       open_source: "ios_universal_link",
       destination_status: "delivered",
       link_slug: "unknownM7slug",
       deep_link_value: "/synthetic/unknown",
     }, "2026-08-19T03:01:00.000Z");
-    assert.equal((await signed("/v1/events/batch", { records: [active, unknown] }, {
-      secret: installationSecret,
-      installationKeyId,
-    })).status, 202);
+    assert.equal((await deepSigned([active, unknown])).status, 202);
     await processSdkInbox(pool, payloadStore, tenantId);
 
     const evidence = await withTenant(pool, tenantId, async (client) => ({
@@ -497,13 +502,13 @@ describe("M2a signed SDK ingestion", () => {
       },
     });
     const foreign = sourceEvent(`event:m7-foreign:${run}`, "deep_link_open", {
-      installation_id: installationId,
+      installation_id: deepInstallationId,
       open_source: "android_app_link",
       destination_status: "delivered",
       link_slug: foreignLink.slug,
     }, "2026-08-19T03:02:00.000Z");
     const forged = sourceEvent(`event:m7-forged:${run}`, "deep_link_open", {
-      installation_id: installationId,
+      installation_id: deepInstallationId,
       open_source: "android_app_link",
       destination_status: "delivered",
       link_slug: link.slug,
@@ -511,10 +516,7 @@ describe("M2a signed SDK ingestion", () => {
       tracking_link_id: "device-claimed-link",
       provider_campaign: "device-claimed-provider",
     }, "2026-08-19T03:03:00.000Z");
-    assert.equal((await signed("/v1/events/batch", { records: [foreign, forged] }, {
-      secret: installationSecret,
-      installationKeyId,
-    })).status, 202);
+    assert.equal((await deepSigned([foreign, forged])).status, 202);
     await processSdkInbox(pool, payloadStore, tenantId);
     const isolation = await withTenant(pool, tenantId, async (client) => ({
       foreign: (await client.query<{ tracking_link_id: string | null; campaign_id: string | null }>(
