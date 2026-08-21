@@ -87,6 +87,12 @@ function normalizedRecord(
   ].some((key) => payload[key] !== undefined)) {
     throw new Error("device_edge_claim_forbidden");
   }
+  if (source.event_name === "deep_link_open" && [
+    "campaign_id", "tracking_link_id", "provider_campaign", "provider_campaign_id",
+    "provider_network", "provider_network_id",
+  ].some((key) => payload[key] !== undefined)) {
+    throw new Error("device_deep_link_attribution_claim_forbidden");
+  }
   if (payload.integrity_verdict !== undefined || payload.extensions?.integrity_verdict !== undefined) {
     throw new Error("device_integrity_claim_forbidden");
   }

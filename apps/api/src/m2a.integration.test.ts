@@ -516,7 +516,8 @@ describe("M2a signed SDK ingestion", () => {
       tracking_link_id: "device-claimed-link",
       provider_campaign: "device-claimed-provider",
     }, "2026-08-19T03:03:00.000Z");
-    assert.equal((await deepSigned([foreign, forged])).status, 202);
+    assert.equal((await deepSigned([foreign])).status, 202);
+    assert.equal((await deepSigned([forged])).status, 403);
     await processSdkInbox(pool, payloadStore, tenantId);
     const isolation = await withTenant(pool, tenantId, async (client) => ({
       foreign: (await client.query<{ tracking_link_id: string | null; campaign_id: string | null }>(
@@ -532,12 +533,6 @@ describe("M2a signed SDK ingestion", () => {
           WHERE result.tenant_id=$1 AND result.app_id=$2 AND raw.event_id=$3`,
         [tenantId, appId, foreign.event_id],
       )).rows[0]?.reason_code,
-      forgedRejections: (await client.query<{ count: number }>(
-        `SELECT count(*)::int AS count FROM ledger.rejections AS rejection
-           JOIN ledger.raw_records AS raw ON raw.record_id=rejection.record_id
-          WHERE rejection.tenant_id=$1 AND rejection.app_id=$2 AND raw.event_id=$3`,
-        [tenantId, appId, forged.event_id],
-      )).rows[0].count,
       forgedLogical: (await client.query<{ count: number }>(
         `SELECT count(*)::int AS count FROM ledger.logical_events AS logical
            JOIN ledger.raw_records AS raw ON raw.record_id=logical.record_id
@@ -547,7 +542,6 @@ describe("M2a signed SDK ingestion", () => {
     }));
     assert.deepEqual(isolation.foreign, { tracking_link_id: null, campaign_id: null });
     assert.equal(isolation.foreignReason, "deep_link_unknown_link");
-    assert.equal(isolation.forgedRejections, 1);
     assert.equal(isolation.forgedLogical, 0);
   });
 

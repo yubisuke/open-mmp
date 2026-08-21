@@ -252,7 +252,7 @@ describe("M2a redirector HTTP shell", () => {
 
     const bounded = createServer(createRedirectorHandler({
       pool, payloadStore, tenantId, fallbackUrl: fallback, geoMode: "off",
-      limiter: { allow: () => true }, referrerMaximumEncodedCharacters: 40,
+      limiter: { allow: () => true }, referrerMaximumEncodedCharacters: 54,
     }));
     bounded.listen(0, "127.0.0.1");
     await once(bounded, "listening");
