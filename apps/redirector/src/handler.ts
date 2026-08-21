@@ -21,6 +21,8 @@ export type RedirectorDependencies = {
   fallbackUrl: string;
   geoMode: "off" | "country";
   limiter: RedirectRateLimiter;
+  clientClassEnabled?: boolean;
+  remoteClickParameter?: string;
   clock?: () => Date;
 };
 
@@ -105,7 +107,7 @@ export function createRedirectorHandler(dependencies: RedirectorDependencies): R
       try { link = await loadLink(dependencies.pool, dependencies.tenantId, match[1]); }
       catch { return send(response, fallback); }
       if (!link || link.status !== "active") return send(response, fallback);
-      const remoteClickRef = target.searchParams.get("remote_click_ref") ?? undefined;
+      const remoteClickRef = target.searchParams.get(dependencies.remoteClickParameter ?? "cid") ?? undefined;
       if (remoteClickRef && !/^[A-Za-z0-9._~-]{1,128}$/.test(remoteClickRef)) return send(response, fallback);
       const sourceRateClass = dependencies.limiter.classify?.(remoteAddress) ?? "normal";
       const purpose = `${request.headers.purpose ?? ""} ${request.headers["sec-purpose"] ?? ""}`;
@@ -125,14 +127,16 @@ export function createRedirectorHandler(dependencies: RedirectorDependencies): R
       }
       try {
         const userAgent = String(request.headers["user-agent"] ?? "");
-        const clientClass = /Android|iPhone|iPad/i.test(userAgent) ? "mobile_app_eligible" : "other";
+        const clientClass = dependencies.clientClassEnabled === false
+          ? undefined
+          : /Android|iPhone|iPad/i.test(userAgent) ? "mobile_app_eligible" : "other";
         const result = resolveRedirect({
           link,
           fallbackDestination: dependencies.fallbackUrl,
           now: (dependencies.clock ?? (() => new Date()))().toISOString(),
           ...(remoteClickRef ? { remoteClickRef } : {}),
           sourceRateClass,
-          clientClass,
+          ...(clientClass ? { clientClass } : {}),
         });
         await persistClick(dependencies, result);
         send(response, result);

@@ -128,6 +128,15 @@ recalculation/export evidence, rule-bundle history, and release runbooks.
 - AppLovin MAX remains revenue evidence. TikTok, AppLovin, Unity Ads, and Mintegral user-level attribution is unsupported where partner-MMP or non-public evidence is required.
 - Production TLS, real backup recovery, real load, provider/device delivery, integrity projects, incident response, and formal trademark clearance before registration remain operator-owned gates.
 
+### Phase 6: Deterministic fraud controls
+
+Implemented through a public, replayable rule package, source-day aggregates, real fraud-bundle JCS binding, gross/net cohort policy, deadline-bound quarantine, and an aggregate-only audit report. Play Integrity and App Attest are normalized through a protected server-verification boundary, but real provider projects and real devices remain operator evidence.
+
+- No device fingerprinting, third-party IP/device intelligence, device graph, or cross-advertiser history.
+- Real-device farms cannot be detected from the permitted evidence; reset fraud is intentionally not detected.
+- Default actions are conservative flags and do not change metrics.
+- Threshold calibration, real provider availability, and chargeback acceptance remain operator work.
+
 ## Evidence gates
 
 A phase completes through measurable evidence, not code completion alone.

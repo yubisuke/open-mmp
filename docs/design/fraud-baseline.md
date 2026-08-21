@@ -756,6 +756,7 @@ Stage 0 is not ceremony. Three rules in this document rest on external semantics
 | F-H-3 | `evaluator.ts` `HASH` constant | `attribution-default`, `metric-default`, and `apple-postback-default` still emit `"0"×64`. WO-14 fixes only `fraud`. **The remaining three are a scheduled, golden-changing repair, not a leftover** (G-3) |
 | F-H-4 | `apps/redirector/src/handler.ts` | Populate `network`, `site_id`, `remote_click_ref`; the M2 baseline documents these as present and they are not (G-5) |
 | F-H-5 | `docs/design/m2-baseline.md:404` | Correct the click-artifact table to describe what shipped, then correct the code — same treatment M4 gave the `sdk_keys.platform` drift |
+| F-H-6 | M7 `deep_link_open` | Treat the device-declared open as forgeable evidence readable by later fraud rules. Inflated re-engagement from a forged open remains a documented residual until a deterministic combined rule is designed. |
 
 ### To the documents
 

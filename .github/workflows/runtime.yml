@@ -56,6 +56,7 @@ jobs:
           npm run test:integration
           npm run test:db-invariants
           npm run test:env-coverage
+          npm run check:fraud-sources
       - name: Verify backup restore and completed privacy reapplication
         run: OPENMASU_M5_BACKUP_RESTORE=1 OPENMASU_M5_PG_TOOLS=docker npm run test:backup-restore
       - name: Run M2a redirector, signed-ingestion, replay, worker, and deletion gates

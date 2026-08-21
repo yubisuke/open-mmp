@@ -31,6 +31,7 @@
     "check:operational-logs": "node --import tsx tools/check-no-payload-logs.ts",
     "check:sdk-ios": "node tools/check-ios-sdk.mjs --source-only",
     "check:threat-model": "node --import tsx tools/check-threat-model.ts",
+    "check:fraud-sources": "node --import tsx tools/check-fraud-sources.ts",
     "test:db-invariants": "npm run test:db-invariants --workspace @openmasu/runtime",
     "test:backup-restore": "node --env-file-if-exists=.env --import tsx --test --test-concurrency=1 apps/worker/src/privacy-reapply.integration.test.ts",
     "test:dashboard-parity": "node --env-file-if-exists=.env --import tsx --test apps/api/src/consistency.integration.test.ts",
