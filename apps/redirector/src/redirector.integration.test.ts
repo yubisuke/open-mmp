@@ -268,7 +268,12 @@ describe("M2a redirector HTTP shell", () => {
   it("returns byte-identical fallbacks for unknown, paused, archived, and internal-error paths", async () => {
     const request = async (path: string) => {
       const response = await fetch(`${baseUrl}${path}`, { redirect: "manual", headers: { "user-agent": "Synthetic Android" } });
-      return { status: response.status, headers: [...response.headers.entries()].sort(), body: await response.text() };
+      return {
+        status: response.status,
+        // Node adds a wall-clock Date header outside the application response.
+        headers: [...response.headers.entries()].filter(([name]) => name !== "date").sort(),
+        body: await response.text(),
+      };
     };
     const unknown = await request("/r/UnknownSlug0_");
     await withTenant(pool, tenantId, (client) => client.query(
@@ -310,7 +315,11 @@ describe("M2a redirector HTTP shell", () => {
     await once(errorServer, "listening");
     const errorBase = `http://127.0.0.1:${(errorServer.address() as AddressInfo).port}`;
     const response = await fetch(`${errorBase}/r/${slug}`, { redirect: "manual", headers: { "user-agent": "Synthetic Android" } });
-    const internal = { status: response.status, headers: [...response.headers.entries()].sort(), body: await response.text() };
+    const internal = {
+      status: response.status,
+      headers: [...response.headers.entries()].filter(([name]) => name !== "date").sort(),
+      body: await response.text(),
+    };
     errorServer.close();
     await once(errorServer, "close");
     assert.deepEqual(internal, unknown);
