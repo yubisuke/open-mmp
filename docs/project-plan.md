@@ -137,6 +137,15 @@ Implemented through a public, replayable rule package, source-day aggregates, re
 - Default actions are conservative flags and do not change metrics.
 - Threshold calibration, real provider availability, and chargeback acceptance remain operator work.
 
+### Phase 7: Deep links and re-engagement
+
+Implemented in synthetic code/CI: tenant-owned link hosts, public association-file generation, closed deep-link destinations, Android App Links, iOS Universal Links, Android deferred delivery through Install Referrer, Unity callbacks, engagement-scope attribution, and separated daily metrics.
+
+- Direct deep linking is deterministic on both supported mobile platforms.
+- Deferred deep linking is deterministic on Android only; iOS deferred deep linking is not offered.
+- Device-reported opens are forgeable evidence and do not become redirector-observed clicks.
+- Real-domain verification, store delivery, devices, propagation, reinstall behavior, Unity export, and four-week observation remain operator gates.
+
 ## Evidence gates
 
 A phase completes through measurable evidence, not code completion alone.

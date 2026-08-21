@@ -19,7 +19,7 @@ Proposed stack:
 
 M1 through M4 use one portable deployment path: Docker Compose, Node.js services, and PostgreSQL. They do not adopt Cloudflare Queues, R2, or D1. M2 may offer a Cloudflare Workers redirector as an optional edge adapter, but the same redirector behavior must remain available through the portable Node.js interface. The ingestion API, worker, authoritative ledger, protected evidence, Apple postback receiver, and dashboard do not require Cloudflare. No public contract depends on a Cloudflare-specific API.
 
-The decided M1 implementation baseline is documented in [M1 Design Baseline](design/m1-baseline.md). R-22 resolves every option set in that document to its recorded recommendation. The Android, Unity, redirector, and SDK-ingestion design is fixed by R-24 in [M2 Design Baseline](design/m2-baseline.md). The dependency-free server-rendered dashboard, tenant-scoped session, reader-role, and typed reporting design is fixed by R-25 in [M3 Design Baseline](design/m3-baseline.md). The Swift SDK, Apple receiver, AdServices, conversion schema, and aggregate-series design is fixed by R-28 in [M4 Design Baseline](design/m4-baseline.md).
+The decided M1 implementation baseline is documented in [M1 Design Baseline](design/m1-baseline.md). R-22 resolves every option set in that document to its recorded recommendation. The Android, Unity, redirector, and SDK-ingestion design is fixed by R-24 in [M2 Design Baseline](design/m2-baseline.md). The dependency-free server-rendered dashboard, tenant-scoped session, reader-role, and typed reporting design is fixed by R-25 in [M3 Design Baseline](design/m3-baseline.md). The Swift SDK, Apple receiver, AdServices, conversion schema, and aggregate-series design is fixed by R-28 in [M4 Design Baseline](design/m4-baseline.md). Deterministic fraud controls are fixed by R-32 in [Fraud Design Baseline](design/fraud-baseline.md), and direct/deferred deep-link behavior is fixed by R-33 in [Deep-Link Design Baseline](design/deeplink-baseline.md).
 
 ## Android M2 flow
 
@@ -38,6 +38,8 @@ sequenceDiagram
     R-->>P: Redirect with click_id in referrer
     U->>S: First app launch
     S->>P: Read Install Referrer
+    P-->>S: Return click_id and optional validated deferred destination
+    S-->>U: Deliver destination to host app before measurement
     S->>I: Deliver install record and click evidence
     I->>D: Store delivery and raw record
     W->>D: Normalize and match click to install
@@ -68,13 +70,15 @@ The following component identifiers are mechanically matched to the threat table
 The following four identifiers are covered mechanically.
 
 <!-- m1-component:redirector -->
-- `redirector`: portable Node HTTP shell and shared deterministic core for stored measurement links, Play referrers, click evidence, safe fallback, and memory-only source-IP rate limiting.
+- `redirector`: portable Node HTTP shell and shared deterministic core for tenant-owned link hosts, stored measurement links, association-file routes, validated destination suffixes, Play referrers, click evidence, safe fallback, and memory-only source-IP rate limiting on click routes only.
 <!-- m1-component:sdk-ingestion -->
 - `sdk-ingestion`: app-key enrollment, per-installation credentials, HMAC request integrity, ephemeral nonce replay defence, durable batch inbox, ordered worker drain, and on-device deletion authorization.
 <!-- m1-component:sdk-android -->
-- `sdk-android`: Kotlin client boundary for Install Referrer, Meta evidence, durable delivery, consent, collection lifecycle, and MAX revenue mapping.
+- `sdk-android`: Kotlin client boundary for App Link delivery, Android-only deferred destinations through Install Referrer, Meta evidence, durable delivery, consent, collection lifecycle, and MAX revenue mapping.
 <!-- m1-component:unity-bridge -->
-- `unity-bridge`: C# bridge to Kotlin/Swift for Unity lifecycle, main-thread callbacks, and Android/iOS MAX impression-revenue callbacks.
+- `unity-bridge`: C# bridge to Kotlin/Swift for Unity lifecycle, main-thread deep-link and measurement callbacks, generated Apple associated-domain configuration, and Android/iOS MAX impression-revenue callbacks.
+<!-- m1-component:app-association -->
+- `app-association`: pure generation of Android Digital Asset Links and Apple app-site association JSON from synthetic or operator-supplied registrations; it performs no network or database I/O.
 
 ### M3 component inventory
 
@@ -86,11 +90,13 @@ The following four identifiers are covered mechanically.
 <!-- m1-component:apple-postback-receiver -->
 - `apple-postback-receiver`: API routes for SKAdNetwork and AdAttributionKit developer copies, Apple signature/JWS verification, non-enumerating app lookup, replay/conflict handling, and protected AdServices follow-up.
 <!-- m1-component:sdk-ios -->
-- `sdk-ios`: Swift first-party client with one excluded storage subtree, durable SQLite queue, HMAC delivery, consent/reset lifecycle, AdServices, conversion-value updates, MAX mapping, Unity C ABI, privacy manifest, symbol audit, and dependency-empty runtime SBOM.
+- `sdk-ios`: Swift first-party client with Universal Link delivery, one excluded storage subtree, durable SQLite queue, HMAC delivery, consent/reset lifecycle, AdServices, conversion-value updates, MAX mapping, Unity C ABI, privacy manifest, symbol audit, and dependency-empty runtime SBOM.
 
 ### Redirector
 
-- Accepts `GET /r/{slug}`
+- Accepts `GET /r/{slug}` and `GET /r/{slug}/<validated-deep-link-value>`
+- Serves `/.well-known/assetlinks.json` and `/.well-known/apple-app-site-association` before click routing, without click-IP classification or allowlisting
+- Resolves the tenant from a deployment-unique registered host, with an explicit single-tenant fixed mode
 - Resolves an approved destination from the link configuration
 - Generates and records a server-side `click_id`
 - Adds an encoded referrer to the Google Play URL on Android

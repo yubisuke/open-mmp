@@ -55,6 +55,15 @@ The initial MVP does not collect them. A future adapter may handle one only when
 - Never reconnect a deleted advertising ID to an earlier ID or derived profile.
 - Google announced the retirement of Attribution Reporting (Android) on 2025-10-17 and no longer accepts enrollment; this project does not adopt it.
 
+## Deep links and re-engagement
+
+- A deep-link destination is routing data and is never attribution evidence. The server resolves campaign meaning from the authenticated tenant/app scope and stored link slug.
+- A direct `deep_link_open` is device-reported and can be fabricated by a compromised app or extracted SDK credential. Fraud rules may read this evidence, but forged opens can still inflate re-engagement counts; no deterministic fraud control currently removes that residual.
+- Routing to the host application is not suppressed when collection is disabled, because routing performs no collection or transmission. Measurement is suppressed: no `deep_link_open` is queued. Consent withdrawal purges queued attribution-purpose opens and the server rejects later consent-required delivery.
+- Android deferred destinations use Google Play Install Referrer and are delivered only when collection was enabled before the one-time referrer read. OpenMasu does not read the referrer merely to route a destination after collection was disabled.
+- iOS direct links use Universal Links. The SDK links no pasteboard API and does not derive a device identifier. iOS deferred deep linking is not offered.
+- `assetlinks.json` and `apple-app-site-association` are intentionally public verification documents. They contain Android package names and signing-certificate fingerprints or Apple team/bundle identifiers. They contain no secret, user, campaign, or destination value.
+
 ### Meta Install Referrer evidence
 
 - Decrypted identifiers and classification fields remain protected, tenant/app-scoped evidence. They are not public campaign metadata.
@@ -171,6 +180,8 @@ Gate ownership follows the canonical [roadmap](roadmap.md):
 | Apple Privacy Manifest and App Privacy Details mapping | M4a iOS first-party measurement |
 | Aggregate-postback signature, replay, and series-separation evidence | M4b Apple aggregate attribution |
 | Final threat-model review, all workspace/SDK SBOMs, tenant-isolation/replay/deletion exercises, authenticated operational metrics, and backup/restore privacy-reapply evidence | M5 Production and limited adapter boundary |
+| Replayable deterministic fraud rules, gross/net policy, quarantine resolution, protected integrity normalization, and honest capability gaps | M6 Deterministic fraud controls |
+| Public association files, closed destination grammar, no-navigation SDK audits, consent-aware open delivery, install/engagement separation, and a device checklist that leaves real domain verification unclaimed | M7 Deep links and re-engagement |
 
 The M1a runtime gates continue to apply to every later runtime milestone. M5 adds synthetic restore, load, RBAC, observability, and release evidence. Real Play, Meta, MAX, Apple, device-transfer, Unity-export, integrity-service, production-backup, and incident-response validation remains outside the public repository and does not become true because CI is green.
 
