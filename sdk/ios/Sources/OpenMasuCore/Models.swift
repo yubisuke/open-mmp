@@ -11,6 +11,7 @@ public struct OpenMasuConfiguration: Sendable {
   public let conversionSchemaVersion: String?
   public let conversionSchemaSha256: String?
   public let deepLinkHosts: Set<String>
+  public let deepLinkSchemes: Set<String>
 
   public init(
     endpoint: URL,
@@ -22,7 +23,8 @@ public struct OpenMasuConfiguration: Sendable {
     collectionEnabledByDefault: Bool = true,
     conversionSchemaVersion: String? = nil,
     conversionSchemaSha256: String? = nil,
-    deepLinkHosts: Set<String> = []
+    deepLinkHosts: Set<String> = [],
+    deepLinkSchemes: Set<String> = []
   ) {
     precondition(endpoint.scheme == "https" || endpoint.host == "127.0.0.1" || endpoint.host == "localhost")
     precondition((conversionSchemaVersion == nil) == (conversionSchemaSha256 == nil))
@@ -40,6 +42,7 @@ public struct OpenMasuConfiguration: Sendable {
     self.conversionSchemaVersion = conversionSchemaVersion
     self.conversionSchemaSha256 = conversionSchemaSha256
     self.deepLinkHosts = Set(deepLinkHosts.map { $0.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: ".")) })
+    self.deepLinkSchemes = Set(deepLinkSchemes.map { $0.lowercased() })
   }
 }
 
@@ -52,8 +55,10 @@ public struct OpenMasuDeepLink: Equatable, Sendable {
 }
 
 enum DeepLinkParser {
-  static func direct(_ url: URL, allowedHosts: Set<String>) -> OpenMasuDeepLink? {
-    guard ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+  static func direct(_ url: URL, allowedHosts: Set<String>, allowedSchemes: Set<String> = []) -> OpenMasuDeepLink? {
+    let scheme = url.scheme?.lowercased() ?? ""
+    let isWeb = ["http", "https"].contains(scheme)
+    guard (isWeb || allowedSchemes.contains(scheme)),
           let host = url.host?.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: ".")),
           allowedHosts.contains(host)
     else { return nil }
@@ -77,7 +82,7 @@ enum DeepLinkParser {
     return OpenMasuDeepLink(
       value: destinationValid && !destination.isEmpty ? "/" + destination.joined(separator: "/") : nil,
       parameters: parameters,
-      openSource: "ios_universal_link",
+      openSource: isWeb ? "ios_universal_link" : "custom_scheme",
       destinationStatus: !destinationValid ? "rejected" : (destination.isEmpty ? "absent" : "delivered"),
       linkSlug: parts[1]
     )

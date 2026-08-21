@@ -67,7 +67,7 @@ public actor OpenMasuSDK {
   }
 
   public nonisolated func parseDeepLink(_ url: URL) -> OpenMasuDeepLink? {
-    DeepLinkParser.direct(url, allowedHosts: configuration.deepLinkHosts)
+    DeepLinkParser.direct(url, allowedHosts: configuration.deepLinkHosts, allowedSchemes: configuration.deepLinkSchemes)
   }
 
   @discardableResult

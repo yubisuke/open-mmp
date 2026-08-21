@@ -95,6 +95,7 @@ class OpenMasuSdkTest {
     val sdk = sdk(transport, configuration = OpenMasuConfiguration(
       "http://127.0.0.1", "sdk-key:synthetic", "synthetic-secret",
       deepLinkHosts = setOf("links.synthetic.invalid"),
+      deepLinkSchemes = setOf("openmasu-synthetic"),
     ))
     sdk.initialize()
     val caller = Thread.currentThread()
@@ -112,6 +113,10 @@ class OpenMasuSdkTest {
       Uri.parse("https://links.synthetic.invalid/r/Synthetic123/rejected/bad!suffix"))))
     assertEquals(null, delivered.get().value)
     assertEquals("rejected", delivered.get().destinationStatus)
+    assertTrue(sdk.handleDeepLink(Intent(Intent.ACTION_VIEW,
+      Uri.parse("openmasu-synthetic://links.synthetic.invalid/r/Synthetic123/custom"))))
+    assertEquals("custom_scheme", delivered.get().openSource)
+    assertEquals("/custom", delivered.get().value)
     assertFalse(sdk.handleDeepLink(Intent(Intent.ACTION_VIEW,
       Uri.parse("https://unconfigured.invalid/r/Synthetic123/shop"))))
   }

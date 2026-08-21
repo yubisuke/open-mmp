@@ -49,7 +49,8 @@ public func openmasuIOSInitialize(
       sdkKeyId: String(cString: sdkKeyId),
       sdkSecret: String(cString: sdkSecret),
       wrapperVersion: "unity-0.1.0",
-      deepLinkHosts: Set(Bundle.main.object(forInfoDictionaryKey: "OpenMasuLinkHosts") as? [String] ?? [])
+      deepLinkHosts: Set(Bundle.main.object(forInfoDictionaryKey: "OpenMasuLinkHosts") as? [String] ?? []),
+      deepLinkSchemes: Set(Bundle.main.object(forInfoDictionaryKey: "OpenMasuLinkSchemes") as? [String] ?? [])
     )
     let sdk = try OpenMasuSDK(
       configuration: configuration,

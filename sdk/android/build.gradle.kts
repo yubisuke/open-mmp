@@ -33,6 +33,7 @@ tasks.register("androidAcceptance") {
     ":max:testDebugUnitTest",
     ":sample:assembleDebug",
     ":sample:verifyMergedManifest",
+    ":unitybridge:assembleDebug",
     "verifyDeepLinkPolicy",
   )
 }

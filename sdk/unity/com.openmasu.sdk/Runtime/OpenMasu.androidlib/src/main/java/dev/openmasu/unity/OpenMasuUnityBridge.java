@@ -6,6 +6,8 @@ import dev.openmasu.sdk.OpenMasuSdk;
 import dev.openmasu.sdk.OpenMasuSdkFactory;
 import dev.openmasu.sdk.max.OpenMasuMaxBridge;
 import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import android.content.Intent;
@@ -19,8 +21,11 @@ public final class OpenMasuUnityBridge {
 
   private OpenMasuUnityBridge() {}
 
-  public static void initialize(Activity activity, String endpoint, String keyId, String secret, String wrapperVersion) {
-    OpenMasuConfiguration configuration = new OpenMasuConfiguration(endpoint, keyId, secret, "0.1.0", wrapperVersion, 10_000);
+  public static void initialize(Activity activity, String endpoint, String keyId, String secret, String wrapperVersion,
+      String deepLinkHosts, String deepLinkSchemes) {
+    OpenMasuConfiguration configuration = new OpenMasuConfiguration(
+        endpoint, keyId, secret, "0.1.0", wrapperVersion, 10_000,
+        csvSet(deepLinkHosts), csvSet(deepLinkSchemes), 604_800);
     sdk = OpenMasuSdkFactory.create(activity.getApplicationContext(), configuration);
     sdk.setDeepLinkListener(value -> {
       StringCallback callback = deepLinkCallback;
@@ -66,6 +71,13 @@ public final class OpenMasuUnityBridge {
     if (result.length() > 0) result.append('&');
     result.append(URLEncoder.encode(key, StandardCharsets.UTF_8));
     result.append('=').append(URLEncoder.encode(value, StandardCharsets.UTF_8));
+  }
+
+  private static Set<String> csvSet(String value) {
+    if (value == null || value.trim().isEmpty()) return Collections.emptySet();
+    Set<String> result = new HashSet<>();
+    for (String item : value.split(",")) if (!item.trim().isEmpty()) result.add(item.trim());
+    return result;
   }
 
   public static boolean trackMaxRevenue(double revenue, String precision, String networkName,

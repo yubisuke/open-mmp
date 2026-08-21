@@ -117,7 +117,7 @@ final class OpenMasuCoreTests: XCTestCase {
   func testDLA19UniversalLinkAndBareURLHaveIdenticalSynchronousDelivery() async throws {
     let transport = RecordingTransport(deliveryFailure: true)
     let sdk = try OpenMasuSDK(
-      configuration: configuration(defaultEnabled: true, deepLinkHosts: ["links.synthetic.invalid"]),
+      configuration: configuration(defaultEnabled: true, deepLinkHosts: ["links.synthetic.invalid"], deepLinkSchemes: ["openmasu-synthetic"]),
       storageRoot: temporaryDirectory("deep-link"),
       transport: transport
     )
@@ -140,6 +140,10 @@ final class OpenMasuCoreTests: XCTestCase {
     let (withRejected, _) = recorder.snapshot()
     XCTAssertNil(withRejected.last?.value)
     XCTAssertEqual(withRejected.last?.destinationStatus, "rejected")
+    XCTAssertTrue(sdk.handleDeepLink(URL(string: "openmasu-synthetic://links.synthetic.invalid/r/Synthetic123/custom")!))
+    let (withCustomScheme, _) = recorder.snapshot()
+    XCTAssertEqual(withCustomScheme.last?.openSource, "custom_scheme")
+    XCTAssertEqual(withCustomScheme.last?.value, "/custom")
     XCTAssertFalse(sdk.handleDeepLink(URL(string: "https://unconfigured.invalid/r/Synthetic123/shop")!))
   }
 
@@ -272,13 +276,14 @@ final class OpenMasuCoreTests: XCTestCase {
     XCTAssertNil(manifest["NSPrivacyTrackingDomains"])
   }
 
-  private func configuration(defaultEnabled: Bool, deepLinkHosts: Set<String> = []) -> OpenMasuConfiguration {
+  private func configuration(defaultEnabled: Bool, deepLinkHosts: Set<String> = [], deepLinkSchemes: Set<String> = []) -> OpenMasuConfiguration {
     OpenMasuConfiguration(
       endpoint: URL(string: "http://127.0.0.1:1")!,
       sdkKeyId: "sdk-key:synthetic",
       sdkSecret: "synthetic-sdk-secret-32-bytes-long",
       collectionEnabledByDefault: defaultEnabled,
-      deepLinkHosts: deepLinkHosts
+      deepLinkHosts: deepLinkHosts,
+      deepLinkSchemes: deepLinkSchemes
     )
   }
 

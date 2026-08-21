@@ -13,6 +13,7 @@ android {
     versionCode = 1
     versionName = "0.1.0"
     manifestPlaceholders["OPENMASU_LINK_HOST"] = "links.synthetic.invalid"
+    manifestPlaceholders["OPENMASU_LINK_SCHEME"] = "openmasu-synthetic"
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
   compileOptions {

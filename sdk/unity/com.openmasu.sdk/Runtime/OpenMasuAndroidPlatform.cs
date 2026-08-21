@@ -16,7 +16,9 @@ namespace OpenMasu.Unity
         {
             using (var activity = CurrentActivity())
             {
-                EnsureBridge().CallStatic("initialize", activity, options.Endpoint, options.SdkKeyId, options.SdkSecret, options.WrapperVersion);
+                EnsureBridge().CallStatic("initialize", activity, options.Endpoint, options.SdkKeyId, options.SdkSecret,
+                    options.WrapperVersion, string.Join(",", options.DeepLinkHosts ?? Array.Empty<string>()),
+                    string.Join(",", options.DeepLinkSchemes ?? Array.Empty<string>()));
             }
         }
 

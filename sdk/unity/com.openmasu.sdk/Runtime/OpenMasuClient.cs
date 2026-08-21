@@ -51,6 +51,8 @@ namespace OpenMasu.Unity
         public string SdkKeyId { get; set; } = string.Empty;
         public string SdkSecret { get; set; } = string.Empty;
         public string WrapperVersion { get; set; } = "0.1.0";
+        public string[] DeepLinkHosts { get; set; } = Array.Empty<string>();
+        public string[] DeepLinkSchemes { get; set; } = Array.Empty<string>();
     }
 
     public sealed class OpenMasuClient : IDisposable

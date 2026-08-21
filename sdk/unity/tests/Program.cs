@@ -52,6 +52,8 @@ internal static class Program
         Require(plist.Contains("NSAdvertisingAttributionReportEndpoint"), "SKAN endpoint was not written");
         Require(plist.Contains("AttributionCopyEndpoint"), "AdAttributionKit endpoint was not written");
         Require(plist.Contains("OpenMasuCollectionEnabledDefault"), "collection default was not written");
+        Require(plist.Contains("OpenMasuLinkHosts"), "deep-link hosts were not written");
+        Require(plist.Contains("OpenMasuLinkSchemes"), "deep-link schemes were not written");
         Require(plist.Contains("<false"), "collection default must be disabled unless explicitly enabled");
         var entitlements = OpenMasu.Unity.Editor.OpenMasuAssociatedDomains.Apply(
             "<?xml version=\"1.0\" encoding=\"UTF-8\"?><plist version=\"1.0\"><dict/></plist>",

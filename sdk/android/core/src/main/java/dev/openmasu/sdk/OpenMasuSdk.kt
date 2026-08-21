@@ -26,6 +26,7 @@ data class OpenMasuConfiguration @JvmOverloads constructor(
   val wrapperVersion: String? = null,
   val timeoutMs: Int = 10_000,
   val deepLinkHosts: Set<String> = emptySet(),
+  val deepLinkSchemes: Set<String> = emptySet(),
   val deferredDeepLinkTtlSeconds: Long = 604800,
 )
 
@@ -89,7 +90,7 @@ class OpenMasuSdk private constructor(
   }
 
   fun handleDeepLink(intent: Intent): Boolean {
-    val value = DeepLinkParser.direct(intent, configuration.deepLinkHosts) ?: return false
+    val value = DeepLinkParser.direct(intent, configuration.deepLinkHosts, configuration.deepLinkSchemes) ?: return false
     deepLinkListener?.onDeepLink(value)
     if (isCollectionEnabled()) executor.execute {
       enqueueJson("deep_link_open", "attribution", EventFactory.deepLink(storage.installationId(), value))

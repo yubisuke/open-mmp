@@ -13,7 +13,8 @@ namespace OpenMasu.Unity.Editor
             string skanEndpoint,
             string attributionCopyEndpoint,
             bool collectionEnabledByDefault = false,
-            IReadOnlyList<string> linkHosts = null)
+            IReadOnlyList<string> linkHosts = null,
+            IReadOnlyList<string> linkSchemes = null)
         {
             RequireHttps(skanEndpoint, nameof(skanEndpoint));
             RequireHttps(attributionCopyEndpoint, nameof(attributionCopyEndpoint));
@@ -23,6 +24,7 @@ namespace OpenMasu.Unity.Editor
             SetString(dictionary, "AttributionCopyEndpoint", attributionCopyEndpoint);
             SetBoolean(dictionary, "OpenMasuCollectionEnabledDefault", collectionEnabledByDefault);
             SetStringArray(dictionary, "OpenMasuLinkHosts", ValidateLinkHosts(linkHosts));
+            SetStringArray(dictionary, "OpenMasuLinkSchemes", ValidateLinkSchemes(linkSchemes));
             return document.ToString(SaveOptions.DisableFormatting);
         }
 
@@ -33,6 +35,15 @@ namespace OpenMasu.Unity.Editor
             .OrderBy(value => value, StringComparer.Ordinal)
             .Select(value => value.Contains("?mode=") || !Uri.CheckHostName(value).Equals(UriHostNameType.Dns)
                 ? throw new ArgumentException("link_host_invalid") : value)
+            .ToArray();
+
+        internal static string[] ValidateLinkSchemes(IReadOnlyList<string> schemes) => (schemes ?? Array.Empty<string>())
+            .Select(value => (value ?? string.Empty).Trim().ToLowerInvariant())
+            .Where(value => value.Length > 0)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(value => value, StringComparer.Ordinal)
+            .Select(value => System.Text.RegularExpressions.Regex.IsMatch(value, "^[a-z][a-z0-9+.-]{1,63}$")
+                ? value : throw new ArgumentException("link_scheme_invalid"))
             .ToArray();
 
         private static void SetStringArray(XElement dictionary, string key, IReadOnlyList<string> values)
@@ -117,6 +128,7 @@ namespace OpenMasu.Unity.Editor
         public string attributionCopyEndpoint = string.Empty;
         public bool collectionEnabledByDefault = false;
         public string[] linkHosts = Array.Empty<string>();
+        public string[] linkSchemes = Array.Empty<string>();
     }
 
     public static class OpenMasuIOSPostprocessor
@@ -131,7 +143,7 @@ namespace OpenMasu.Unity.Editor
             var plistPath = Path.Combine(projectPath, "Info.plist");
             File.WriteAllText(plistPath, OpenMasuIosPlistSettings.Apply(
                 File.ReadAllText(plistPath), settings.skanEndpoint, settings.attributionCopyEndpoint,
-                settings.collectionEnabledByDefault, settings.linkHosts));
+                settings.collectionEnabledByDefault, settings.linkHosts, settings.linkSchemes));
 
             var pbxPath = PBXProject.GetPBXProjectPath(projectPath);
             var project = new PBXProject();
