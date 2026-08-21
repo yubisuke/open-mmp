@@ -2010,3 +2010,8 @@ GRANT TRUNCATE ON
   ephemeral.fraud_quarantines,
   ephemeral.integrity_verifications
 TO openmasu_seed;
+
+-- 022_wo16_fraud_quarantine_lock_grant.sql
+-- SELECT ... FOR UPDATE SKIP LOCKED requires UPDATE even though the worker
+-- resolves a quarantine row with a separate DELETE statement.
+GRANT UPDATE ON ephemeral.fraud_quarantines TO openmasu_app;
