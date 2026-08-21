@@ -60,7 +60,7 @@ An operator can:
 - A new typed `deep_link_open` event and its SDK receiving surfaces on Android, iOS, and Unity.
 - Android deferred destinations carried in the Play referrer, with a validated byte budget.
 - Engagement-scope re-engagement attribution, its reason codes, its projection, and its own metric names.
-- Contract patch `v0.4.6`, additive only.
+- Contract patch `v0.4.7`, additive only.
 - `docs/validation/deeplink-device-checklist.md`.
 
 ### Explicitly out of scope
@@ -88,7 +88,7 @@ Seven stages, each a PR under R-26 non-stop operation. Stages 0–3 need no devi
 
 | Stage | Content | Toolchain |
 | --- | --- | --- |
-| 0 | Contract patch `v0.4.6` and its fixtures | Linux |
+| 0 | Contract patch `v0.4.7` and its fixtures | Linux |
 | 1 | Link definitions, domain and app-identity registration, association-file generation and serving | Linux |
 | 2 | Redirector URL shape, per-click parameters, referrer payload and byte budget | Linux |
 | 3 | `deep_link_open` ingestion, engagement attribution, worker projection, metrics | Linux |
@@ -570,7 +570,7 @@ Four facts decide the placement:
 
 ### DL-D-30. Version and shape
 
-**Recommended: `v0.4.6`, an additive patch under R-27's standing authority.** Every change below matches `docs/schema-versioning.md`'s non-breaking list — adding an optional field, adding an enum value, or adding a new independent schema or registry entry that existing artifacts need not use. No existing golden changes, no `$id` changes, no `schema_version` bump, and existing event-version constants stay `0.4.0`, following the pattern of `0.3.2` through `0.3.6`.
+**Recommended: `v0.4.7`, an additive patch under R-27's standing authority.** Every change below matches `docs/schema-versioning.md`'s non-breaking list — adding an optional field, adding an enum value, or adding a new independent schema or registry entry that existing artifacts need not use. No existing golden changes, no `$id` changes, no `schema_version` bump, and existing event-version constants stay `0.4.0`, following the pattern of `0.3.2` through `0.3.6`.
 
 A `v0.5` line would be wrong twice: it would assert a break that does not exist, and it would force every consumer to migrate schemas, registries, fixtures, and evaluators as one unit for a feature they may not use.
 
@@ -803,7 +803,7 @@ Recording a dated pass or fail and an opaque private reference is the deliverabl
 | DL-D-27 | Install attribution | Never re-credited, never superseded; `deep_link_install_click_reused` is the guard |
 | DL-D-28 | Inactivity | Worker-computed evidence on the projection, not an attribution window; no vendor consensus exists |
 | DL-D-29 | AdAttributionKit re-engagement | Separate work order; all symbols are iOS 18.0; Universal Links are a hard prerequisite; both spellings of the conversion type must parse |
-| DL-D-30 | Contract | `v0.4.6` additive patch under R-27; new schema, new registry entries, new enum values, no golden changes |
+| DL-D-30 | Contract | `v0.4.7` additive patch under R-27; new schema, new registry entries, new enum values, no golden changes |
 
 ---
 

@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
-import { fraudBundleHash } from "@openmasu/fraud-rules";
+import { DEFAULT_FRAUD_BUNDLE, fraudBundleHash } from "@openmasu/fraud-rules";
 import { loadFraudBundle } from "./fraud-worker.js";
 
 describe("M6 fraud worker policy", () => {
@@ -10,6 +10,7 @@ describe("M6 fraud worker policy", () => {
     assert.match(hash, /^[a-f0-9]{64}$/);
     assert.notEqual(hash, "0".repeat(64));
     assert.equal(bundle.id, "fraud-conservative");
+    assert.deepEqual(bundle, DEFAULT_FRAUD_BUNDLE);
   });
 
   it("F-A-16 rejects a policy whose only evidence is device integrity", async () => {

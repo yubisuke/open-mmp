@@ -1,10 +1,14 @@
 import { createHash } from "node:crypto";
 import { canonicalize } from "json-canonicalize";
 import {
+  DEFAULT_FRAUD_BUNDLE,
   clickInjectionPolicyDigest,
   evaluateInstallRules,
-  evaluateSourceDay,
+  evaluateSourceDayWithBundle,
   fraudBundleHash,
+  fraudNumberParameter,
+  fraudRuleAction,
+  sha256Jcs,
   type FraudBundle,
 } from "@openmasu/fraud-rules";
 import type { OpenMasuEvaluationOutputV04 as EvaluationOutput } from "@openmasu/contracts";
@@ -31,26 +35,7 @@ const CONTRACT_VERSION = "0.4.0" as const;
 // Rule bundles and metric definitions retain their independent v0.3 identities.
 const REFERENCE_RULE_VERSION = "0.3.0" as const;
 const HASH = "0".repeat(64);
-const FRAUD_BUNDLE: FraudBundle = {
-  id: "fraud-conservative",
-  version: "1.0.0",
-  layers: { base: {
-    ctit_lower_bound_seconds: 10,
-    referrer_redirector_divergence_seconds: 300,
-    source_day_min_clicks: 1000,
-    source_day_cvr_median_multiplier: 0.2,
-    source_day_ctit_p50_min_seconds: 86400,
-    source_day_ctit_p95_p50_max_ratio: 3,
-    quarantine_hours: 72,
-  } },
-  rules: [
-    { id: "referrer-server-order-v1", inputs: ["referrer_click_at_server", "install_begin_at_server"], action: "flag" },
-    { id: "ctit-lower-bound-v1", inputs: ["redirector_click_at", "install_begin_at_server"], action: "flag" },
-    { id: "referrer-redirector-divergence-v1", inputs: ["referrer_click_at_server", "redirector_click_at"], action: "flag" },
-    { id: "source-day-click-flooding-v1", inputs: ["source_day_aggregate"], action: "flag" },
-    { id: "device-integrity-combination-v1", inputs: ["integrity_verdict", "ctit"], action: "flag" },
-  ],
-};
+const FRAUD_BUNDLE: FraudBundle = DEFAULT_FRAUD_BUNDLE;
 const FRAUD_BUNDLE_HASH = fraudBundleHash(FRAUD_BUNDLE);
 const DAY_MS = 86_400_000;
 
@@ -60,6 +45,28 @@ export function jcs(value: unknown): string {
 
 export function sha256(value: unknown): string {
   return createHash("sha256").update(jcs(value), "utf8").digest("hex");
+}
+
+type BoundFraudBundle = { readonly definition: FraudBundle; readonly hash: string };
+
+function boundFraudBundle(server: Any): BoundFraudBundle | undefined {
+  if (server.fraud_enabled === false) return undefined;
+  const bound = server.fraud_rule_bundle;
+  if (!bound) return { definition: FRAUD_BUNDLE, hash: FRAUD_BUNDLE_HASH };
+  const definition = bound.definition as FraudBundle;
+  const hash = fraudBundleHash(definition);
+  if (bound.rule_bundle_id !== definition.id || bound.rule_bundle_version !== definition.version) {
+    throw new Error("fraud_rule_bundle_identity_mismatch");
+  }
+  if (bound.definition_digest !== sha256Jcs(definition)) throw new Error("fraud_rule_bundle_definition_digest_mismatch");
+  if (bound.rule_bundle_hash !== hash) throw new Error("fraud_rule_bundle_hash_mismatch");
+  return { definition, hash };
+}
+
+function quarantineDeadline(action: string, evaluatedAt: string, bundle: FraudBundle): Record<string, string> {
+  if (action !== "quarantine") return {};
+  const hours = fraudNumberParameter(bundle, "quarantine_hours", 72);
+  return { resolution_deadline_at: new Date(time(evaluatedAt, "evaluated_at") + hours * 3_600_000).toISOString() };
 }
 
 function compareText(a: string, b: string): number {
@@ -1457,15 +1464,20 @@ export function evaluate(
   }
   const privacy_tombstones = sortByKey(privacyTombstoneValues,
     (tombstone) => [tombstone.privacy_request_id, tombstone.record_id, tombstone.tenant_id, tombstone.app_id]);
-  const transportFraud = acceptedUnique
-    .filter((attempt) => attempt.record.event_name === "click" && (attempt.record.payload.bot_prefetch || attempt.record.payload.replay_suspected))
-    .map((attempt): FraudDecision => {
-      const reason_code: FraudDecision["reason_code"] = attempt.record.payload.replay_suspected ? "replay_suspected" : "bot_prefetch";
-      return ({
+  const transportFraud = acceptedUnique.flatMap((attempt): FraudDecision[] => {
+    if (attempt.record.event_name !== "click"
+      || (!attempt.record.payload.bot_prefetch && !attempt.record.payload.replay_suspected)) return [];
+    const bound = boundFraudBundle(attempt.server);
+    if (!bound) return [];
+    const reason_code: FraudDecision["reason_code"] = attempt.record.payload.replay_suspected
+      ? "replay_suspected" : "bot_prefetch";
+    const ruleId = reason_code === "replay_suspected" ? "transport-replay-v1" : "transport-bot-prefetch-v1";
+    const action = fraudRuleAction(bound.definition, ruleId, "exclude");
+    return [{
       fraud_decision_id: `fraud:${attempt.record.record_id}`,
       subject_ref: attempt.record.record_id,
       decision: "suspected",
-      action: "exclude",
+      action,
       reason_code,
       reason_code_version: CONTRACT_VERSION,
       evidence: [{
@@ -1474,69 +1486,48 @@ export function evaluate(
         digest: sha256([reason_code, attempt.record.record_id]),
         access_class: "protected",
       }],
-      rule_bundle_id: "fraud-public-envelope",
-      rule_bundle_version: REFERENCE_RULE_VERSION,
-      rule_bundle_hash: HASH,
+      rule_bundle_id: bound.definition.id,
+      rule_bundle_version: bound.definition.version,
+      rule_bundle_hash: bound.hash,
+      rule_id: ruleId,
       evaluated_at: attempt.record.received_at,
-    });
-    });
-  const clickInjectionFraud = acceptedUnique.flatMap((attempt): FraudDecision[] => {
-    if (attempt.record.event_name !== "install") return [];
-    const payload = attempt.record.payload;
-    if (payload.referrer_status !== "available" || !payload.click_id || !payload.install_begin_at_server) return [];
-    const matchingClicks = acceptedUnique.filter((candidate) =>
-      candidate.server.tenant_id === attempt.server.tenant_id && candidate.server.app_id === attempt.server.app_id &&
-      candidate.record.event_name === "click" && candidate.record.payload.click_id === payload.click_id &&
-      candidate.record.payload.redirector_time_status !== "invalid" && candidate.record.payload.redirector_click_at,
-    );
-    if (matchingClicks.length !== 1) return [];
-    const click = matchingClicks[0];
-    let delta: number;
-    try {
-      delta = time(payload.install_begin_at_server, "install_begin_at_server") -
-        time(click.record.payload.redirector_click_at, "redirector_click_at");
-    } catch {
-      // Invalid authority is classified by attribution and cannot support CTIT evidence.
-      return [];
-    }
-    const thresholdSeconds = attempt.server.click_injection_policy?.threshold_seconds ?? 10;
-    if (delta < 0 || delta >= thresholdSeconds * 1000) return [];
-    return [{
-      fraud_decision_id: `fraud:${attempt.record.record_id}:click-injection`,
-      subject_ref: attempt.record.record_id,
-      decision: "suspected",
-      action: "flag",
-      reason_code: "click_injection_suspected",
-      reason_code_version: CONTRACT_VERSION,
-      evidence: [{
-        type: "ctit_category",
-        captured_at: attempt.record.received_at,
-        digest: sha256(["click_injection_suspected", click.record.record_id, attempt.record.record_id]),
-        access_class: "protected",
-      }],
-      rule_bundle_id: "fraud-public-envelope",
-      rule_bundle_version: REFERENCE_RULE_VERSION,
-      rule_bundle_hash: HASH,
-      evaluated_at: attempt.record.received_at,
+      ...quarantineDeadline(action, attempt.record.received_at, bound.definition),
     }];
   });
-  const referrerOrderingFraud = acceptedUnique.flatMap((attempt): FraudDecision[] => {
+  const installFraud = acceptedUnique.flatMap((attempt): FraudDecision[] => {
     if (attempt.record.event_name !== "install") return [];
+    const bound = boundFraudBundle(attempt.server);
+    if (!bound) return [];
     const payload = attempt.record.payload;
+    const matchingClicks = payload.click_id ? acceptedUnique.filter((candidate) =>
+      candidate.server.tenant_id === attempt.server.tenant_id && candidate.server.app_id === attempt.server.app_id
+      && candidate.record.event_name === "click" && candidate.record.payload.click_id === payload.click_id
+      && candidate.record.payload.redirector_time_status !== "invalid" && candidate.record.payload.redirector_click_at,
+    ) : [];
+    const click = matchingClicks.length === 1 ? matchingClicks[0] : undefined;
+    const thresholdSeconds = fraudNumberParameter(bound.definition, "ctit_lower_bound_seconds", 10);
     const configured = attempt.server.click_injection_policy ?? {
-      threshold_seconds: 10,
+      threshold_seconds: thresholdSeconds,
       authority: "server",
-      policy_version: "reference-v1",
-      policy_digest: clickInjectionPolicyDigest({ threshold_seconds: 10, authority: "server", policy_version: "reference-v1" }),
+      policy_version: `${bound.definition.id}:${bound.definition.version}`,
+      policy_digest: clickInjectionPolicyDigest({
+        threshold_seconds: thresholdSeconds,
+        authority: "server",
+        policy_version: `${bound.definition.id}:${bound.definition.version}`,
+      }),
     };
     const hits = evaluateInstallRules({
       installBeginAtServer: payload.install_begin_at_server,
       referrerClickAtServer: payload.referrer_click_at_server,
       referrerClickAtServerStatus: payload.referrer_click_at_server_status,
+      ...(click ? { redirectorClickAt: click.record.payload.redirector_click_at } : {}),
       policy: configured,
-    }).filter((hit) => hit.ruleId === "referrer-server-order-v1");
+      bundle: bound.definition,
+    });
     return hits.map((hit): FraudDecision => ({
-      fraud_decision_id: `fraud:${attempt.record.record_id}:${hit.ruleId}`,
+      fraud_decision_id: hit.ruleId === "ctit-lower-bound-v1"
+        ? `fraud:${attempt.record.record_id}:click-injection`
+        : `fraud:${attempt.record.record_id}:${hit.ruleId}`,
       subject_ref: attempt.record.record_id,
       decision: hit.decision,
       action: hit.action,
@@ -1545,24 +1536,29 @@ export function evaluate(
       evidence: [{
         type: hit.evidenceType,
         captured_at: attempt.record.received_at,
-        digest: sha256([hit.ruleId, attempt.record.record_id]),
+        digest: sha256([hit.ruleId, click?.record.record_id ?? "no-redirector-click", attempt.record.record_id]),
         access_class: "protected",
       }],
-      rule_bundle_id: FRAUD_BUNDLE.id,
-      rule_bundle_version: FRAUD_BUNDLE.version,
-      rule_bundle_hash: FRAUD_BUNDLE_HASH,
+      rule_bundle_id: bound.definition.id,
+      rule_bundle_version: bound.definition.version,
+      rule_bundle_hash: bound.hash,
       rule_id: hit.ruleId,
       evaluated_at: attempt.record.received_at,
+      ...quarantineDeadline(hit.action, attempt.record.received_at, bound.definition),
     }));
   });
   const sourceDayFraud = (input.source_day_aggregates ?? []).flatMap((aggregate: Any): FraudDecision[] => {
-    const hit = evaluateSourceDay({
+    const scopeAttempt = acceptedUnique.find((attempt) =>
+      attempt.server.tenant_id === aggregate.tenant_id && attempt.server.app_id === aggregate.app_id);
+    const bound = scopeAttempt ? boundFraudBundle(scopeAttempt.server) : { definition: FRAUD_BUNDLE, hash: FRAUD_BUNDLE_HASH };
+    if (!bound) return [];
+    const hit = evaluateSourceDayWithBundle({
       clicks: aggregate.clicks,
       installs: aggregate.installs,
       medianCvr: aggregate.medianCvr,
       ctitP50Ms: aggregate.ctitP50Ms,
       ctitP95Ms: aggregate.ctitP95Ms,
-    });
+    }, bound.definition);
     if (!hit) return [];
     const sourceRef = `source:${aggregate.tenant_id}:${aggregate.app_id}:${aggregate.metric_date}:${aggregate.campaign_id}:${aggregate.network}:${aggregate.site_id}`;
     return [{
@@ -1579,15 +1575,56 @@ export function evaluate(
         digest: aggregate.input_snapshot_id,
         access_class: "protected",
       }],
-      rule_bundle_id: FRAUD_BUNDLE.id,
-      rule_bundle_version: FRAUD_BUNDLE.version,
-      rule_bundle_hash: FRAUD_BUNDLE_HASH,
+      rule_bundle_id: bound.definition.id,
+      rule_bundle_version: bound.definition.version,
+      rule_bundle_hash: bound.hash,
       rule_id: hit.ruleId,
       evaluated_at: aggregate.computed_at,
+      ...quarantineDeadline(hit.action, aggregate.computed_at, bound.definition),
     }];
   });
-  const fraud_decisions = sortByKey([...transportFraud, ...clickInjectionFraud, ...referrerOrderingFraud, ...sourceDayFraud],
+  const fraud_decisions = sortByKey([...transportFraud, ...installFraud, ...sourceDayFraud],
     (decision) => [decision.fraud_decision_id]);
+  const provisionalClockAttributions: Attribution[] = [];
+  const sourceDays = new Map<string, Any[]>();
+  for (const aggregate of input.source_day_aggregates ?? []) {
+    const key = compositeKey([aggregate.tenant_id, aggregate.app_id, aggregate.metric_date]);
+    sourceDays.set(key, [...(sourceDays.get(key) ?? []), aggregate]);
+  }
+  for (const aggregates of sourceDays.values()) {
+    const aggregate = aggregates[0];
+    const scopeAttempt = acceptedUnique.find((attempt) =>
+      attempt.server.tenant_id === aggregate.tenant_id && attempt.server.app_id === aggregate.app_id);
+    const bound = scopeAttempt ? boundFraudBundle(scopeAttempt.server) : { definition: FRAUD_BUNDLE, hash: FRAUD_BUNDLE_HASH };
+    const installCount = aggregates.reduce((sum, item) => sum + Number(item.installs ?? 0), 0);
+    if (!bound || installCount === 0) continue;
+    const negativeCount = aggregates.reduce((sum, item) => sum + Number(item.ctitNegativeCount ?? 0), 0);
+    const negativeRate = negativeCount / installCount;
+    const threshold = fraudNumberParameter(bound.definition, "ctit_negative_rate_threshold", 0.05);
+    if (negativeRate <= threshold) continue;
+    const dailySnapshotId = sha256(aggregates.map((item) => String(item.input_snapshot_id)).sort());
+    const computedAt = aggregates.map((item) => String(item.computed_at)).sort().at(-1)!;
+    for (const install of acceptedUnique.filter((attempt) =>
+      attempt.server.tenant_id === aggregate.tenant_id && attempt.server.app_id === aggregate.app_id
+      && attempt.record.event_name === "install" && attempt.record.payload.click_id)) {
+      const click = acceptedUnique.find((attempt) =>
+        attempt.server.tenant_id === aggregate.tenant_id && attempt.server.app_id === aggregate.app_id
+        && attempt.record.event_name === "click"
+        && attempt.record.payload.click_id === install.record.payload.click_id
+        && String(attempt.record.payload.redirector_click_at ?? "").slice(0, 10) === aggregate.metric_date);
+      if (!click) continue;
+      const prior = initialAttributions.find((item) => item.subject_ref === install.record.payload.installation_id);
+      if (!prior || prior.reason_code !== "valid_install_referrer") continue;
+      provisionalClockAttributions.push({
+        ...prior,
+        attribution_id: `${prior.attribution_id}:ctit-clock-provisional:${dailySnapshotId.slice(0, 12)}`,
+        decided_at: computedAt,
+        input_cutoff_at: computedAt,
+        finality: "provisional",
+        supersedes_attribution_id: prior.attribution_id,
+      });
+    }
+  }
   const excludedClickIds = new Map<string, FraudDecision>();
   for (const decision of fraud_decisions.filter((item) => item.action === "exclude" && item.subject_scope !== "source")) {
     const click = acceptedUnique.find((attempt) => attempt.record.record_id === decision.subject_ref && attempt.record.event_name === "click");
@@ -1613,7 +1650,7 @@ export function evaluate(
       supersedes_attribution_id: prior.attribution_id,
     });
   }
-  const attributions = sortByKey([...initialAttributions, ...fraudAttributions],
+  const attributions = sortByKey([...initialAttributions, ...provisionalClockAttributions, ...fraudAttributions],
     (attribution) => [attribution.attribution_id, attribution.tenant_id, attribution.app_id]);
   const rejections = sortByKey([...decisionsList, ...preIngestionDecisions]
     .filter((decision) => decision.ingestion_status === "rejected")

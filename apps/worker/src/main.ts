@@ -4,7 +4,7 @@ import { EncryptedFilePayloadStore, EnvironmentSecretStore, uuidV7, withTenant }
 import { AdServicesLookupLimiter, processAdServicesLookups } from "./adservices-worker.js";
 import { processMaxInbox } from "./import/max-worker.js";
 import { listRuntimeWorkTenants, processSdkInbox } from "./sdk-worker.js";
-import { aggregateSourceDay, loadFraudBundle, resolveExpiredQuarantines } from "./fraud-worker.js";
+import { aggregateSourceDay, resolveExpiredQuarantines } from "./fraud-worker.js";
 import { processIntegrityVerifications, type IntegrityProvider } from "./integrity-verifier.js";
 
 const connectionString = process.env.OPENMASU_APP_DATABASE_URL;
@@ -31,7 +31,6 @@ const payloadStore = new EncryptedFilePayloadStore(
   secrets.require("OPENMASU_PAYLOAD_MASTER_KEY"),
 );
 const fraudEnabled = process.env.OPENMASU_FRAUD_ENABLED !== "0";
-const fraudBundle = fraudEnabled ? await loadFraudBundle(process.env.OPENMASU_FRAUD_BUNDLE_PATH) : undefined;
 const integrityProviderMode = (() => {
   const value = process.env.OPENMASU_INTEGRITY_PROVIDER ?? "off";
   if (!["off", "play_integrity", "app_attest", "both"].includes(value)) {
@@ -85,9 +84,9 @@ const tick = async (): Promise<void> => {
         playEndpoint: process.env.OPENMASU_PLAY_INTEGRITY_ENDPOINT,
         appAttestEndpoint: process.env.OPENMASU_APP_ATTEST_ENDPOINT,
       });
-      if (fraudBundle) {
+      if (fraudEnabled) {
         const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
-        await aggregateSourceDay(pool, tenantId, yesterday, fraudBundle);
+        await aggregateSourceDay(pool, tenantId, yesterday);
         await resolveExpiredQuarantines(pool, tenantId);
       }
     }

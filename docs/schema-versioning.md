@@ -53,6 +53,10 @@ R-27 also covers the additive import-hardening patch in `0.3.6`. Delivery and re
 
 R-27 also authorizes the additive M6 fraud patches in `0.4.1` through `0.4.5`. They add source-scoped fraud decisions and three produced public categories (`0.4.1`), fraud-exclusion attribution provenance (`0.4.2`), gross/net metric policy (`0.4.3`), explicit Play referrer click-time availability (`0.4.4`), and two server-assigned bounded edge classifications (`0.4.5`). Existing schema `$id` values remain on the `v0.4` minor line, existing event-version constants retain `0.4.0`, and fixtures 01 through 47 retain byte-identical golden output.
 
+R-27 also covers the additive fraud-binding correction in `0.4.6`. The public fraud reason registry and schema add `ctit_clock_anomaly`; the fixture server context admits an optional registered fraud-bundle revision used only by deterministic runtime and replay tests. Negative CTIT remains non-fraud (`clear` / `allow`), while an app-day negative-CTIT ratio above its registered bundle threshold makes that day's valid CTIT-derived attribution provisional. Existing schema `$id` values and artifact version constants stay on `v0.4` / `0.4.0`. The real composite bundle changes only the seven previously emitted fraud-decision goldens because their former zero or partial binding was the defect being corrected.
+
+The additive deep-link contract patch follows as `0.4.7`. It adds an independent `deep_link_open` event, engagement-level attribution vocabulary, optional deferred-destination evidence, and daily deep-link metric definitions. Existing schema `$id` values and artifact version constants remain on `v0.4` / `0.4.0`; fixture 54 exercises the new surface without changing earlier deep-link behavior.
+
 ## Compatibility registry
 
 `registries/compatibility-v0.4.json` closes the allowed attribution combinations of subject scope, method, model, and status. It does not replace schema versioning. Schemas define artifact shape, registries define closed cross-field vocabularies and metadata, and the validator proves that duplicated enum surfaces agree.

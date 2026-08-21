@@ -322,7 +322,7 @@ function validateRegistryReferences(output: Any, label: string): void {
       "skan_attributed_installs", "skan_conversion_value_distribution", "aak_attributed_installs",
     ]);
     const expectedVersion = ["daily_deep_link_opens", "daily_deep_link_opens_by_status"].includes(definition.metric_name)
-      ? "0.4.6"
+      ? "0.4.7"
       : definition.fraud_policy
       ? "0.4.3"
       : aggregateMetricNames.has(definition.metric_name)
@@ -563,7 +563,7 @@ if (!summaryOnly) {
       });
     }
     it("contains 53 fixture directories", () => {
-      check(fixtureDirs.length === 53, `expected 53 fixture directories, found ${fixtureDirs.length}`);
+      check(fixtureDirs.length === 54, `expected 54 fixture directories, found ${fixtureDirs.length}`);
     });
   });
 
@@ -919,22 +919,30 @@ const scenarios: Array<[string, () => void]> = [
     check(input.source_rate_class === "saturated" && input.client_class === "mobile_app_eligible", "scenario 52 bounded classes");
     check(input.remote_click_ref === "synthetic-remote-52" && !JSON.stringify(input).match(/user-agent|ip_address/i), "scenario 52 no raw edge signal");
   }],
-  ["53 deep link open contract", () => {
-    const value = fixture("53-deep-link-open-contract");
-    check(value.output.logical_events[0]?.event_name === "deep_link_open", "scenario 53 deep-link logical event");
+  ["53 negative CTIT clock guard", () => {
+    const value = fixture("53-negative-ctit-clock-anomaly").output;
+    const diagnostic = value.fraud_decisions.find((item: Any) => item.reason_code === "ctit_clock_anomaly");
+    check(diagnostic?.decision === "clear" && diagnostic.action === "allow", "scenario 53 negative CTIT diagnostic");
+    check(!value.fraud_decisions.some((item: Any) => item.reason_code === "click_injection_suspected"), "scenario 53 negative CTIT is not injection");
+    const provisional = value.attributions.find((item: Any) => item.subject_ref === "installation:valid-53" && item.finality === "provisional");
+    check(provisional?.supersedes_attribution_id === "attr:install-valid-53", "scenario 53 day-wide provisional attribution");
+  }],
+  ["54 deep link open contract", () => {
+    const value = fixture("54-deep-link-open-contract");
+    check(value.output.logical_events[0]?.event_name === "deep_link_open", "scenario 54 deep-link logical event");
     const reasons = new Set(value.output.attributions.map((item: Any) => item.reason_code));
     check(["deep_link_open_attributed", "deep_link_unknown_link", "deep_link_link_inactive", "deep_link_install_click_reused"]
       .every((reason) => reasons.has(reason)) && value.output.rejections.length === 0,
-    "scenario 53 exercises every deep-link attribution reason");
+    "scenario 54 exercises every deep-link attribution reason");
     check(value.output.metric_runs.length === 2 && value.output.metric_runs.every((run: Any) => run.value_unscaled === "1"),
-      "scenario 53 deep-link metrics");
+      "scenario 54 deep-link metrics");
   }],
 ];
 if (!summaryOnly) {
   describe("reviewed scenarios", () => {
     for (const [name, assertion] of scenarios) it(name, assertion);
-    it("contains 53 scenario assertions", () => {
-      check(scenarios.length === 53, "scenario assertion inventory must contain 53 entries");
+    it("contains 54 scenario assertions", () => {
+      check(scenarios.length === 54, "scenario assertion inventory must contain 54 entries");
     });
   });
 
@@ -1495,7 +1503,7 @@ const acceptance: Array<[string, () => void]> = [
     check(corrections.some((item: Any) => item.correction_type === "retraction"), "AC15 retraction");
     check(fixture("17-redaction-recalculation").output.metric_runs.some((item: Any) => item.supersedes_metric_run_id), "AC15 redaction");
   }],
-  ["AC16 clock referrer prefetch and withdrawal fixtures pass", () => check(scenarios.length === 53 && fixture("11-clock-skew").output.deliveries.some((item: Any) => item.clock_skew_suspected) && fixture("13-referrer-unsupported").output.attributions.length === 2 && fixture("19-bot-prefetch").output.fraud_decisions.length === 1 && fixture("41-click-injection-suspected").output.fraud_decisions.length === 1 && fixture("20-timestamp-invalid").output.rejections.some((item: Any) => item.reason_code === "timestamp_invalid"), "AC16")],
+  ["AC16 clock referrer prefetch and withdrawal fixtures pass", () => check(scenarios.length === 54 && fixture("11-clock-skew").output.deliveries.some((item: Any) => item.clock_skew_suspected) && fixture("13-referrer-unsupported").output.attributions.length === 2 && fixture("19-bot-prefetch").output.fraud_decisions.length === 1 && fixture("41-click-injection-suspected").output.fraud_decisions.length === 1 && fixture("53-negative-ctit-clock-anomaly").output.fraud_decisions.some((item: Any) => item.reason_code === "ctit_clock_anomaly") && fixture("20-timestamp-invalid").output.rejections.some((item: Any) => item.reason_code === "timestamp_invalid"), "AC16")],
   ["AC17 server-recognized withdrawal rejects and redacts payload", () => {
     for (const name of ["14-withdrawal-after-occurrence", "15-event-after-withdrawal"]) {
       const value = fixture(name).output;
@@ -1535,7 +1543,7 @@ const acceptance: Array<[string, () => void]> = [
     for (const forbidden of ["threshold", "model_weight", "watchlist", "ip_address", "user_agent", "response_timing"]) check(!schemaText.includes(forbidden), `AC20 ${forbidden}`);
     check(specText.includes("remain private"), "AC20 private boundary");
   }],
-  ["AC21 one command validates every schema registry fixture and golden", () => check(schemaPaths.length === 28 && Object.keys(registries).length === 8 && fixtureDirs.length === 53 && outputArtifactCount === 53 * 13, "AC21")],
+  ["AC21 one command validates every schema registry fixture and golden", () => check(schemaPaths.length === 28 && Object.keys(registries).length === 8 && fixtureDirs.length === 54 && outputArtifactCount === 54 * 13, "AC21")],
   ["AC22 repeated and independent evaluators produce identical JCS", () => {
     for (const { output, python } of results.values()) check(equal(output, python), "AC22 evaluator mismatch");
     const vector = { numbers: [333333333.33333329, 1e30, 4.50, 2e-3, 1e-27, -0], string: "€$\u000f\nA'B\"\\\"/" };

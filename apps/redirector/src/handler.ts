@@ -4,6 +4,7 @@ import { appleAssociationDocument, assetLinksDocument, associationBytes, type Ap
 import {
   bindDeepLinkParameters,
   assertDeepLinkValue,
+  classifyClientClass,
   fallbackResponse,
   prefetchEvidence,
   resolveRedirect,
@@ -136,7 +137,7 @@ async function persistClick(dependencies: RedirectorDependencies, result: Redire
       ...(click.client_class ? { client_class: click.client_class } : {}),
       ...(click.deep_link_value ? { deep_link_value: click.deep_link_value } : {}),
       ...(click.deferred_deep_link_status ? { deferred_deep_link_status: click.deferred_deep_link_status } : {}),
-      ...(result.prefetch ? { bot_prefetch: true } : {}),
+      ...(result.prefetch || result.click?.bot_prefetch ? { bot_prefetch: true } : {}),
     },
   };
   await appendDurableBatch(dependencies.pool, dependencies.payloadStore, {
@@ -195,6 +196,9 @@ export function createRedirectorHandler(dependencies: RedirectorDependencies): R
       const remoteClickRef = target.searchParams.get(dependencies.remoteClickParameter ?? "cid") ?? undefined;
       if (remoteClickRef && !/^[A-Za-z0-9._~-]{1,128}$/.test(remoteClickRef)) return send(response, fallback);
       const sourceRateClass = dependencies.limiter.classify?.(remoteAddress) ?? "normal";
+      const clientClass = dependencies.clientClassEnabled === false
+        ? undefined
+        : classifyClientClass(String(request.headers["user-agent"] ?? ""));
       const purpose = `${request.headers.purpose ?? ""} ${request.headers["sec-purpose"] ?? ""}`;
       if (/prefetch/i.test(purpose)) {
         const result = prefetchEvidence({
@@ -203,6 +207,7 @@ export function createRedirectorHandler(dependencies: RedirectorDependencies): R
           now: (dependencies.clock ?? (() => new Date()))().toISOString(),
           ...(remoteClickRef ? { remoteClickRef } : {}),
           sourceRateClass,
+          ...(clientClass ? { clientClass } : {}),
         });
         await persistClick(dependencies, result);
         return send(response, result);
@@ -211,10 +216,6 @@ export function createRedirectorHandler(dependencies: RedirectorDependencies): R
         return send(response, fallback);
       }
       try {
-        const userAgent = String(request.headers["user-agent"] ?? "");
-        const clientClass = dependencies.clientClassEnabled === false
-          ? undefined
-          : /Android|iPhone|iPad/i.test(userAgent) ? "mobile_app_eligible" : "other";
         const result = resolveRedirect({
           link,
           fallbackDestination: dependencies.fallbackUrl,

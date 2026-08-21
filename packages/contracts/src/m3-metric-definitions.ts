@@ -33,10 +33,10 @@ export const M3_METRIC_DEFINITIONS: ReadonlyArray<OpenMasuMetricDefinitionV04> =
   dailyEventCount("daily_install_count", "install", ["metric_date", "campaign_id", "network", "country", "attribution_status"]),
   {
     ...dailyEventCount("daily_deep_link_opens", "deep_link_open", ["metric_date", "campaign_id"]),
-    metric_definition_version: "0.4.6",
+    metric_definition_version: "0.4.7",
   },
   {
     ...dailyEventCount("daily_deep_link_opens_by_status", "deep_link_open", ["metric_date", "campaign_id", "attribution_status"]),
-    metric_definition_version: "0.4.6",
+    metric_definition_version: "0.4.7",
   },
 ];

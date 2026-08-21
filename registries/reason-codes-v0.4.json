@@ -22,5 +22,5 @@
     "documented_alternative_legal_basis", "consent_withdrawn"
   ],
   "correction": ["refund", "privacy_deletion", "retention_expiry", "duplicate_source"],
-  "fraud_public_categories": ["bot_prefetch", "replay_suspected", "click_injection_suspected", "click_flooding_suspected", "referrer_time_inconsistent", "device_integrity_failed"]
+  "fraud_public_categories": ["bot_prefetch", "replay_suspected", "click_injection_suspected", "ctit_clock_anomaly", "click_flooding_suspected", "referrer_time_inconsistent", "device_integrity_failed"]
 }

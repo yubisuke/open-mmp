@@ -522,7 +522,7 @@ describe("M1b SQL metric parity", { concurrency: false }, () => {
   });
 
   it("DL-A-23 and DL-A-24 keep engagement attribution and daily deep-link metrics JCS-identical", async () => {
-    const deepFixture = "53-deep-link-open-contract";
+    const deepFixture = "54-deep-link-open-contract";
     const deepDirectory = join(process.cwd(), "fixtures", "v0.4", deepFixture);
     const deepInput: Any = JSON.parse(readFileSync(join(deepDirectory, "input.json"), "utf8"));
     const deepGolden: Any[] = JSON.parse(readFileSync(join(deepDirectory, "expected_metric_runs.json"), "utf8"));

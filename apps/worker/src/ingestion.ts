@@ -9,8 +9,20 @@ import {
   type CandidateProvider,
 } from "@openmasu/attribution-core";
 import { validateEventPayload } from "@openmasu/contracts";
+import {
+  clickInjectionPolicyDigest,
+  fraudBundleHash,
+  fraudNumberParameter,
+  sha256Jcs,
+  type FraudBundle,
+} from "@openmasu/fraud-rules";
 import { uuidV7, withTenant } from "@openmasu/runtime";
 import { retryDeadlockOnce } from "./seed-safety.js";
+import {
+  ensureSyntheticDefaultFraudBundle,
+  resolveActiveFraudBundle,
+  serverBundleContext,
+} from "./fraud-bundle-runtime.js";
 
 type Any = Record<string, any>;
 export const parityKinds = [
@@ -148,6 +160,14 @@ async function ensureApps(appPool: Pool, input: Any): Promise<void> {
         [tenantId, appId, defaultTimestamp(input)],
       );
     });
+  }
+}
+
+async function ensureFixtureFraudBundles(appPool: Pool, input: Any): Promise<void> {
+  const values = inputAttempts(input).map(({ server }) => [server.tenant_id, server.app_id] as const);
+  const unique = new Map(values.map(([tenantId, appId]) => [`${tenantId}\u0000${appId}`, [tenantId, appId] as const]));
+  for (const [tenantId, appId] of unique.values()) {
+    await ensureSyntheticDefaultFraudBundle(appPool, tenantId, appId, defaultTimestamp(input));
   }
 }
 
@@ -537,8 +557,39 @@ async function persistAttribution(appPool: Pool, artifact: Any): Promise<Any> {
   ));
 }
 
-async function persistFraud(appPool: Pool, artifact: Any, scope: { tenant_id: string; app_id: string }): Promise<Any> {
+async function persistFraud(
+  appPool: Pool,
+  artifact: Any,
+  scope: { tenant_id: string; app_id: string },
+  expectedRevisionId?: string,
+): Promise<Any> {
   return withTenant(appPool, scope.tenant_id, async (client) => {
+    const revision = await client.query<{
+      rule_bundle_revision_id: string;
+      rule_bundle_id: string;
+      rule_bundle_version: string;
+      rule_bundle_hash: string;
+      definition: FraudBundle | null;
+      definition_digest: string | null;
+    }>(
+      `SELECT rule_bundle_revision_id,rule_bundle_id,rule_bundle_version,rule_bundle_hash,
+              definition,definition_digest
+         FROM control.rule_bundle_revisions
+        WHERE tenant_id=$1 AND app_id=$2
+          AND ($3::text IS NULL OR rule_bundle_revision_id=$3)
+          AND rule_bundle_id=$4 AND rule_bundle_version=$5 AND rule_bundle_hash=$6
+        ORDER BY activated_at DESC,rule_bundle_revision_id DESC
+        LIMIT 2`,
+      [scope.tenant_id, scope.app_id, expectedRevisionId ?? null,
+        artifact.rule_bundle_id, artifact.rule_bundle_version, artifact.rule_bundle_hash],
+    );
+    if (revision.rows.length !== 1) throw new Error("fraud_rule_bundle_revision_mismatch");
+    const bound = revision.rows[0];
+    if (!bound.definition || !bound.definition_digest
+      || sha256Jcs(bound.definition) !== bound.definition_digest
+      || fraudBundleHash(bound.definition) !== bound.rule_bundle_hash) {
+      throw new Error("fraud_rule_bundle_definition_mismatch");
+    }
     const stored = await storedArtifact(
       client,
       `INSERT INTO ledger.fraud_decisions (
@@ -726,6 +777,7 @@ export async function ingestFixture(
 ): Promise<number> {
   await resetLedger(seedPool);
   await ensureApps(appPool, input);
+  await ensureFixtureFraudBundles(appPool, input);
   await seedPool.query(
     `INSERT INTO testing.fixture_inputs (fixture_name, input_digest, input)
      VALUES ($1,$2,$3::jsonb) ON CONFLICT (fixture_name)
@@ -961,13 +1013,36 @@ export async function ingestRuntimeBatch(
     }
     return combined;
   }
-  const invalid = attempts.map(schemaInvalidArtifacts).filter((value): value is NonNullable<typeof value> => value !== undefined);
+  await ensureApps(appPool, runtimeInput(attempts));
+  const [tenantId, appId] = scopes[0].split("\u0000");
+  const activeRevision = await resolveActiveFraudBundle(appPool, tenantId, appId);
+  const bind = (attempt: CandidateAttempt): CandidateAttempt => {
+    const enabled = attempt.server.fraud_enabled !== false && activeRevision !== undefined;
+    if (!enabled) return { ...attempt, server: { ...attempt.server, fraud_enabled: false } };
+    const thresholdSeconds = fraudNumberParameter(activeRevision.definition, "ctit_lower_bound_seconds", 10);
+    const policy = {
+      threshold_seconds: thresholdSeconds,
+      authority: "server" as const,
+      policy_version: `${activeRevision.ruleBundleId}:${activeRevision.ruleBundleVersion}`,
+    };
+    return {
+      ...attempt,
+      server: {
+        ...attempt.server,
+        fraud_enabled: true,
+        fraud_rule_bundle: serverBundleContext(activeRevision),
+        click_injection_policy: { ...policy, policy_digest: clickInjectionPolicyDigest(policy) },
+      },
+    };
+  };
+  const boundAttempts = attempts.map(bind);
+  const boundHistory = historicalAttempts.map(bind);
+  const invalid = boundAttempts.map(schemaInvalidArtifacts).filter((value): value is NonNullable<typeof value> => value !== undefined);
   const invalidAttempts = new Set(invalid.map(({ failure }) => `${failure.record_id}\u0000${failure.delivery_id}`));
-  const validAttempts = attempts.filter((attempt) => !invalidAttempts.has(`${attempt.record.record_id}\u0000${attempt.record.delivery_id}`));
-  const validHistory = historicalAttempts.filter((attempt) => !schemaInvalidArtifacts(attempt));
+  const validAttempts = boundAttempts.filter((attempt) => !invalidAttempts.has(`${attempt.record.record_id}\u0000${attempt.record.delivery_id}`));
+  const validHistory = boundHistory.filter((attempt) => !schemaInvalidArtifacts(attempt));
   const allAttempts = (await resolveDeepLinkAttempts(appPool, [...validHistory, ...validAttempts])).sort(compareCandidateAttempts);
   const input = runtimeInput(allAttempts);
-  await ensureApps(appPool, runtimeInput(attempts));
   const output = evaluate(input, (values) => new IndexedCandidateProvider(values));
   const recordIds = new Set(validAttempts.map((attempt) => attempt.record.record_id));
   const deliveryIds = new Set(validAttempts.map((attempt) => attempt.record.delivery_id));
@@ -1027,7 +1102,7 @@ export async function ingestRuntimeBatch(
       `${scope.tenant_id}\u0000${scope.app_id}`, scope,
     ])).values()];
     if (uniqueScopes.length !== 1) throw new Error(`fraud_scope_ambiguous:${fraud.fraud_decision_id}`);
-    await persistFraud(appPool, fraud, uniqueScopes[0]);
+    await persistFraud(appPool, fraud, uniqueScopes[0], activeRevision?.ruleBundleRevisionId);
   }
   for (const reconciliation of selected.reconciliation) await persistReconciliation(appPool, reconciliation);
   return selected;

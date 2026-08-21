@@ -17,7 +17,7 @@
     ],
     "rule_bundle_id": "fraud-conservative",
     "rule_bundle_version": "1.0.0",
-    "rule_bundle_hash": "2f121ebedc3a6457ec35343df9de8c3fff5fb6dc27f698df6daf173a139f3262",
+    "rule_bundle_hash": "dfc447604f961bc549af4e28985d8f4e5427bd8f56c26b208d35ccab9a04a1ed",
     "rule_id": "source-day-click-flooding-v1",
     "evaluated_at": "2026-08-21T23:59:59.000Z"
   }
