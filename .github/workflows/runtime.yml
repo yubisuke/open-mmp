@@ -71,7 +71,7 @@ jobs:
       - name: Run reduced synthetic metric performance floor
         run: OPENMASU_BENCHMARK_ROWS=100000 npm run benchmark:metric-floor
       - name: Import 100,000 synthetic MMP rows within the pilot floor
-        run: OPENMASU_IMPORT_BENCHMARK_ROWS=100000 OPENMASU_IMPORT_BENCHMARK_MAX_SECONDS=300 npm run benchmark:import
+        run: npm run benchmark:import
       - name: Check threat-model coverage
         run: npm run check:threat-model
       - name: Compose first-run smoke

@@ -6,9 +6,8 @@ import { performance } from "node:perf_hooks";
 import { createAppPool, withTenant } from "@openmasu/runtime";
 import { runMmpImport } from "./runner.js";
 
-const rows = Number(process.env.OPENMASU_IMPORT_BENCHMARK_ROWS ?? "100000");
-if (!Number.isSafeInteger(rows) || rows < 1 || rows > 1_000_000) throw new Error("OPENMASU_IMPORT_BENCHMARK_ROWS is invalid");
-const maximumSeconds = Number(process.env.OPENMASU_IMPORT_BENCHMARK_MAX_SECONDS ?? "300");
+const rows = 100_000;
+const maximumSeconds = 300;
 const directory = mkdtempSync(join(tmpdir(), "openmasu-import-benchmark-"));
 const pool = createAppPool();
 try {
