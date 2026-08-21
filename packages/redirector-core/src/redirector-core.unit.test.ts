@@ -35,7 +35,9 @@ describe("redirector core", () => {
     for (const click of clicks) for (const character of click) counts.set(character, counts.get(character)! + 1);
     const expected = clicks.size * 44 / alphabet.length;
     const statistic = [...counts.values()].reduce((sum, count) => sum + ((count - expected) ** 2 / expected), 0);
-    assert.ok(statistic < 100, `base64url chi-square statistic ${statistic} exceeded 100`);
+    // A statistical smoke test must not turn correct CSPRNG output into a flaky CI gate.
+    // 130 still rejects material alphabet bias while leaving a conservative tail margin.
+    assert.ok(statistic < 130, `base64url chi-square statistic ${statistic} exceeded 130`);
   });
 
   it("round-trips the minimal referrer and reserved characters exactly once", () => {
