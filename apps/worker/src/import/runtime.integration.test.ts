@@ -114,14 +114,16 @@ describe("M1a import integration", () => {
       { status: "completed", rows: 2, accepted: 2, rejected: 0 },
     );
     await withTenant(appPool, "tenant-local", async (client) => {
-      const rows = await client.query<{ event_id: string; has_network: boolean }>(`
-        SELECT event_id, artifact->'payload' ? 'network' AS has_network
-          FROM ledger.raw_records
-         WHERE event_id LIKE 'synthetic-optional-event-%'
-         ORDER BY event_id`);
+      const rows = await client.query<{ event_id: string; network: string | null }>(`
+        SELECT raw.event_id, click.network
+          FROM ledger.raw_records AS raw
+          JOIN ledger.logical_events AS logical ON logical.record_id=raw.record_id
+          JOIN ledger.click_facts AS click ON click.logical_event_id=logical.logical_event_id
+         WHERE raw.event_id LIKE 'synthetic-optional-event-%'
+         ORDER BY raw.event_id`);
       assert.deepEqual(rows.rows, [
-        { event_id: "synthetic-optional-event-a", has_network: true },
-        { event_id: "synthetic-optional-event-b", has_network: false },
+        { event_id: "synthetic-optional-event-a", network: "synthetic-network" },
+        { event_id: "synthetic-optional-event-b", network: null },
       ]);
     });
   });
@@ -208,7 +210,10 @@ describe("M1a import integration", () => {
       tenant_id: "tenant-local", app_id: "app-local",
       fx_policy: {
         policy_version: "synthetic-backfill-fx", target_currency: "USD", target_scale: 6,
-        rounding_mode: "half_even", rates: [],
+        rounding_mode: "half_even", rates: [{
+          currency: "USD", rate_unscaled: "100000000", rate_scale: 8,
+          source: "synthetic-backfill-rate", as_of: "2026-08-21T00:00:00.000Z",
+        }],
       },
       metric_definitions: [],
       evaluations: [{ metric_names: ["cohort_size"], grouping: { cohort_date: "2026-07-01" } }],
