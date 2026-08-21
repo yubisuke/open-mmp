@@ -46,6 +46,7 @@ import {
   type DashboardSession,
 } from "./session.js";
 import { createTrackingLink, listTrackingLinks, type TrackingLinkRecord } from "./tracking-links.js";
+import { registerAppLinkIdentity, registerLinkDomain } from "./link-domains.js";
 
 export const dashboardHeaders = {
   "content-security-policy": "default-src 'none'; style-src 'self'; img-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
@@ -75,6 +76,7 @@ export type RequestHandlerDependencies = {
   readonly dashboardLoginGlobalBucket?: TokenBucket;
   readonly sdk?: SdkRouteDependencies;
   readonly trackingDestinationAllowlist?: readonly string[];
+  readonly referrerMaximumEncodedCharacters?: number;
   readonly reportMaximumRows?: number;
   readonly reportMaximumExportRows?: number;
   readonly applePostback?: ApplePostbackReceiverDependencies;
@@ -174,7 +176,7 @@ function dashboardAppId(pathname: string): string | undefined {
 }
 
 function adminAppId(pathname: string): string | undefined {
-  const match = /^\/v1\/admin\/apps\/([^/]+)\/(?:apple-registration|conversion-schemas|rule-bundles)$/.exec(pathname);
+  const match = /^\/v1\/admin\/apps\/([^/]+)\/(?:apple-registration|conversion-schemas|rule-bundles|link-identity)$/.exec(pathname);
   if (!match) return undefined;
   try {
     return decodeURIComponent(match[1]);
@@ -426,6 +428,7 @@ export function createRequestHandler(dependencies: RequestHandlerDependencies): 
                 appId: appIdentity.appId,
                 actorRef: `admin_key:${session.adminKeyId}`,
                 allowedOrigins: dependencies.trackingDestinationAllowlist ?? [],
+                referrerMaximumEncodedCharacters: dependencies.referrerMaximumEncodedCharacters,
                 body: Object.fromEntries(body),
               });
               const link = measurementLink(dependencies.redirectorBaseUrl, result.slug);
@@ -575,11 +578,23 @@ export function createRequestHandler(dependencies: RequestHandlerDependencies): 
           }
           return;
         }
-        if (route.handler === "admin_apple_registration" || route.handler === "admin_conversion_schema" || route.handler === "admin_rule_bundle") {
+        if (route.handler === "admin_link_domain") {
+          try {
+            const body = await jsonBody(request);
+            json(response, 201, await registerLinkDomain({ pool: dependencies.pool, identity, host: String(body.host ?? "") }));
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "link_domain_invalid";
+            json(response, message.endsWith("already_registered") ? 409 : 400, { error: message });
+          }
+          return;
+        }
+        if (route.handler === "admin_apple_registration" || route.handler === "admin_conversion_schema" || route.handler === "admin_rule_bundle" || route.handler === "admin_app_link_identity") {
           try {
             const appIdentity = await requireRegisteredApp(dependencies.pool, identity, adminAppId(target.pathname) ?? "");
             const body = await jsonBody(request);
-            const result = route.handler === "admin_apple_registration"
+            const result = route.handler === "admin_app_link_identity"
+              ? await registerAppLinkIdentity({ pool: dependencies.pool, identity: appIdentity, body })
+              : route.handler === "admin_apple_registration"
               ? await registerAppleApp({
                   pool: dependencies.pool,
                   identity: appIdentity,
@@ -693,6 +708,7 @@ export function createRequestHandler(dependencies: RequestHandlerDependencies): 
               appId: appIdentity.appId,
               actorRef: `admin_key:${identity.keyId}`,
               allowedOrigins: dependencies.trackingDestinationAllowlist ?? [],
+              referrerMaximumEncodedCharacters: dependencies.referrerMaximumEncodedCharacters,
               body,
             });
             json(response, 201, result);

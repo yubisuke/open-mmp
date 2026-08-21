@@ -48,7 +48,9 @@ public func openmasuIOSInitialize(
       endpoint: endpointURL,
       sdkKeyId: String(cString: sdkKeyId),
       sdkSecret: String(cString: sdkSecret),
-      wrapperVersion: "unity-0.1.0"
+      wrapperVersion: "unity-0.1.0",
+      deepLinkHosts: Set(Bundle.main.object(forInfoDictionaryKey: "OpenMasuLinkHosts") as? [String] ?? []),
+      deepLinkSchemes: Set(Bundle.main.object(forInfoDictionaryKey: "OpenMasuLinkSchemes") as? [String] ?? [])
     )
     let sdk = try OpenMasuSDK(
       configuration: configuration,
@@ -62,6 +64,33 @@ public func openmasuIOSInitialize(
   } catch {
     callback(callbackValue, requestId: requestId, value: "error:storage_failed")
   }
+}
+
+@_cdecl("openmasu_ios_handle_deep_link")
+public func openmasuIOSHandleDeepLink(
+  _ urlValue: UnsafePointer<CChar>?,
+  _ requestId: Int64,
+  _ callbackValue: OpenMasuCStringCallback?
+) {
+  guard let sdk = BridgeState.get(), let urlValue,
+        let url = URL(string: String(cString: urlValue)) else {
+    callback(callbackValue, requestId: requestId, value: "error:deep_link_invalid")
+    return
+  }
+  guard let value = sdk.parseDeepLink(url), sdk.handleDeepLink(url) else {
+    callback(callbackValue, requestId: requestId, value: "error:deep_link_unhandled")
+    return
+  }
+  var components = URLComponents()
+  components.queryItems = [
+    value.value.map { URLQueryItem(name: "value", value: $0) },
+    URLQueryItem(name: "open_source", value: value.openSource),
+    URLQueryItem(name: "destination_status", value: value.destinationStatus),
+    URLQueryItem(name: "link_slug", value: value.linkSlug),
+  ].compactMap { $0 } + value.parameters.sorted(by: { $0.key < $1.key }).map {
+    URLQueryItem(name: "p_\($0.key)", value: $0.value)
+  }
+  callback(callbackValue, requestId: requestId, value: components.percentEncodedQuery ?? "error:deep_link_encoding")
 }
 
 @_cdecl("openmasu_ios_track_custom_event")

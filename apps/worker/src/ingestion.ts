@@ -22,7 +22,6 @@ import {
   ensureSyntheticDefaultFraudBundle,
   resolveActiveFraudBundle,
   serverBundleContext,
-  type ActiveFraudBundleRevision,
 } from "./fraud-bundle-runtime.js";
 
 type Any = Record<string, any>;
@@ -286,15 +285,23 @@ async function persistProjectionWithClient(client: PoolClient, logical: Any, inp
       const campaignId = payload.campaign_id ?? importContext.provider_campaign_ref ?? null;
       const network = payload.network ?? importContext.provider_network ?? null;
       const country = payload.country ?? importContext.provider_country ?? null;
+      const trackingLinkId = attempt.record.producer === "redirector" && typeof payload.tracking_link_id === "string"
+        ? (await client.query<{ tracking_link_id: string }>(
+          `SELECT tracking_link_id FROM control.tracking_links
+            WHERE tenant_id=$1 AND app_id=$2 AND tracking_link_id=$3`,
+          [logical.tenant_id, logical.app_id, payload.tracking_link_id],
+        )).rows[0]?.tracking_link_id ?? null
+        : null;
       await client.query(
         `INSERT INTO ledger.click_facts (
           logical_event_id, tenant_id, app_id, click_id, redirector_click_at,
-          campaign_id, network, country, site_id, remote_click_ref, artifact
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb) ON CONFLICT (logical_event_id) DO NOTHING`,
+          campaign_id, network, country, site_id, remote_click_ref, tracking_link_id, artifact
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb) ON CONFLICT (logical_event_id) DO NOTHING`,
         [
           logical.logical_event_id, logical.tenant_id, logical.app_id,
           payload.click_id ?? null, payload.redirector_click_at ?? null,
           campaignId, network, country, payload.site_id ?? null, payload.remote_click_ref ?? null,
+          trackingLinkId,
           projected({
             ...(payload.click_id ? { click_id: payload.click_id } : {}),
             redirector_click_at: payload.redirector_click_at ?? null,
@@ -303,6 +310,7 @@ async function persistProjectionWithClient(client: PoolClient, logical: Any, inp
             country,
             site_id: payload.site_id ?? null,
             remote_click_ref: payload.remote_click_ref ?? null,
+            tracking_link_id: trackingLinkId,
             bot_prefetch: payload.bot_prefetch === true,
             source_rate_class: payload.source_rate_class ?? null,
             client_class: payload.client_class ?? null,
@@ -345,6 +353,37 @@ async function persistProjectionWithClient(client: PoolClient, logical: Any, inp
         ) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb)
         ON CONFLICT (logical_event_id) DO NOTHING`,
         [logical.logical_event_id, logical.tenant_id, logical.app_id, payload.installation_id, payload.session_id, attempt.record.occurred_at, projected({ installation_id: payload.installation_id, session_id: payload.session_id })],
+      );
+    } else if (logical.event_name === "deep_link_open") {
+      const resolution = attempt.server.deep_link_resolution ?? { status: "unknown" };
+      const previous = await client.query<{ occurred_at_ts: string }>(
+        `SELECT occurred_at_ts::text FROM ledger.session_facts
+          WHERE tenant_id=$1 AND app_id=$2 AND installation_id=$3
+            AND occurred_at_ts <= $4::timestamptz
+          ORDER BY occurred_at_ts DESC LIMIT 1`,
+        [logical.tenant_id, logical.app_id, payload.installation_id, attempt.record.occurred_at],
+      );
+      const daysSinceLastSession = previous.rows[0]
+        ? Math.floor((Date.parse(attempt.record.occurred_at) - Date.parse(previous.rows[0].occurred_at_ts)) / 86_400_000)
+        : null;
+      await client.query(
+        `INSERT INTO ledger.deep_link_open_facts (
+          logical_event_id, tenant_id, app_id, installation_id, tracking_link_id,
+          campaign_id, open_source, occurred_at, days_since_last_session, artifact
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb)
+        ON CONFLICT (logical_event_id) DO NOTHING`,
+        [logical.logical_event_id, logical.tenant_id, logical.app_id, payload.installation_id,
+          resolution.status === "active" ? resolution.tracking_link_id ?? null : null,
+          resolution.status === "active" ? resolution.campaign_id ?? null : null,
+          payload.open_source, attempt.record.occurred_at, daysSinceLastSession,
+          projected({
+            installation_id: payload.installation_id,
+            tracking_link_id: resolution.status === "active" ? resolution.tracking_link_id ?? null : null,
+            campaign_id: resolution.status === "active" ? resolution.campaign_id ?? null : null,
+            open_source: payload.open_source,
+            occurred_at: attempt.record.occurred_at,
+            days_since_last_session: daysSinceLastSession,
+          })],
       );
     } else if (logical.event_name === "purchase") {
       await client.query(
@@ -905,6 +944,50 @@ function runtimeInput(attempts: readonly CandidateAttempt[]): Any {
   };
 }
 
+async function resolveDeepLinkAttempts(pool: Pool, attempts: readonly CandidateAttempt[]): Promise<CandidateAttempt[]> {
+  const resolved: CandidateAttempt[] = [];
+  for (const attempt of attempts) {
+    if (attempt.record.event_name !== "deep_link_open") { resolved.push(attempt); continue; }
+    const payload = attempt.record.payload;
+    const resolution = await withTenant(pool, attempt.server.tenant_id, async (client) => {
+      const link = payload.open_source === "android_deferred_referrer"
+        ? await client.query<{ tracking_link_id: string; campaign_id: string | null; status: string }>(
+            `SELECT link.tracking_link_id, link.campaign_id, link.status
+               FROM ledger.click_facts AS click
+               JOIN control.tracking_links_current AS link
+                 ON link.tenant_id=click.tenant_id AND link.app_id=click.app_id
+                AND link.tracking_link_id=click.tracking_link_id
+              WHERE click.tenant_id=$1 AND click.app_id=$2 AND click.click_id=$3
+              ORDER BY control.canonical_timestamp_value(click.redirector_click_at) DESC LIMIT 1`,
+            [attempt.server.tenant_id, attempt.server.app_id, payload.click_id],
+          )
+        : await client.query<{ tracking_link_id: string; campaign_id: string | null; status: string }>(
+            `SELECT tracking_link_id, campaign_id, status FROM control.tracking_links_current
+              WHERE tenant_id=$1 AND app_id=$2 AND slug=$3 LIMIT 1`,
+            [attempt.server.tenant_id, attempt.server.app_id, payload.link_slug],
+          );
+      const install = payload.open_source === "android_deferred_referrer"
+        ? await client.query<{ click_id: string | null }>(
+            `SELECT click_id FROM ledger.install_facts
+              WHERE tenant_id=$1 AND app_id=$2 AND installation_id=$3
+              ORDER BY occurred_at_ts DESC LIMIT 1`,
+            [attempt.server.tenant_id, attempt.server.app_id, payload.installation_id],
+          )
+        : undefined;
+      const row = link.rows[0];
+      if (!row) return { status: "unknown" as const, ...(install?.rows[0]?.click_id ? { install_attribution_click_id: install.rows[0].click_id } : {}) };
+      return {
+        status: row.status === "active" ? "active" as const : "inactive" as const,
+        tracking_link_id: row.tracking_link_id,
+        ...(row.campaign_id ? { campaign_id: row.campaign_id } : {}),
+        ...(install?.rows[0]?.click_id ? { install_attribution_click_id: install.rows[0].click_id } : {}),
+      };
+    });
+    resolved.push({ ...attempt, server: { ...attempt.server, deep_link_resolution: resolution } });
+  }
+  return resolved;
+}
+
 /**
  * Persist a production import batch through the same evaluator and ledger writers used by
  * golden parity. Historical import attempts participate in candidate selection so retries are
@@ -966,7 +1049,7 @@ export async function ingestRuntimeBatch(
   const invalidAttempts = new Set(invalid.map(({ failure }) => `${failure.record_id}\u0000${failure.delivery_id}`));
   const validAttempts = boundAttempts.filter((attempt) => !invalidAttempts.has(`${attempt.record.record_id}\u0000${attempt.record.delivery_id}`));
   const validHistory = boundHistory.filter((attempt) => !schemaInvalidArtifacts(attempt));
-  const allAttempts = [...validHistory, ...validAttempts].sort(compareCandidateAttempts);
+  const allAttempts = (await resolveDeepLinkAttempts(appPool, [...validHistory, ...validAttempts])).sort(compareCandidateAttempts);
   const input = runtimeInput(allAttempts);
   const output = evaluate(input, (values) => new IndexedCandidateProvider(values));
   const recordIds = new Set(validAttempts.map((attempt) => attempt.record.record_id));

@@ -81,7 +81,7 @@ export type OpenMasuAttributionResultV04 = {
   attribution_id: string;
   tenant_id: string;
   app_id: string;
-  subject_scope: "installation_level" | "aggregate";
+  subject_scope: "installation_level" | "aggregate" | "engagement_level";
   subject_ref: string;
   status: "organic" | "non_organic" | "unattributed";
   method:
@@ -92,6 +92,7 @@ export type OpenMasuAttributionResultV04 = {
     | "adattributionkit"
     | "meta_install_referrer"
     | "apple_adservices"
+    | "deep_link"
     | "none";
   model: "last_click" | "view_through" | "aggregate" | "provider_reported" | "none";
   reason_code:
@@ -124,7 +125,11 @@ export type OpenMasuAttributionResultV04 = {
     | "postback_not_winner"
     | "crowd_anonymity_suppressed"
     | "conversion_value_null"
-    | "fraud_excluded";
+    | "fraud_excluded"
+    | "deep_link_open_attributed"
+    | "deep_link_unknown_link"
+    | "deep_link_link_inactive"
+    | "deep_link_install_click_reused";
   reason_code_version: "0.4.0";
   evidence_refs: EvidenceRef[];
   effective_at: string;
@@ -189,7 +194,7 @@ export type OpenMasuMetricDefinitionV04 = {
   /**
    * @minItems 1
    */
-  event_names?: ("click" | "install" | "skan_postback" | "adattributionkit_postback")[];
+  event_names?: ("click" | "install" | "skan_postback" | "adattributionkit_postback" | "deep_link_open")[];
   /**
    * @minItems 1
    */
@@ -390,7 +395,8 @@ export interface OpenMasuRawRecordV04 {
     | "consent_changed"
     | "custom_event"
     | "skan_postback"
-    | "adattributionkit_postback";
+    | "adattributionkit_postback"
+    | "deep_link_open";
   schema_version: "0.4.0";
   payload_sha256: string;
   occurred_at: string;
@@ -430,7 +436,8 @@ export interface OpenMasuLogicalEventV04 {
     | "consent_changed"
     | "custom_event"
     | "skan_postback"
-    | "adattributionkit_postback";
+    | "adattributionkit_postback"
+    | "deep_link_open";
   record_lifecycle: "active" | "retracted";
   timeliness: "on_time" | "late";
 }

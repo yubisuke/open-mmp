@@ -22,6 +22,7 @@ import { KeyedTokenBucket } from "./rate-limit.js";
 import { parseMetricQuery } from "./report-query.js";
 import { encodeMetricReport, metricReport } from "./reporting.js";
 import { ensureSdkKeys, signSdkRequest } from "./sdk-auth.js";
+import { createTrackingLink } from "./tracking-links.js";
 
 const run = randomBytes(6).toString("hex");
 const tenantId = `tenant-m2a-${run}`;
@@ -386,6 +387,162 @@ describe("M2a signed SDK ingestion", () => {
        WHERE tenant_id=$1 AND app_id=$2 AND reason_code='event_id_conflict'`, [tenantId, appId],
     ));
     assert.equal(conflictCount.rows[0].count, 1);
+  });
+
+  it("DL-A-15, DL-A-16, and DL-A-25 resolve signed deep-link opens only from tenant-scoped server state", async () => {
+    const deepInstallationId = `installation:m7-${run}`;
+    const enrollment = await signed("/v1/installations", { installation_id: deepInstallationId });
+    assert.equal(enrollment.status, 201);
+    const deepCredential = await enrollment.json() as {
+      installation_key_id: string;
+      installation_secret: string;
+    };
+    const deepSigned = (records: unknown[]) => signed("/v1/events/batch", { records }, {
+      secret: deepCredential.installation_secret,
+      installationKeyId: deepCredential.installation_key_id,
+    });
+    const link = await createTrackingLink({
+      pool,
+      tenantId,
+      appId,
+      actorRef: "admin_key:synthetic-m7",
+      allowedOrigins: [],
+      now: "2026-08-19T02:00:00.000Z",
+      body: {
+        destination_kind: "play_store",
+        destination_url: "https://play.google.com/store/apps/details?id=dev.openmasu.synthetic",
+        play_package_name: "dev.openmasu.synthetic",
+        campaign_id: `campaign-m7-${run}`,
+        deep_link_value: "/synthetic/m7",
+      },
+    });
+    const session = sourceEvent(`event:m7-session:${run}`, "session_start", {
+      installation_id: deepInstallationId,
+      session_id: `session:m7-${run}`,
+    }, "2026-08-17T03:00:00.000Z");
+    assert.equal((await deepSigned([session])).status, 202);
+    await processSdkInbox(pool, payloadStore, tenantId);
+
+    const active = sourceEvent(`event:m7-active:${run}`, "deep_link_open", {
+      installation_id: deepInstallationId,
+      open_source: "android_app_link",
+      destination_status: "delivered",
+      link_slug: link.slug,
+      deep_link_value: "/synthetic/m7",
+    }, "2026-08-19T03:00:00.000Z");
+    const unknown = sourceEvent(`event:m7-unknown:${run}`, "deep_link_open", {
+      installation_id: deepInstallationId,
+      open_source: "ios_universal_link",
+      destination_status: "delivered",
+      link_slug: "unknownM7slug",
+      deep_link_value: "/synthetic/unknown",
+    }, "2026-08-19T03:01:00.000Z");
+    assert.equal((await deepSigned([active, unknown])).status, 202);
+    await processSdkInbox(pool, payloadStore, tenantId);
+
+    const evidence = await withTenant(pool, tenantId, async (client) => ({
+      projections: (await client.query<{
+        event_id: string;
+        tracking_link_id: string | null;
+        campaign_id: string | null;
+        days_since_last_session: number | null;
+      }>(
+        `SELECT raw.event_id, facts.tracking_link_id, facts.campaign_id, facts.days_since_last_session
+           FROM ledger.deep_link_open_facts AS facts
+           JOIN ledger.logical_events AS logical ON logical.logical_event_id=facts.logical_event_id
+           JOIN ledger.raw_records AS raw ON raw.record_id=logical.record_id
+          WHERE facts.tenant_id=$1 AND facts.app_id=$2 AND raw.event_id IN ($3,$4)
+          ORDER BY raw.event_id COLLATE "C"`,
+        [tenantId, appId, active.event_id, unknown.event_id],
+      )).rows,
+      attributions: (await client.query<{ event_id: string; subject_scope: string; subject_ref: string; reason_code: string }>(
+        `SELECT raw.event_id, result.subject_scope, result.subject_ref, result.reason_code
+           FROM ledger.attribution_results AS result
+           JOIN ledger.raw_records AS raw ON raw.record_id = substring(result.subject_ref FROM '^engagement:(.*)$')
+          WHERE result.tenant_id=$1 AND result.app_id=$2 AND raw.event_id IN ($3,$4)
+          ORDER BY raw.event_id COLLATE "C"`,
+        [tenantId, appId, active.event_id, unknown.event_id],
+      )).rows,
+      rejected: (await client.query<{ count: number }>(
+        `SELECT count(*)::int AS count FROM ledger.rejections AS rejection
+          JOIN ledger.raw_records AS raw ON raw.record_id=rejection.record_id
+         WHERE rejection.tenant_id=$1 AND rejection.app_id=$2 AND raw.event_id IN ($3,$4)`,
+        [tenantId, appId, active.event_id, unknown.event_id],
+      )).rows[0].count,
+    }));
+    assert.deepEqual(evidence.projections, [
+      { event_id: active.event_id, tracking_link_id: link.tracking_link_id, campaign_id: `campaign-m7-${run}`, days_since_last_session: 2 },
+      { event_id: unknown.event_id, tracking_link_id: null, campaign_id: null, days_since_last_session: 2 },
+    ]);
+    assert.deepEqual(evidence.attributions.map((row) => [row.event_id, row.subject_scope, row.reason_code]), [
+      [active.event_id, "engagement_level", "deep_link_open_attributed"],
+      [unknown.event_id, "engagement_level", "deep_link_unknown_link"],
+    ]);
+    assert.ok(evidence.attributions.every((row) => row.subject_ref.startsWith("engagement:record:")));
+    assert.equal(evidence.rejected, 0);
+
+    const otherTenant = `tenant-m7-other-${run}`;
+    const otherApp = `app-m7-other-${run}`;
+    await withTenant(pool, otherTenant, (client) => client.query(
+      "INSERT INTO control.apps (tenant_id,app_id,created_at) VALUES ($1,$2,$3)",
+      [otherTenant, otherApp, "2026-08-19T02:00:00.000Z"],
+    ).then(() => undefined));
+    const foreignLink = await createTrackingLink({
+      pool,
+      tenantId: otherTenant,
+      appId: otherApp,
+      actorRef: "admin_key:synthetic-m7-other",
+      allowedOrigins: [],
+      now: "2026-08-19T02:00:01.000Z",
+      body: {
+        destination_kind: "play_store",
+        destination_url: "https://play.google.com/store/apps/details?id=dev.openmasu.synthetic.other",
+        play_package_name: "dev.openmasu.synthetic.other",
+        campaign_id: `campaign-m7-other-${run}`,
+      },
+    });
+    const foreign = sourceEvent(`event:m7-foreign:${run}`, "deep_link_open", {
+      installation_id: deepInstallationId,
+      open_source: "android_app_link",
+      destination_status: "delivered",
+      link_slug: foreignLink.slug,
+    }, "2026-08-19T03:02:00.000Z");
+    const forged = sourceEvent(`event:m7-forged:${run}`, "deep_link_open", {
+      installation_id: deepInstallationId,
+      open_source: "android_app_link",
+      destination_status: "delivered",
+      link_slug: link.slug,
+      campaign_id: "device-claimed-campaign",
+      tracking_link_id: "device-claimed-link",
+      provider_campaign: "device-claimed-provider",
+    }, "2026-08-19T03:03:00.000Z");
+    assert.equal((await deepSigned([foreign])).status, 202);
+    assert.equal((await deepSigned([forged])).status, 403);
+    await processSdkInbox(pool, payloadStore, tenantId);
+    const isolation = await withTenant(pool, tenantId, async (client) => ({
+      foreign: (await client.query<{ tracking_link_id: string | null; campaign_id: string | null }>(
+        `SELECT facts.tracking_link_id,facts.campaign_id FROM ledger.deep_link_open_facts AS facts
+           JOIN ledger.logical_events AS logical ON logical.logical_event_id=facts.logical_event_id
+           JOIN ledger.raw_records AS raw ON raw.record_id=logical.record_id
+          WHERE facts.tenant_id=$1 AND facts.app_id=$2 AND raw.event_id=$3`,
+        [tenantId, appId, foreign.event_id],
+      )).rows[0],
+      foreignReason: (await client.query<{ reason_code: string }>(
+        `SELECT result.reason_code FROM ledger.attribution_results AS result
+           JOIN ledger.raw_records AS raw ON raw.record_id=substring(result.subject_ref FROM '^engagement:(.*)$')
+          WHERE result.tenant_id=$1 AND result.app_id=$2 AND raw.event_id=$3`,
+        [tenantId, appId, foreign.event_id],
+      )).rows[0]?.reason_code,
+      forgedLogical: (await client.query<{ count: number }>(
+        `SELECT count(*)::int AS count FROM ledger.logical_events AS logical
+           JOIN ledger.raw_records AS raw ON raw.record_id=logical.record_id
+          WHERE logical.tenant_id=$1 AND logical.app_id=$2 AND raw.event_id=$3`,
+        [tenantId, appId, forged.event_id],
+      )).rows[0].count,
+    }));
+    assert.deepEqual(isolation.foreign, { tracking_link_id: null, campaign_id: null });
+    assert.equal(isolation.foreignReason, "deep_link_unknown_link");
+    assert.equal(isolation.forgedLogical, 0);
   });
 
   it("creates an immutable superseding attribution when a redirect click arrives late", async () => {

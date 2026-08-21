@@ -136,6 +136,7 @@ Each fixture contains the same 13 `expected_*.json` artifacts listed above. Empt
 | `51-referrer-server-order` | The Play server click timestamp is exactly one second after the Play install-begin timestamp, so the threshold-free ordering rule emits a confirmed, flag-only `referrer_time_inconsistent` decision. No redirector timestamp is needed. |
 | `52-bounded-edge-evidence` | One redirector click carries only the permitted server-assigned bounded evidence: saturated source rate, mobile-app-eligible client class, and a synthetic remote click reference. No IP, User-Agent, hash-derived identity, or device signal is stored. |
 | `53-negative-ctit-clock-anomaly` | One negative-CTIT install emits the non-fraud `clear/allow` clock diagnostic. The day-wide ratio is 1/2, above the registered conservative 0.05 bound, so an independent valid Install Referrer attribution in another source cell on the same UTC day is superseded by a `provisional` result. TS and Python produce identical RFC 8785 bytes. |
+| `54-deep-link-open-contract` | Four synthetic direct/deferred opens exercise active, unknown, inactive, and install-click-reused engagement outcomes. Daily deep-link metrics preserve campaign and attribution-status separation without changing installation attribution. |
 
 ## Adding a fixture
 

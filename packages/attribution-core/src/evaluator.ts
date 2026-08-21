@@ -746,6 +746,49 @@ function makeAggregatePostbackAttribution(
   };
 }
 
+function makeDeepLinkAttribution(
+  attempt: Attempt,
+  lifecycle: Map<string, LifecycleStatus>,
+): Attribution {
+  const { server, record } = attempt;
+  const resolution = server.deep_link_resolution ?? { status: "unknown" };
+  const reusedInstallClick = record.payload.open_source === "android_deferred_referrer"
+    && resolution.install_attribution_click_id === record.payload.click_id;
+  const status: Attribution["status"] = resolution.status === "active" && !reusedInstallClick
+    ? "non_organic" : "unattributed";
+  const reason_code: Attribution["reason_code"] = reusedInstallClick
+    ? "deep_link_install_click_reused"
+    : resolution.status === "active" ? "deep_link_open_attributed"
+      : resolution.status === "inactive" ? "deep_link_link_inactive"
+        : "deep_link_unknown_link";
+  return {
+    attribution_id: `attr:engagement:${record.record_id}`,
+    tenant_id: server.tenant_id,
+    app_id: server.app_id,
+    subject_scope: "engagement_level",
+    subject_ref: `engagement:${record.record_id}`,
+    status,
+    method: "deep_link",
+    model: "last_click",
+    reason_code,
+    reason_code_version: CONTRACT_VERSION,
+    evidence_refs: [{
+      tenant_id: server.tenant_id,
+      app_id: server.app_id,
+      ref: record.record_id,
+      lifecycle_status: lifecycle.get(evidenceKey(server.tenant_id, server.app_id, record.record_id)) ?? "available",
+      access_class: "protected",
+    }],
+    effective_at: record.occurred_at,
+    decided_at: server.received_at,
+    input_cutoff_at: server.received_at,
+    finality: "final",
+    rule_bundle_id: "attribution-default",
+    rule_bundle_version: REFERENCE_RULE_VERSION,
+    rule_bundle_hash: HASH,
+  };
+}
+
 export function roundHalfEven(numerator: bigint, denominator: bigint): bigint {
   if (denominator <= 0n) throw new Error("denominator must be positive");
   const negative = numerator < 0n;
@@ -817,6 +860,15 @@ function validateMetricDefinitionSeries(definition: Any): void {
         grouping.length !== expectedGrouping.length || expectedGrouping.some((value) => !grouping.includes(value))) fail();
     return;
   }
+  if (["daily_deep_link_opens", "daily_deep_link_opens_by_status"].includes(definition.metric_name)) {
+    const expectedGrouping = definition.metric_name === "daily_deep_link_opens_by_status"
+      ? ["metric_date", "campaign_id", "attribution_status"]
+      : ["metric_date", "campaign_id"];
+    if (definition.definition?.calculation !== "event_count" || definition.definition?.numerator !== "events" ||
+        eventNames.length !== 1 || eventNames[0] !== "deep_link_open" ||
+        grouping.length !== expectedGrouping.length || expectedGrouping.some((value) => !grouping.includes(value))) fail();
+    return;
+  }
   if (eventNames.some((value: string) => aggregateEvents.has(value)) || grouping.includes("apple_conversion_bucket")) fail();
 }
 
@@ -858,7 +910,7 @@ function metricRuns(
   const definitionsByName = new Map(definitions.map((definition) => [definition.metric_name, definition]));
   const cost_records = costRecords(input);
   const attributionStatuses = new Map(attributions
-    .filter((attribution) => attribution.subject_scope === "installation_level")
+    .filter((attribution) => ["installation_level", "engagement_level"].includes(attribution.subject_scope))
     .map((attribution) => [
       compositeKey([attribution.tenant_id, attribution.app_id, attribution.subject_ref]),
       attribution.status,
@@ -994,7 +1046,7 @@ function metricRuns(
         const eventName = [...eventNames][0];
         const metricDate = evaluation.grouping?.metric_date;
         if (metricDate === undefined) throw new Error(`event_count requires metric_date grouping: ${metricName}`);
-        if (eventNames.size !== 1 || !["click", "install", "skan_postback", "adattributionkit_postback"].includes(eventName)) {
+        if (eventNames.size !== 1 || !["click", "install", "deep_link_open", "skan_postback", "adattributionkit_postback"].includes(eventName)) {
           throw new Error(`event_count requires exactly one supported event name: ${metricName}`);
         }
         const aggregatePostback = eventName === "skan_postback" || eventName === "adattributionkit_postback";
@@ -1041,8 +1093,8 @@ function metricRuns(
           if (evaluation.grouping?.apple_conversion_bucket !== undefined) {
             throw new Error(`apple_conversion_bucket requires aggregate SKAN events: ${metricName}`);
           }
-          if (evaluation.grouping?.attribution_status !== undefined && eventName !== "install") {
-            throw new Error(`attribution_status event_count requires install events: ${metricName}`);
+          if (evaluation.grouping?.attribution_status !== undefined && !["install", "deep_link_open"].includes(eventName)) {
+            throw new Error(`attribution_status event_count requires install or deep_link_open events: ${metricName}`);
           }
           value = BigInt(visible.filter((attempt) =>
             eventNames.has(attempt.record.event_name) &&
@@ -1163,7 +1215,7 @@ function matchesGrouping(
 ): boolean {
   if (!grouping) return true;
   const payload = attempt.record.payload;
-  const campaign = payload.campaign_id ?? payload.import_context?.provider_campaign_ref;
+  const campaign = payload.campaign_id ?? attempt.server.deep_link_resolution?.campaign_id ?? payload.import_context?.provider_campaign_ref;
   const network = payload.network ?? payload.ad_network ?? payload.import_context?.provider_network;
   const country = payload.country ?? payload.import_context?.provider_country;
   if (grouping.campaign_id !== undefined && campaign !== grouping.campaign_id) return false;
@@ -1171,11 +1223,14 @@ function matchesGrouping(
   if (grouping.country !== undefined && country !== grouping.country) return false;
   if (grouping.cohort_date !== undefined && attempt.record.event_name === "install" &&
       dateAt(attempt.record.occurred_at, "UTC", "occurred_at") !== grouping.cohort_date) return false;
-  if (grouping.attribution_status !== undefined && attempt.record.event_name === "install") {
+  if (grouping.attribution_status !== undefined && ["install", "deep_link_open"].includes(attempt.record.event_name)) {
+    const subjectRef = attempt.record.event_name === "install"
+      ? attempt.record.payload.installation_id
+      : `engagement:${attempt.record.record_id}`;
     const status = attributionStatuses.get(compositeKey([
       attempt.server.tenant_id,
       attempt.server.app_id,
-      attempt.record.payload.installation_id,
+      subjectRef,
     ]));
     if (status !== grouping.attribution_status) return false;
   }
@@ -1335,6 +1390,9 @@ export function evaluate(
     ...acceptedUnique
       .filter((attempt) => ["skan_postback", "adattributionkit_postback"].includes(attempt.record.event_name))
       .map((attempt) => makeAggregatePostbackAttribution(attempt, lifecycle)),
+    ...acceptedUnique
+      .filter((attempt) => attempt.record.event_name === "deep_link_open")
+      .map((attempt) => makeDeepLinkAttribution(attempt, lifecycle)),
   ],
   (attribution) => [attribution.attribution_id, attribution.tenant_id, attribution.app_id]);
   const corrections: Correction[] = [...(input.correction_inputs ?? [])];

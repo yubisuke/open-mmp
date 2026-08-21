@@ -18,7 +18,7 @@ This project is licensed under the [Apache License 2.0](LICENSE); attribution is
 
 ## Current status
 
-This project contains the v0.4.0 contract and the synthetic code milestones from M1 through M5: the Shadow ledger and import foundation, cohort metrics and difference audit, Android/Unity and Apple measurement paths, the server-rendered operator dashboard, minimum RBAC, authenticated operational metrics, privacy-safe restore support, rule-bundle history, and release evidence. Real provider connectivity, real-device and campaign validation, Unity Xcode export, App Store review, a production deployment, real backup operations, real production load, real integrity-service configuration, real-cardinality dashboard usability, and exact 4-vCPU/8-GB capacity validation have not been demonstrated. Immutable baselines are available at the `contract-v0.1`, `contract-v0.2.1`, and `contract-v0.3.6` Git tags. See [the current status](docs/STATUS.md) for the milestone-by-milestone boundary.
+This project contains the v0.4.7 contract and synthetic code milestones through M7: the Shadow ledger and import foundation, cohort metrics and difference audit, Android/Unity and Apple measurement paths, the server-rendered operator dashboard, production-control foundations, deterministic fraud controls, and direct/deferred deep-link paths. Real provider connectivity, real-device and campaign validation, Unity exports, App Store review, a production deployment, real backup operations, real production load, real integrity-service configuration, and real link-domain verification have not been demonstrated. Immutable baselines are available at the `contract-v0.1`, `contract-v0.2.1`, and `contract-v0.3.6` Git tags. See [the current status](docs/STATUS.md) for the milestone-by-milestone boundary.
 
 The first product entry point is a Shadow MMP that runs alongside an existing provider. It normalizes first-party events, existing MMP exports, media cost, and revenue into a common contract, then explains neutral differences through candidate evidence, exclusion reasons, attribution windows, ID joins, and recalculation history. Difference reasons describe measurement semantics, not provider quality. It must not be treated as the primary MMP until a real shadow pilot has produced sufficient evidence.
 
@@ -94,6 +94,8 @@ Implemented runtime code lives in `apps/api`, `apps/redirector`, `apps/worker`, 
 - [M4 device and Apple-provider validation checklist](docs/validation/m4-device-checklist.md)
 - [M5 integrity-service checklist](docs/validation/m5-integrity-checklist.md)
 - [M5 production-operator checklist](docs/validation/m5-operator-checklist.md)
+- [M6 fraud operator checklist](docs/validation/m6-fraud-checklist.md)
+- [M7 deep-link device checklist](docs/validation/deeplink-device-checklist.md)
 - [M5 synthetic load record](docs/validation/m5-load-results.md)
 - [Backup and restore runbook](docs/operations/backup-restore.md)
 - [Release runbook](docs/operations/release.md)
@@ -165,6 +167,12 @@ Open `http://localhost:8080/dashboard`, sign in with the generated admin key sho
 
 ## Android, iOS, and Unity SDK development
 
+### Deep-link capability boundary
+
+OpenMasu delivers deterministic direct deep links on Android through App Links and on iOS through Universal Links. Deterministic deferred deep linking is available on Android only, carried by Google Play Install Referrer. On iOS, OpenMasu delivers deep links to users who already have the app, using Universal Links. It does not deliver a deep link to a user who installs the app after tapping a link. Every mechanism that would make that possible either requires deriving an identifier from device signals, which Apple's Developer Program License Agreement prohibits and which this project does not do, or requires a user-visible prompt on first launch. If Apple provides a channel that carries a destination through installation, OpenMasu will use it.
+
+The SDK parses and reports a typed destination but never navigates. The host application remains responsible for validating the value again and selecting its own screen. Routing still reaches the host listener while measurement collection is disabled; no `deep_link_open` event is queued in that state. A direct `deep_link_open` is a device claim, not server-observed click evidence.
+
 Requirements: JDK 17 and Android SDK 36. The Android project uses a checksum-pinned Gradle 8.13 wrapper. From the repository root:
 
 ```bash
@@ -196,4 +204,4 @@ python -m pip install --require-hashes --requirement requirements-contract.txt
 npm run validate
 ```
 
-Validation is read-only. It checks 27 schemas, 8 registries, 47 reviewed synthetic fixtures, 611 golden output artifacts across 13 classes, 47 scenario assertions, 26 acceptance criteria, semantic and metamorphic mutations, deterministic TypeScript output, independent Python output, and RFC 8785 conformance. See the [fixture provenance note](fixtures/v0.4/README.md).
+Validation is read-only. It checks 28 schemas, 8 registries, 54 reviewed synthetic fixtures, 702 golden output artifacts, 54 scenario assertions, 26 acceptance criteria, semantic and metamorphic mutations, deterministic TypeScript output, independent Python output, and RFC 8785 conformance. See the [fixture provenance note](fixtures/v0.4/README.md).

@@ -14,6 +14,7 @@ namespace OpenMasu.Unity
             new ConcurrentDictionary<long, Action<string>>();
         private static long nextRequestId;
         private bool disposed;
+        private Action<string> deepLinkListener;
 
         public static int ActiveCallbackCount => Callbacks.Count;
 
@@ -99,6 +100,19 @@ namespace OpenMasu.Unity
 #endif
         }
 
+        public void SetDeepLinkListener(Action<string> listener) { ThrowIfDisposed(); deepLinkListener = listener; }
+
+        public void HandleDeepLink(string url)
+        {
+            ThrowIfDisposed();
+            var requestId = Register(value => { if (!value.StartsWith("error:", StringComparison.Ordinal)) deepLinkListener?.Invoke(value); });
+#if UNITY_IOS && !UNITY_EDITOR
+            openmasu_ios_handle_deep_link(url, requestId, Callback);
+#else
+            CompleteSynthetic(requestId, "value=%2Fsynthetic&open_source=ios_universal_link&destination_status=delivered&link_slug=Synthetic123");
+#endif
+        }
+
         public void Dispose()
         {
             if (disposed) return;
@@ -157,6 +171,8 @@ namespace OpenMasu.Unity
         private static extern void openmasu_ios_reset_installation(long requestId, NativeCallback callback);
         [DllImport("__Internal")]
         private static extern void openmasu_ios_ping_from_background(string value, long requestId, NativeCallback callback);
+        [DllImport("__Internal")]
+        private static extern void openmasu_ios_handle_deep_link(string url, long requestId, NativeCallback callback);
 #endif
     }
 }

@@ -1,6 +1,7 @@
 package dev.openmasu.sdk
 
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.work.Constraints
@@ -14,14 +15,19 @@ import org.json.JSONObject
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.time.Duration
+import java.time.Instant
 
-data class OpenMasuConfiguration(
+data class OpenMasuConfiguration @JvmOverloads constructor(
   val endpoint: String,
   val sdkKeyId: String,
   val sdkSecret: String,
   val sdkVersion: String = OpenMasuStorage.SDK_VERSION,
   val wrapperVersion: String? = null,
   val timeoutMs: Int = 10_000,
+  val deepLinkHosts: Set<String> = emptySet(),
+  val deepLinkSchemes: Set<String> = emptySet(),
+  val deferredDeepLinkTtlSeconds: Long = 604800,
 )
 
 class OpenMasuSdk private constructor(
@@ -37,6 +43,7 @@ class OpenMasuSdk private constructor(
   private val executor = Executors.newSingleThreadExecutor()
   private val initialized = AtomicBoolean(false)
   private val defaultCollectionEnabled = manifestCollectionDefault(context)
+  @Volatile private var deepLinkListener: OpenMasuDeepLinkListener? = null
 
   fun initialize() {
     if (!initialized.compareAndSet(false, true)) return
@@ -45,9 +52,15 @@ class OpenMasuSdk private constructor(
     executor.execute {
       val installationId = storage.installationId()
       if (!storage.referrerConsumed()) {
-        val play = playReader.read()
+        val play = normalizeDeferred(playReader.read())
         val meta = metaReader.read()
         enqueueJson("install", "attribution", EventFactory.install(installationId, configuration.wrapperVersion ?: configuration.sdkVersion, play, meta, "play_first_launch"))
+        val deferred = DeepLinkParser.fromReferrer(play)
+        if (deferred != null && !storage.deferredDestinationConsumed()) {
+          deepLinkListener?.onDeepLink(deferred)
+          enqueueJson("deep_link_open", "attribution", EventFactory.deepLink(installationId, deferred))
+          storage.markDeferredDestinationConsumed()
+        }
         if (!play.shouldRetry) storage.markReferrerConsumed()
       }
       drain()
@@ -70,6 +83,20 @@ class OpenMasuSdk private constructor(
       enqueueJson("session_start", "analytics", EventFactory.session(storage.installationId(), EventFactory.newSessionId()))
       drain()
     }
+  }
+
+  fun setDeepLinkListener(listener: OpenMasuDeepLinkListener?) {
+    deepLinkListener = listener
+  }
+
+  fun handleDeepLink(intent: Intent): Boolean {
+    val value = DeepLinkParser.direct(intent, configuration.deepLinkHosts, configuration.deepLinkSchemes) ?: return false
+    deepLinkListener?.onDeepLink(value)
+    if (isCollectionEnabled()) executor.execute {
+      enqueueJson("deep_link_open", "attribution", EventFactory.deepLink(storage.installationId(), value))
+      drain()
+    }
+    return true
   }
 
   @JvmOverloads
@@ -154,6 +181,15 @@ class OpenMasuSdk private constructor(
 
   private fun ensureCredential(installationId: String): InstallationCredential = storage.credential()
     ?: transport.enroll(installationId).also { storage.setCredential(it) }
+
+  private fun normalizeDeferred(value: PlayReferrerEvidence): PlayReferrerEvidence {
+    if (value.deepLinkValue == null) return value.copy(deferredDeepLinkStatus = value.deferredDeepLinkStatus ?: "absent")
+    val clicked = value.referrerClickAtServer?.let { runCatching { Instant.parse(it) }.getOrNull() }
+    if (clicked != null && Duration.between(clicked, Instant.now()).seconds > configuration.deferredDeepLinkTtlSeconds) {
+      return value.copy(deferredDeepLinkStatus = "expired")
+    }
+    return value.copy(deferredDeepLinkStatus = value.deferredDeepLinkStatus ?: "delivered")
+  }
 
   private fun enqueueJson(eventName: String, purpose: String, payload: JSONObject, eventId: String? = null) {
     if (!isCollectionEnabled() && eventName != "consent_changed") return

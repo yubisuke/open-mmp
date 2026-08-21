@@ -45,7 +45,7 @@ L2a explicitly does **not** include Google App campaigns (review F-4: third-part
 - iOS of any kind (M4a Swift SDK, M4b SKAN/AdAttributionKit receipt).
 - Dashboard and login (M3).
 - Play Integrity and App Attest (M5). §M2-S-11 states what M2 does instead and what it does not claim.
-- Deferred deep linking, re-engagement/retargeting attribution, and view-through measurement other than what Meta Install Referrer itself reports.
+- Deferred deep linking, re-engagement/retargeting attribution, and view-through measurement other than what Meta Install Referrer itself reports. This remains an accurate M2 milestone boundary; M7 later adds deterministic direct delivery on Android/iOS and Android-only deferred delivery under the separate [Deep-Link Design Baseline](deeplink-baseline.md) (2026-08-21).
 - Media postbacks to networks (M5, and limited to first-party links, Meta, and Apple Ads).
 - Purchases and refunds through the SDK. The contract has `purchase` and `refund` schemas; the roadmap does not put them in M2. Adding them is cheap and should be a deliberate decision, not a drift (M2-D-28 note).
 

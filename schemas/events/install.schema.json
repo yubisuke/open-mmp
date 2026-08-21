@@ -29,6 +29,7 @@
     "os_version": { "type": "string", "minLength": 1, "maxLength": 128 },
     "sdk_version": { "type": "string", "minLength": 1, "maxLength": 128 },
     "ad_tracking_limited": { "type": "boolean" },
+    "deferred_deep_link_status": { "enum": ["not_applicable", "absent", "delivered", "expired", "rejected"] },
     "attribution_confirmed_at": { "$ref": "../common.schema.json#/$defs/dateTime" },
     "meta_referrer_status": { "enum": ["provider_unavailable", "app_version_unsupported", "no_campaign_data", "decrypt_failed", "auth_failed", "decrypted"] },
     "is_ct": { "type": "integer", "enum": [0, 1] },

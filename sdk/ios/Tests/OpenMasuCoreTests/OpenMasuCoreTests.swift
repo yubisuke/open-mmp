@@ -114,6 +114,39 @@ final class OpenMasuCoreTests: XCTestCase {
     XCTAssertEqual(pendingCount, 0)
   }
 
+  func testDLA19UniversalLinkAndBareURLHaveIdenticalSynchronousDelivery() async throws {
+    let transport = RecordingTransport(deliveryFailure: true)
+    let sdk = try OpenMasuSDK(
+      configuration: configuration(defaultEnabled: true, deepLinkHosts: ["links.synthetic.invalid"], deepLinkSchemes: ["openmasu-synthetic"]),
+      storageRoot: temporaryDirectory("deep-link"),
+      transport: transport
+    )
+    let recorder = DeepLinkRecorder()
+    sdk.setDeepLinkListener { value in recorder.append(value) }
+    let url = try XCTUnwrap(URL(string: "https://links.synthetic.invalid/r/Synthetic123/shop/item/53?dlp_code=abc&next=https://invalid"))
+    let caller = Thread.current
+    XCTAssertTrue(sdk.handleDeepLink(url))
+    let activity = NSUserActivity(activityType: NSUserActivityTypeBrowsingWeb)
+    activity.webpageURL = url
+    XCTAssertTrue(sdk.handleDeepLink(activity))
+    let (delivered, threads) = recorder.snapshot()
+    XCTAssertEqual(delivered.count, 2)
+    XCTAssertEqual(delivered[0], delivered[1])
+    XCTAssertEqual(delivered[0].value, "/shop/item/53")
+    XCTAssertEqual(delivered[0].parameters, ["code": "abc"])
+    XCTAssertTrue(threads.allSatisfy { $0 === caller })
+    let rejectedURL = try XCTUnwrap(URL(string: "https://links.synthetic.invalid/r/Synthetic123/rejected/bad%21suffix"))
+    XCTAssertTrue(sdk.handleDeepLink(rejectedURL))
+    let (withRejected, _) = recorder.snapshot()
+    XCTAssertNil(withRejected.last?.value)
+    XCTAssertEqual(withRejected.last?.destinationStatus, "rejected")
+    XCTAssertTrue(sdk.handleDeepLink(URL(string: "openmasu-synthetic://links.synthetic.invalid/r/Synthetic123/custom")!))
+    let (withCustomScheme, _) = recorder.snapshot()
+    XCTAssertEqual(withCustomScheme.last?.openSource, "custom_scheme")
+    XCTAssertEqual(withCustomScheme.last?.value, "/custom")
+    XCTAssertFalse(sdk.handleDeepLink(URL(string: "https://unconfigured.invalid/r/Synthetic123/shop")!))
+  }
+
   func testM4A22InfoPlistDefaultDisabledWinsBeforeInitialize() throws {
     let bundleRoot = temporaryDirectory("plist-default").appendingPathComponent("Synthetic.bundle")
     let contents = bundleRoot.appendingPathComponent("Contents")
@@ -243,12 +276,14 @@ final class OpenMasuCoreTests: XCTestCase {
     XCTAssertNil(manifest["NSPrivacyTrackingDomains"])
   }
 
-  private func configuration(defaultEnabled: Bool) -> OpenMasuConfiguration {
+  private func configuration(defaultEnabled: Bool, deepLinkHosts: Set<String> = [], deepLinkSchemes: Set<String> = []) -> OpenMasuConfiguration {
     OpenMasuConfiguration(
       endpoint: URL(string: "http://127.0.0.1:1")!,
       sdkKeyId: "sdk-key:synthetic",
       sdkSecret: "synthetic-sdk-secret-32-bytes-long",
-      collectionEnabledByDefault: defaultEnabled
+      collectionEnabledByDefault: defaultEnabled,
+      deepLinkHosts: deepLinkHosts,
+      deepLinkSchemes: deepLinkSchemes
     )
   }
 
@@ -289,6 +324,14 @@ final class OpenMasuCoreTests: XCTestCase {
     return process
   }
   #endif
+}
+
+private final class DeepLinkRecorder: @unchecked Sendable {
+  private let lock = NSLock()
+  private var values: [OpenMasuDeepLink] = []
+  private var threads: [Thread] = []
+  func append(_ value: OpenMasuDeepLink) { lock.lock(); values.append(value); threads.append(Thread.current); lock.unlock() }
+  func snapshot() -> ([OpenMasuDeepLink], [Thread]) { lock.lock(); defer { lock.unlock() }; return (values, threads) }
 }
 
 private actor RecordingTransport: OpenMasuTransport {
