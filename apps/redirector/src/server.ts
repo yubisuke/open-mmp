@@ -17,6 +17,12 @@ class BoundedIpBucket {
     while (this.buckets.size > this.maximum) this.buckets.delete(this.buckets.keys().next().value!);
     return allowed;
   }
+  classify(key: string): "normal" | "elevated" | "saturated" {
+    const current = this.buckets.get(key);
+    if (!current) return "normal";
+    if (current.tokens < 1) return "saturated";
+    return current.tokens < Math.max(2, this.burst / 4) ? "elevated" : "normal";
+  }
 }
 
 const port = Number(process.env.OPENMASU_REDIRECTOR_PORT ?? "8090");

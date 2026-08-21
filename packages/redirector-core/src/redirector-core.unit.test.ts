@@ -5,6 +5,7 @@ import {
   decodeInstallReferrer,
   encodeInstallReferrer,
   fallbackResponse,
+  prefetchEvidence,
   randomClickId,
   randomSlug,
   resolveRedirect,
@@ -67,5 +68,31 @@ describe("redirector core", () => {
     for (const link of [undefined, { ...activeLink, status: "paused" as const }, { ...activeLink, status: "archived" as const }]) {
       assert.equal(JSON.stringify(resolveRedirect({ link, fallbackDestination: "https://safe.example/", now: "2026-08-19T00:00:00.000Z" })), fallback);
     }
+  });
+
+  it("records bounded server prefetch evidence without issuing a click identifier", () => {
+    const fallback = fallbackResponse("https://safe.example/");
+    const result = prefetchEvidence({
+      link: { ...activeLink, network: "synthetic-network", site_id: "synthetic-site" },
+      fallbackDestination: "https://safe.example/",
+      now: "2026-08-21T00:00:00.000Z",
+      remoteClickRef: "synthetic-remote-ref",
+      sourceRateClass: "elevated",
+    });
+    assert.deepEqual({ status: result.status, headers: result.headers, body: result.body }, fallback);
+    assert.equal("click_id" in result.prefetch!, false);
+    assert.deepEqual(result.prefetch, {
+      bot_prefetch: true,
+      tracking_link_id: "link:synthetic",
+      tenant_id: "tenant-synthetic",
+      app_id: "app-synthetic",
+      redirector_click_at: "2026-08-21T00:00:00.000Z",
+      campaign_id: "campaign-synthetic",
+      network: "synthetic-network",
+      site_id: "synthetic-site",
+      remote_click_ref: "synthetic-remote-ref",
+      source_rate_class: "elevated",
+      client_class: "bot",
+    });
   });
 });

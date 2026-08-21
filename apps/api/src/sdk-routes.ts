@@ -82,6 +82,14 @@ function normalizedRecord(
   if (payload.adservices_context !== undefined || payload.extensions?.adservices_context !== undefined) {
     throw new Error("device_adservices_claim_forbidden");
   }
+  if (source.event_name === "click" && [
+    "bot_prefetch", "source_rate_class", "client_class", "remote_click_ref",
+  ].some((key) => payload[key] !== undefined)) {
+    throw new Error("device_edge_claim_forbidden");
+  }
+  if (payload.integrity_verdict !== undefined || payload.extensions?.integrity_verdict !== undefined) {
+    throw new Error("device_integrity_claim_forbidden");
+  }
   const adServicesToken = payload.extensions?.adservices_attribution_token_protected;
   if (adServicesToken !== undefined) {
     if (identity.platform !== "ios" || source.event_name !== "install") {

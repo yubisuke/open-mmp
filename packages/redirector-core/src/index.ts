@@ -27,6 +27,15 @@ export type RedirectClick = {
   campaign_id?: string;
   ad_group_id?: string;
   creative_id?: string;
+  network?: string;
+  site_id?: string;
+  remote_click_ref?: string;
+  source_rate_class?: "normal" | "elevated" | "saturated";
+  client_class?: "mobile_app_eligible" | "bot" | "other";
+};
+
+export type RedirectPrefetch = Omit<RedirectClick, "click_id" | "destination_url" | "referrer"> & {
+  bot_prefetch: true;
 };
 
 export type RedirectResolution = {
@@ -34,6 +43,7 @@ export type RedirectResolution = {
   headers: Readonly<Record<string, string>>;
   body: "";
   click?: RedirectClick;
+  prefetch?: RedirectPrefetch;
 };
 
 export function randomSlug(random: (size: number) => Buffer = randomBytes): string {
@@ -98,6 +108,9 @@ export function resolveRedirect(options: {
   fallbackDestination: string;
   now: string;
   clickId?: string;
+  remoteClickRef?: string;
+  sourceRateClass?: RedirectClick["source_rate_class"];
+  clientClass?: RedirectClick["client_class"];
 }): RedirectResolution {
   if (!options.link || options.link.status !== "active") return fallbackResponse(options.fallbackDestination);
   const clickId = options.clickId ?? randomClickId();
@@ -123,6 +136,39 @@ export function resolveRedirect(options: {
       ...(options.link.campaign_id ? { campaign_id: options.link.campaign_id } : {}),
       ...(options.link.ad_group_id ? { ad_group_id: options.link.ad_group_id } : {}),
       ...(options.link.creative_id ? { creative_id: options.link.creative_id } : {}),
+      ...(options.link.network ? { network: options.link.network } : {}),
+      ...(options.link.site_id ? { site_id: options.link.site_id } : {}),
+      ...(options.remoteClickRef ? { remote_click_ref: options.remoteClickRef } : {}),
+      ...(options.sourceRateClass ? { source_rate_class: options.sourceRateClass } : {}),
+      ...(options.clientClass ? { client_class: options.clientClass } : {}),
+    },
+  };
+}
+
+export function prefetchEvidence(options: {
+  link: TrackingLink;
+  fallbackDestination: string;
+  now: string;
+  remoteClickRef?: string;
+  sourceRateClass?: RedirectClick["source_rate_class"];
+}): RedirectResolution {
+  const fallback = fallbackResponse(options.fallbackDestination);
+  return {
+    ...fallback,
+    prefetch: {
+      bot_prefetch: true,
+      tracking_link_id: options.link.tracking_link_id,
+      tenant_id: options.link.tenant_id,
+      app_id: options.link.app_id,
+      redirector_click_at: options.now,
+      ...(options.link.campaign_id ? { campaign_id: options.link.campaign_id } : {}),
+      ...(options.link.ad_group_id ? { ad_group_id: options.link.ad_group_id } : {}),
+      ...(options.link.creative_id ? { creative_id: options.link.creative_id } : {}),
+      ...(options.link.network ? { network: options.link.network } : {}),
+      ...(options.link.site_id ? { site_id: options.link.site_id } : {}),
+      ...(options.remoteClickRef ? { remote_click_ref: options.remoteClickRef } : {}),
+      ...(options.sourceRateClass ? { source_rate_class: options.sourceRateClass } : {}),
+      client_class: "bot",
     },
   };
 }
