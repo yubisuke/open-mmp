@@ -1,6 +1,8 @@
 package dev.openmasu.sdk
 
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import org.json.JSONObject
 import org.junit.After
@@ -15,6 +17,7 @@ import org.robolectric.RobolectricTestRunner
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 
 @RunWith(RobolectricTestRunner::class)
 class OpenMasuSdkTest {
@@ -87,6 +90,78 @@ class OpenMasuSdkTest {
     assertTrue(session.payloadJson.contains("\"session_id\":\"session:"))
   }
 
+  @Test fun `DL-A-17 and DL-A-18 route a verified app link synchronously before queue delivery`() {
+    val transport = RecordingTransport(false)
+    val sdk = sdk(transport, configuration = OpenMasuConfiguration(
+      "http://127.0.0.1", "sdk-key:synthetic", "synthetic-secret",
+      deepLinkHosts = setOf("links.synthetic.invalid"),
+    ))
+    sdk.initialize()
+    val caller = Thread.currentThread()
+    val callbackThread = AtomicReference<Thread>()
+    val delivered = AtomicReference<OpenMasuDeepLink>()
+    sdk.setDeepLinkListener { value -> callbackThread.set(Thread.currentThread()); delivered.set(value) }
+    val handled = sdk.handleDeepLink(Intent(Intent.ACTION_VIEW,
+      Uri.parse("https://links.synthetic.invalid/r/Synthetic123/shop/item/53?dlp_code=abc&next=https://invalid")))
+    assertTrue(handled)
+    assertEquals(caller, callbackThread.get())
+    assertEquals("/shop/item/53", delivered.get().value)
+    assertEquals(mapOf("code" to "abc"), delivered.get().parameters)
+    await { sdk.pendingEvents().any { it.eventName == "deep_link_open" } }
+    assertFalse(sdk.handleDeepLink(Intent(Intent.ACTION_VIEW,
+      Uri.parse("https://unconfigured.invalid/r/Synthetic123/shop"))))
+  }
+
+  @Test fun `DL-A-21 keeps listener routing available while collection is disabled`() {
+    val transport = RecordingTransport(true)
+    val sdk = sdk(transport, configuration = OpenMasuConfiguration(
+      "http://127.0.0.1", "sdk-key:synthetic", "synthetic-secret",
+      deepLinkHosts = setOf("links.synthetic.invalid"),
+    ))
+    sdk.setCollectionEnabled(false)
+    val calls = AtomicInteger()
+    sdk.setDeepLinkListener { calls.incrementAndGet() }
+    assertTrue(sdk.handleDeepLink(Intent(Intent.ACTION_VIEW,
+      Uri.parse("https://links.synthetic.invalid/r/Synthetic123/direct"))))
+    assertEquals(1, calls.get())
+    assertEquals(0, transport.calls.get())
+    assertEquals(0, sdk.pendingCount())
+  }
+
+  @Test fun `DL-A-22 delivers a fresh deferred destination once and rejects an expired one`() {
+    val freshCalls = AtomicInteger()
+    val fresh = sdk(RecordingTransport(false), PlayReferrerReader {
+      PlayReferrerEvidence(
+        status = "available", clientResponse = "ok", clickId = "click-53_0000000000000000",
+        referrerClickAtServer = EventFactory.canonicalNow(), deepLinkValue = "/deferred/53",
+        deepLinkParameters = mapOf("code" to "abc"), deferredDeepLinkStatus = "delivered",
+      )
+    })
+    fresh.setDeepLinkListener { freshCalls.incrementAndGet() }
+    fresh.initialize()
+    await { fresh.pendingEvents().any { it.eventName == "deep_link_open" } }
+    assertEquals(1, freshCalls.get())
+    assertTrue(fresh.pendingEvents().single { it.eventName == "install" }.payloadJson.contains("\"deferred_deep_link_status\":\"delivered\""))
+
+    fresh.close()
+    created.remove(fresh)
+    context.getSharedPreferences(OpenMasuStorage.PREFERENCES, Context.MODE_PRIVATE).edit().clear().commit()
+    context.filesDir.resolve(OpenMasuStorage.SUBTREE).deleteRecursively()
+    val expiredCalls = AtomicInteger()
+    val expired = sdk(RecordingTransport(false), PlayReferrerReader {
+      PlayReferrerEvidence(
+        status = "available", clientResponse = "ok", clickId = "click-53_0000000000000000",
+        referrerClickAtServer = "2020-01-01T00:00:00.000Z", deepLinkValue = "/expired/53",
+        deferredDeepLinkStatus = "delivered",
+      )
+    })
+    expired.setDeepLinkListener { expiredCalls.incrementAndGet() }
+    expired.initialize()
+    await { expired.pendingEvents().any { it.eventName == "install" } }
+    assertEquals(0, expiredCalls.get())
+    assertTrue(expired.pendingEvents().single { it.eventName == "install" }.payloadJson.contains("\"deferred_deep_link_status\":\"expired\""))
+  }
+
   @Test fun `reset deletes first then creates a fresh anchor without re-reading referrers`() {
     val transport = RecordingTransport(true)
     val reads = AtomicInteger()
@@ -127,9 +202,10 @@ class OpenMasuSdkTest {
     transport: RecordingTransport,
     playReader: PlayReferrerReader = PlayReferrerReader { PlayReferrerEvidence("none", "ok") },
     metaReader: MetaReferrerReader = MetaReferrerReader { MetaReferrerEvidence("provider_unavailable") },
+    configuration: OpenMasuConfiguration = OpenMasuConfiguration("http://127.0.0.1", "sdk-key:synthetic", "synthetic-secret"),
   ): OpenMasuSdk = OpenMasuSdk.create(
     context,
-    OpenMasuConfiguration("http://127.0.0.1", "sdk-key:synthetic", "synthetic-secret"),
+    configuration,
     transport,
     playReader,
     metaReader,

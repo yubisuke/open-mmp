@@ -12,6 +12,7 @@ android {
     targetSdk = 36
     versionCode = 1
     versionName = "0.1.0"
+    manifestPlaceholders["OPENMASU_LINK_HOST"] = "links.synthetic.invalid"
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
   compileOptions {
@@ -54,6 +55,10 @@ tasks.register("verifyMergedManifest") {
     check(modern.contains("path=\"openmasu\""))
     val legacy = project(":core").file("src/main/res/xml/openmasu_backup_rules.xml").readText()
     check(legacy.contains("openmasu_private.xml") && legacy.contains("path=\"openmasu\""))
+    listOf("android.intent.action.VIEW", "android.intent.category.BROWSABLE", "android:autoVerify=\"true\"",
+      "android:scheme=\"https\"", "android:host=\"links.synthetic.invalid\"", "android:pathPrefix=\"/r/\"").forEach {
+      check(text.contains(it)) { "DL-A-20 merged manifest is missing $it" }
+    }
     println("A-12/A-13 merged manifest and backup exclusions verified: ${manifest.relativeTo(rootProject.projectDir)}")
   }
 }
