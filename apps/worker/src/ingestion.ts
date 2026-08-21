@@ -5,6 +5,7 @@ import {
   IndexedCandidateProvider,
   jcs,
   sha256,
+  sortCandidateAttempts,
   type CandidateAttempt,
   type CandidateProvider,
 } from "@openmasu/attribution-core";
@@ -1280,7 +1281,7 @@ export async function ingestRuntimeBatch(
   const invalidAttempts = new Set(invalid.map(({ failure }) => `${failure.record_id}\u0000${failure.delivery_id}`));
   const validAttempts = boundAttempts.filter((attempt) => !invalidAttempts.has(`${attempt.record.record_id}\u0000${attempt.record.delivery_id}`));
   const validHistory = boundHistory.filter((attempt) => !schemaInvalidArtifacts(attempt));
-  const allAttempts = (await resolveDeepLinkAttempts(appPool, [...validHistory, ...validAttempts])).sort(compareCandidateAttempts);
+  const allAttempts = sortCandidateAttempts(await resolveDeepLinkAttempts(appPool, [...validHistory, ...validAttempts]));
   const input = runtimeInput(allAttempts);
   const output = evaluate(input, (values) => new IndexedCandidateProvider(values));
   const recordIds = new Set(validAttempts.map((attempt) => attempt.record.record_id));
