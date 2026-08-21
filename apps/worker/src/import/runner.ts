@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFileSync, readdirSync } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import type { Pool } from "pg";
 import { sha256, type CandidateAttempt } from "@openmasu/attribution-core";
 import { createAppPool, uuidV7, withTenant } from "@openmasu/runtime";
@@ -19,6 +19,14 @@ export type ImportSummary = {
   deliveries: number;
   logical_events: number;
 };
+
+const importMetadataChunkSize = 1_000;
+
+async function insertMetadataRows(client: import("pg").PoolClient, rows: readonly Any[], statement: string): Promise<void> {
+  for (let offset = 0; offset < rows.length; offset += importMetadataChunkSize) {
+    await client.query(statement, [JSON.stringify(rows.slice(offset, offset + importMetadataChunkSize))]);
+  }
+}
 
 export const defaultImportLimits: ImportLimits = {
   maxBytes: 4 * 1024 * 1024 * 1024,
@@ -159,7 +167,12 @@ export async function runMmpImport(options: {
   }
   try {
     const history = await historicalAttempts(options.pool, mapping);
-    const output = await ingestRuntimeBatch(attemptRows.map(({ attempt }) => attempt), options.pool, history);
+    const output = await ingestRuntimeBatch(
+      attemptRows.map(({ attempt }) => attempt),
+      options.pool,
+      history,
+      { bulkPersistence: true },
+    );
     const invalidKeys = new Set(output.validation_failures.map((failure) => `${failure.record_id}\u0000${failure.delivery_id}`));
     const acceptedRows = attemptRows.filter(({ attempt }) => !invalidKeys.has(`${attempt.record.record_id}\u0000${attempt.record.delivery_id}`));
     const rowByAttempt = new Map(attemptRows.map(({ ordinal, attempt }) => [
@@ -191,24 +204,22 @@ export async function runMmpImport(options: {
         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
         [uuidV7(options.now?.valueOf()), mapping.tenant_id, mapping.app_id, mapping.source_id, fileDigest, loaded.bytes, loaded.rows.length, now, runId],
       );
-      for (const { ordinal, attempt } of acceptedRows) {
-        await client.query(
-          `INSERT INTO control.import_attempts (
-            import_attempt_id, import_run_id, tenant_id, app_id, source_id,
-            row_ordinal, server_context, record, created_at
-          ) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9)`,
-          [uuidV7(), runId, mapping.tenant_id, mapping.app_id, mapping.source_id, ordinal, JSON.stringify(attempt.server), JSON.stringify(attempt.record), now],
-        );
-      }
-      for (const failure of allFailures) {
-        await client.query(
-          `INSERT INTO control.import_row_rejections (
-            import_rejection_id, import_run_id, tenant_id, app_id, source_id,
-            row_ordinal, reason_code, field_names, occurred_at
-          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9)`,
-          [uuidV7(), runId, mapping.tenant_id, mapping.app_id, mapping.source_id, failure.ordinal, failure.reason, JSON.stringify(failure.fields), now],
-        );
-      }
+      await insertMetadataRows(client, acceptedRows.map(({ ordinal, attempt }) => ({
+        import_attempt_id: uuidV7(), import_run_id: runId, tenant_id: mapping.tenant_id,
+        app_id: mapping.app_id, source_id: mapping.source_id, row_ordinal: ordinal,
+        server_context: attempt.server, record: attempt.record, created_at: now,
+      })), `INSERT INTO control.import_attempts (
+        import_attempt_id,import_run_id,tenant_id,app_id,source_id,row_ordinal,server_context,record,created_at)
+        SELECT import_attempt_id,import_run_id,tenant_id,app_id,source_id,row_ordinal,server_context,record,created_at
+        FROM jsonb_populate_recordset(NULL::control.import_attempts,$1::jsonb)`);
+      await insertMetadataRows(client, allFailures.map((failure) => ({
+        import_rejection_id: uuidV7(), import_run_id: runId, tenant_id: mapping.tenant_id,
+        app_id: mapping.app_id, source_id: mapping.source_id, row_ordinal: failure.ordinal,
+        reason_code: failure.reason, field_names: failure.fields, occurred_at: now,
+      })), `INSERT INTO control.import_row_rejections (
+        import_rejection_id,import_run_id,tenant_id,app_id,source_id,row_ordinal,reason_code,field_names,occurred_at)
+        SELECT import_rejection_id,import_run_id,tenant_id,app_id,source_id,row_ordinal,reason_code,field_names,occurred_at
+        FROM jsonb_populate_recordset(NULL::control.import_row_rejections,$1::jsonb)`);
     });
     console.log(`Import ${basename(options.filePath)}: rows=${loaded.rows.length} accepted=${acceptedRows.length} rejected=${allFailures.length}`);
     return {
@@ -235,16 +246,23 @@ function argument(name: string): string | undefined {
   return process.argv.slice(2).find((value) => value.startsWith(prefix))?.slice(prefix.length);
 }
 
+export function mappingsForLint(mappingPath: string, explicitDirectory?: string): ImportMapping[] {
+  if (!explicitDirectory) return [loadMapping(mappingPath)];
+  const directory = resolve(explicitDirectory);
+  return readdirSync(directory, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+    .map((entry) => loadMapping(join(directory, entry.name)));
+}
+
 if (process.argv[1] && resolve(process.argv[1]) === resolve(import.meta.filename)) {
   const source = argument("source");
   const file = argument("file");
+  const lintDirectory = argument("lint-directory");
   if (!source || !file) throw new Error("usage: npm run import -- --source=<mapping-name-or-path> --file=<path>");
   const mappingPath = source.endsWith(".json") && (source.includes("/") || source.includes("\\"))
     ? resolve(source)
     : join(resolve(process.env.OPENMASU_MAPPINGS_DIR ?? "examples/mappings"), source.endsWith(".json") ? source : `${source}.json`);
-  const mappings = readdirSync(dirname(mappingPath), { withFileTypes: true })
-    .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
-    .map((entry) => loadMapping(join(dirname(mappingPath), entry.name)));
+  const mappings = mappingsForLint(mappingPath, lintDirectory);
   for (const warning of lintMappings(mappings)) console.warn(JSON.stringify({ level: "warning", ...warning }));
   const pool = createAppPool();
   try {

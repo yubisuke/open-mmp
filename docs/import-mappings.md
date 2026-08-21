@@ -21,6 +21,8 @@ An array means logical AND. Every clause must match for the row to be mapped:
 
 See `examples/mappings/synthetic-and-filter-click.json`.
 
+The import CLI lints only the mapping selected by `--source`; unrelated JSON files beside it are never loaded. To lint a deliberately curated directory of sibling mappings for producer-wide event-ID overlap, add `--lint-directory=<directory>`.
+
 ## Conditional source columns
 
 `fallback_column` is read only when the primary `source` is absent, null, or an empty string. It is intentionally one level deep; chained conditional programs are outside this DSL.
@@ -30,6 +32,16 @@ See `examples/mappings/synthetic-and-filter-click.json`.
 ```
 
 See `examples/mappings/synthetic-fallback-install.json`.
+
+## Optional empty columns
+
+`omit_if_empty: true` removes an optional target when its evaluated source is an empty string, `null`, or absent. This permits one mapping to accept mixed rows such as attributed and organic exports without emitting contract-invalid empty strings. Mapping load rejects this option on fields that the selected event schema requires.
+
+```json
+{ "source": "network", "omit_if_empty": true }
+```
+
+See `examples/mappings/synthetic-optional-columns-click.json`.
 
 ## Integer money
 
@@ -51,7 +63,7 @@ A decimal input must be a non-negative base-10 string without exponent notation.
 
 For example, `1.23` at scale 6 becomes `amount_unscaled=1230000` and `amount_scale=6`. See `examples/mappings/synthetic-decimal-cost.json`.
 
-The operator entry points are `npm run import:cost -- --file=<csv> --mapping=<json>` and `npm run metrics:run -- --date=<YYYY-MM-DD> --definitions=<json>`. The definitions document supplies tenant/app scope, one fixed FX policy, and one or more metric-name/grouping requests; the CLI supplies the cohort date and next-day UTC watermark. Both commands use the same persistence and cohort-engine functions as the integration tests.
+The operator entry points are `npm run import:cost -- --file=<csv> --mapping=<json>` and `npm run metrics:run -- --date=<YYYY-MM-DD> --definitions=<json> [--watermark=<ISO8601>]`. The definitions document supplies tenant/app scope, one fixed FX policy, and one or more metric-name/grouping requests. `--date` supplies a default `cohort_date` only when an evaluation does not declare one. The watermark defaults to the following UTC midnight; an explicit canonical UTC watermark permits late-imported historical cohorts to be backfilled. Both commands use the same persistence and cohort-engine functions as the integration tests.
 
 ## Producer-wide event IDs
 

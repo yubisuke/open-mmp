@@ -6,6 +6,7 @@ import { describe, it } from "node:test";
 import { lintMappings, loadMapping, mapRow, rowMatches } from "./mapping.js";
 import { readRows } from "./source.js";
 import { normalizeGoogleAds, normalizeMaxBackfill, normalizeMetaInsights } from "./adapters.js";
+import { mappingsForLint } from "./runner.js";
 
 describe("runtime import mapping", () => {
   it("applies nested objects, booleans, maps, uppercase, and timestamps", () => {
@@ -112,6 +113,62 @@ describe("runtime import mapping", () => {
     assert.throws(() => mapRow(mapping, { ...base, cost_decimal: "not-a-number" }), /non-negative base-10 decimal string/);
     assert.throws(() => mapRow(mapping, { ...base, cost_decimal: "-1.23" }), /non-negative base-10 decimal string/);
     assert.throws(() => mapRow(mapping, { ...base, cost_decimal: 1.23 }), /non-negative base-10 decimal string/);
+  });
+
+  it("WO16 omits optional empty values while preserving populated values", () => {
+    const mapping = loadMapping("examples/mappings/synthetic-optional-columns-click.json");
+    const base = {
+      event_id: "synthetic-optional-event", occurred_at: "2026-08-21T00:00:00",
+      click_id: "synthetic-optional-click",
+    };
+    assert.equal(Object.hasOwn(mapRow(mapping, { ...base, network: "" }).payload, "network"), false);
+    assert.equal(mapRow(mapping, { ...base, network: "synthetic-network" }).payload.network, "synthetic-network");
+  });
+
+  it("WO16 rejects omit_if_empty on a required event field at mapping load", () => {
+    const directory = mkdtempSync(join(tmpdir(), "openmasu-required-omit-"));
+    try {
+      const source = JSON.parse(requireText("examples/mappings/synthetic-optional-columns-click.json"));
+      source.rules[3].expression.object.campaign_id = { source: "campaign_id", omit_if_empty: true };
+      const file = join(directory, "mapping.json");
+      writeFileSync(file, JSON.stringify(source));
+      assert.throws(() => loadMapping(file), /omit_if_empty cannot target a required field/);
+    } finally { rmSync(directory, { recursive: true, force: true }); }
+  });
+
+  it("WO16 rejects omit_if_empty on a required manual-cost field", () => {
+    const directory = mkdtempSync(join(tmpdir(), "openmasu-required-cost-omit-"));
+    try {
+      const source = JSON.parse(requireText("examples/mappings/synthetic-manual-cost.json"));
+      source.rules.find((rule: { target: string }) => rule.target === "network").expression.omit_if_empty = true;
+      const file = join(directory, "mapping.json");
+      writeFileSync(file, JSON.stringify(source));
+      assert.throws(() => loadMapping(file), /omit_if_empty cannot target a required field/);
+    } finally { rmSync(directory, { recursive: true, force: true }); }
+  });
+
+  it("WO16 accepts a one-clause row_filter array", () => {
+    const directory = mkdtempSync(join(tmpdir(), "openmasu-one-filter-"));
+    try {
+      const source = JSON.parse(requireText("examples/mappings/synthetic-and-filter-click.json"));
+      source.row_filter = [source.row_filter[0]];
+      const file = join(directory, "mapping.json");
+      writeFileSync(file, JSON.stringify(source));
+      const mapping = loadMapping(file);
+      assert.equal(rowMatches(mapping, { event_type: "click" }), true);
+      assert.equal(rowMatches(mapping, { event_type: "install" }), false);
+    } finally { rmSync(directory, { recursive: true, force: true }); }
+  });
+
+  it("WO16 lints only the selected mapping unless a directory is explicit", () => {
+    const directory = mkdtempSync(join(tmpdir(), "openmasu-lint-scope-"));
+    try {
+      const mappingPath = join(directory, "mapping.json");
+      writeFileSync(mappingPath, requireText("examples/mappings/synthetic-provider-click.json"));
+      writeFileSync(join(directory, "unrelated.json"), JSON.stringify({ unrelated: true }));
+      assert.equal(mappingsForLint(mappingPath).length, 1);
+      assert.throws(() => mappingsForLint(mappingPath, directory), /mapping schema validation failed/);
+    } finally { rmSync(directory, { recursive: true, force: true }); }
   });
 });
 

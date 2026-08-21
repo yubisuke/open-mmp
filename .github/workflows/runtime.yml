@@ -70,6 +70,8 @@ jobs:
         run: npm run verify:consistency
       - name: Run reduced synthetic metric performance floor
         run: OPENMASU_BENCHMARK_ROWS=100000 npm run benchmark:metric-floor
+      - name: Import 100,000 synthetic MMP rows within the pilot floor
+        run: OPENMASU_IMPORT_BENCHMARK_ROWS=100000 OPENMASU_IMPORT_BENCHMARK_MAX_SECONDS=300 npm run benchmark:import
       - name: Check threat-model coverage
         run: npm run check:threat-model
       - name: Compose first-run smoke
@@ -86,6 +88,12 @@ jobs:
           export OPENMASU_MAX_RATE_BURST=12000
           docker compose up -d --wait
           docker compose --env-file /dev/null --profile seed run --rm seed
+          worker_id=$(docker compose --env-file /dev/null ps -q worker)
+          test -n "$worker_id"
+          sleep 12
+          test "$(docker inspect --format '{{.State.Status}}' "$worker_id")" = running
+          test "$(docker inspect --format '{{.RestartCount}}' "$worker_id")" = 0
+          docker compose --env-file /dev/null logs --no-color worker
           docker compose --env-file /dev/null exec -T api sh -c 'set -a && . /run/openmasu/app/runtime.env && set +a && OPENMASU_API_HOST_PORT=8080 node --import tsx tools/runtime-smoke.ts'
       - name: Measure synthetic ingestion and MAX postback load
         run: |
