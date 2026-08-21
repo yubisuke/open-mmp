@@ -295,7 +295,7 @@ async function eventCountValue(
                 AND NOT EXISTS (
                   SELECT 1 FROM ledger.attribution_results AS newer
                   WHERE newer.tenant_id=excluded.tenant_id AND newer.app_id=excluded.app_id
-                    AND newer.supersedes_attribution_id=excluded.attribution_id
+                    AND newer.artifact->>'supersedes_attribution_id'=excluded.attribution_id
                     AND newer.decided_at <= $3
                 )))`,
     [

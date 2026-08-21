@@ -165,6 +165,13 @@ describe("M2a signed SDK ingestion", () => {
   });
 
   it("F-A-14 rejects parsed integrity claims and protects accepted raw tokens", async () => {
+    const integrityInstallationId = `installation:m2a-integrity-${run}`;
+    const enrollment = await signed("/v1/installations", { installation_id: integrityInstallationId });
+    assert.equal(enrollment.status, 201);
+    const integrityCredential = await enrollment.json() as {
+      installation_key_id: string;
+      installation_secret: string;
+    };
     const parsedClaim = sourceEvent(`event:integrity-claim:${run}`, "install", {
       installation_id: installationId,
       install_type: "first_install",
@@ -180,7 +187,7 @@ describe("M2a signed SDK ingestion", () => {
 
     const rawToken = `synthetic-integrity-token-${run}`;
     const accepted = sourceEvent(`event:integrity-token:${run}`, "install", {
-      installation_id: installationId,
+      installation_id: integrityInstallationId,
       install_type: "first_install",
       referrer_status: "unavailable",
       extensions: {
@@ -191,8 +198,8 @@ describe("M2a signed SDK ingestion", () => {
       },
     });
     assert.equal((await signed("/v1/events/batch", { records: [accepted] }, {
-      secret: installationSecret,
-      installationKeyId,
+      secret: integrityCredential.installation_secret,
+      installationKeyId: integrityCredential.installation_key_id,
     })).status, 202);
     await processSdkInbox(pool, payloadStore, tenantId);
     const evidence = await withTenant(pool, tenantId, async (client) => ({

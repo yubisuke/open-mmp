@@ -113,11 +113,12 @@ export async function queueIntegrityVerification(pool: Pool, input: PendingInteg
       verification_id, tenant_id, app_id, provider, token_ref, subject_record_id,
       attempts, next_attempt_at, challenge_digest
     )
-    SELECT $1,$2,$3,$4,$5,$6,0,$7,$8
+    SELECT $1::uuid,$2::control.identifier,$3::control.identifier,$4::text,$5::text,
+      $6::control.identifier,0,$7::timestamptz,$8::text
     WHERE NOT EXISTS (
       SELECT 1 FROM ledger.integrity_verification_results result
-      WHERE result.tenant_id=$2 AND result.app_id=$3 AND result.provider=$4
-        AND result.binding_digest=$8
+      WHERE result.tenant_id=$2::control.identifier AND result.app_id=$3::control.identifier
+        AND result.provider=$4::text AND result.binding_digest=$8::text
     )
     ON CONFLICT (tenant_id, app_id, provider, challenge_digest) DO NOTHING`,
     [verificationId, input.tenantId, input.appId, input.provider, input.tokenRef,
