@@ -268,6 +268,7 @@ export type OpenMasuFraudDecisionV04 = {
     | "bot_prefetch"
     | "replay_suspected"
     | "click_injection_suspected"
+    | "ctit_clock_anomaly"
     | "click_flooding_suspected"
     | "referrer_time_inconsistent"
     | "device_integrity_failed";

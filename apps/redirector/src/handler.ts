@@ -1,6 +1,7 @@
 import type { IncomingMessage, RequestListener, ServerResponse } from "node:http";
 import type { Pool } from "pg";
 import {
+  classifyClientClass,
   fallbackResponse,
   prefetchEvidence,
   resolveRedirect,
@@ -77,7 +78,7 @@ async function persistClick(dependencies: RedirectorDependencies, result: Redire
       ...(click.remote_click_ref ? { remote_click_ref: click.remote_click_ref } : {}),
       ...(click.source_rate_class ? { source_rate_class: click.source_rate_class } : {}),
       ...(click.client_class ? { client_class: click.client_class } : {}),
-      ...(result.prefetch ? { bot_prefetch: true } : {}),
+      ...(result.prefetch || result.click?.bot_prefetch ? { bot_prefetch: true } : {}),
     },
   };
   await appendDurableBatch(dependencies.pool, dependencies.payloadStore, {
@@ -110,6 +111,9 @@ export function createRedirectorHandler(dependencies: RedirectorDependencies): R
       const remoteClickRef = target.searchParams.get(dependencies.remoteClickParameter ?? "cid") ?? undefined;
       if (remoteClickRef && !/^[A-Za-z0-9._~-]{1,128}$/.test(remoteClickRef)) return send(response, fallback);
       const sourceRateClass = dependencies.limiter.classify?.(remoteAddress) ?? "normal";
+      const clientClass = dependencies.clientClassEnabled === false
+        ? undefined
+        : classifyClientClass(String(request.headers["user-agent"] ?? ""));
       const purpose = `${request.headers.purpose ?? ""} ${request.headers["sec-purpose"] ?? ""}`;
       if (/prefetch/i.test(purpose)) {
         const result = prefetchEvidence({
@@ -118,6 +122,7 @@ export function createRedirectorHandler(dependencies: RedirectorDependencies): R
           now: (dependencies.clock ?? (() => new Date()))().toISOString(),
           ...(remoteClickRef ? { remoteClickRef } : {}),
           sourceRateClass,
+          ...(clientClass ? { clientClass } : {}),
         });
         await persistClick(dependencies, result);
         return send(response, result);
@@ -126,10 +131,6 @@ export function createRedirectorHandler(dependencies: RedirectorDependencies): R
         return send(response, fallback);
       }
       try {
-        const userAgent = String(request.headers["user-agent"] ?? "");
-        const clientClass = dependencies.clientClassEnabled === false
-          ? undefined
-          : /Android|iPhone|iPad/i.test(userAgent) ? "mobile_app_eligible" : "other";
         const result = resolveRedirect({
           link,
           fallbackDestination: dependencies.fallbackUrl,

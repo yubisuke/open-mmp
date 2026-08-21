@@ -101,5 +101,6 @@ The active v0.4 schema identifiers and artifact `contract_version` values remain
 | `0.4.3` | Optional `fraud_policy` on metric definitions and runs | 50 |
 | `0.4.4` | Explicit Play referrer click-time availability | 51 |
 | `0.4.5` | Server-assigned `source_rate_class` and `client_class` click evidence | 52 |
+| `0.4.6` | Registered fraud-bundle definition binding and the non-fraud `ctit_clock_anomaly` day guard | 53 |
 
-Fixtures 48 through 52 add 65 reviewed golden files. Fixtures 01 through 47 and their 611 golden artifacts are byte-identical to the v0.4.0 baseline.
+Fixture 53 adds 13 reviewed golden files. The bundle-binding correction changes only `expected_fraud_decisions.json` in fixtures 19, 25, 41, 48, 49, 50, and 51: their rule-bundle ID/version/hash now name the same non-zero composite definition. No raw, delivery, logical-event, rejection, attribution, metric, cost, privacy, correction, or reconciliation golden in an existing fixture changes. Fixtures 48 through 53 add 78 reviewed golden files; fixtures 01 through 47 and their 611 golden artifacts otherwise remain byte-identical to the v0.4.0 baseline.

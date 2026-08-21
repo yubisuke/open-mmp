@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   assertAllowedDestination,
+  classifyClientClass,
   decodeInstallReferrer,
   encodeInstallReferrer,
   fallbackResponse,
@@ -96,5 +97,38 @@ describe("redirector core", () => {
       source_rate_class: "elevated",
       client_class: "bot",
     });
+  });
+
+  it("F-A-17 classifies normal and prefetch clicks using only the public bounded classes", () => {
+    assert.equal(classifyClientClass("Synthetic Android Client"), "mobile_app_eligible");
+    assert.equal(classifyClientClass("Synthetic Preview Fetcher"), "bot");
+    assert.equal(classifyClientClass("Synthetic Desktop Client"), "other");
+    const result = prefetchEvidence({
+      link: activeLink,
+      fallbackDestination: "https://safe.example/",
+      now: "2026-08-21T00:00:00.000Z",
+      clientClass: classifyClientClass("Synthetic Preview Fetcher"),
+    });
+    assert.equal(result.prefetch?.client_class, "bot");
+    assert.equal(JSON.stringify(result).includes("Synthetic Preview Fetcher"), false);
+
+    const normal = resolveRedirect({
+      link: activeLink,
+      fallbackDestination: "https://safe.example/",
+      now: "2026-08-21T00:00:00.000Z",
+      clickId: "AbCdEf0123456789_-bounded",
+      clientClass: classifyClientClass("Synthetic Preview Fetcher"),
+    });
+    assert.equal(normal.click?.client_class, "bot");
+    assert.equal(normal.click?.bot_prefetch, true);
+    assert.equal(JSON.stringify(normal).includes("Synthetic Preview Fetcher"), false);
+
+    const disabled = resolveRedirect({
+      link: activeLink,
+      fallbackDestination: "https://safe.example/",
+      now: "2026-08-21T00:00:00.000Z",
+      clickId: "AbCdEf0123456789_-disabled",
+    });
+    assert.equal(disabled.click?.client_class, undefined);
   });
 });

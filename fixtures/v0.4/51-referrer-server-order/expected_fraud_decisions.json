@@ -10,13 +10,13 @@
       {
         "type": "server_clock_order",
         "captured_at": "2026-08-21T03:00:10.000Z",
-        "digest": "2e791838a979ae89be9b46a50cbe3aa4e1237c5ff8ec14eab434ae14925bddfc",
+        "digest": "53d359b85c41225454c1253cb304ebd5ce23386f6de759e11b0c2934c4e8e820",
         "access_class": "protected"
       }
     ],
     "rule_bundle_id": "fraud-conservative",
     "rule_bundle_version": "1.0.0",
-    "rule_bundle_hash": "2f121ebedc3a6457ec35343df9de8c3fff5fb6dc27f698df6daf173a139f3262",
+    "rule_bundle_hash": "dfc447604f961bc549af4e28985d8f4e5427bd8f56c26b208d35ccab9a04a1ed",
     "rule_id": "referrer-server-order-v1",
     "evaluated_at": "2026-08-21T03:00:10.000Z"
   }

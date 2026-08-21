@@ -1,7 +1,14 @@
 import { readFile } from "node:fs/promises";
 import type { Pool, PoolClient } from "pg";
-import { evaluateSourceDay, fraudBundleHash, sha256Jcs, type FraudBundle } from "@openmasu/fraud-rules";
+import {
+  evaluateSourceDayWithBundle,
+  fraudBundleHash,
+  fraudNumberParameter,
+  sha256Jcs,
+  type FraudBundle,
+} from "@openmasu/fraud-rules";
 import { uuidV7, withTenant } from "@openmasu/runtime";
+import { resolveActiveFraudBundleWithClient } from "./fraud-bundle-runtime.js";
 
 type SourceAggregate = {
   metric_date: string;
@@ -62,13 +69,13 @@ async function persistSourceDecision(
   bundle: FraudBundle,
   now: string,
 ): Promise<void> {
-  const hit = evaluateSourceDay({
+  const hit = evaluateSourceDayWithBundle({
     clicks: Number(row.clicks),
     installs: Number(row.installs),
     medianCvr: Number(row.median_cvr),
     ...(row.ctit_p50_ms === null ? {} : { ctitP50Ms: Number(row.ctit_p50_ms) }),
     ...(row.ctit_p95_ms === null ? {} : { ctitP95Ms: Number(row.ctit_p95_ms) }),
-  });
+  }, bundle);
   if (!hit) return;
   const subject = sourceRef(tenantId, appId, row);
   const evidenceDigest = sha256Jcs({ subject, row });
@@ -98,11 +105,68 @@ async function persistSourceDecision(
   );
 }
 
+async function markClockAnomalyAttributionsProvisional(
+  client: PoolClient,
+  tenantId: string,
+  appId: string,
+  metricDate: string,
+  negativeCount: number,
+  installCount: number,
+  bundle: FraudBundle,
+  now: string,
+): Promise<number> {
+  if (installCount === 0) return 0;
+  const negativeRate = negativeCount / installCount;
+  const threshold = fraudNumberParameter(bundle, "ctit_negative_rate_threshold", 0.05);
+  if (negativeRate <= threshold) return 0;
+  const current = await client.query<{ artifact: Record<string, unknown> }>(
+    `SELECT attribution.artifact
+       FROM ledger.attribution_results attribution
+       JOIN ledger.install_facts install
+         ON install.tenant_id=attribution.tenant_id AND install.app_id=attribution.app_id
+        AND install.installation_id=attribution.subject_ref
+       JOIN ledger.click_facts click
+         ON click.tenant_id=install.tenant_id AND click.app_id=install.app_id AND click.click_id=install.click_id
+      WHERE attribution.tenant_id=$1 AND attribution.app_id=$2
+        AND attribution.reason_code='valid_install_referrer'
+        AND timezone('UTC',control.canonical_timestamp_value(click.redirector_click_at))::date=$3::date
+        AND NOT EXISTS (
+          SELECT 1 FROM ledger.attribution_results successor
+           WHERE successor.tenant_id=attribution.tenant_id AND successor.app_id=attribution.app_id
+             AND successor.artifact->>'supersedes_attribution_id'=attribution.attribution_id
+        )
+      ORDER BY attribution.attribution_id`,
+    [tenantId, appId, metricDate],
+  );
+  for (const source of current.rows) {
+    const prior = source.artifact as Record<string, any>;
+    const priorId = String(prior.attribution_id);
+    const replacement: Record<string, any> = {
+      ...prior,
+      attribution_id: `attribution:ctit-provisional:${sha256Jcs([priorId, metricDate]).slice(0, 32)}`,
+      decided_at: now,
+      input_cutoff_at: now,
+      finality: "provisional",
+      supersedes_attribution_id: priorId,
+    };
+    await client.query(
+      `INSERT INTO ledger.attribution_results (
+        attribution_id,tenant_id,app_id,subject_scope,subject_ref,effective_at,
+        decided_at,status,method,model,reason_code,artifact
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb)
+      ON CONFLICT (attribution_id) DO NOTHING`,
+      [replacement.attribution_id, tenantId, appId, replacement.subject_scope, replacement.subject_ref,
+        replacement.effective_at, replacement.decided_at, replacement.status, replacement.method,
+        replacement.model, replacement.reason_code, JSON.stringify(replacement)],
+    );
+  }
+  return current.rowCount ?? 0;
+}
+
 export async function aggregateSourceDay(
   pool: Pool,
   tenantId: string,
   metricDate: string,
-  bundle: FraudBundle,
   now = new Date().toISOString(),
 ): Promise<number> {
   return withTenant(pool, tenantId, async (client) => {
@@ -112,6 +176,7 @@ export async function aggregateSourceDay(
     );
     let written = 0;
     for (const { app_id: appId } of apps.rows) {
+      const activeRevision = await resolveActiveFraudBundleWithClient(client, tenantId, appId);
       const result = await client.query<SourceAggregate>(
         `WITH source AS (
            SELECT $3::date::text AS metric_date,
@@ -148,8 +213,22 @@ export async function aggregateSourceDay(
       );
       for (const row of result.rows) {
         await persistAggregate(client, tenantId, appId, row, now);
-        await persistSourceDecision(client, tenantId, appId, row, bundle, now);
+        if (activeRevision) {
+          await persistSourceDecision(client, tenantId, appId, row, activeRevision.definition, now);
+        }
         written += 1;
+      }
+      if (activeRevision) {
+        await markClockAnomalyAttributionsProvisional(
+          client,
+          tenantId,
+          appId,
+          metricDate,
+          result.rows.reduce((sum, row) => sum + Number(row.ctit_negative_count), 0),
+          result.rows.reduce((sum, row) => sum + Number(row.installs), 0),
+          activeRevision.definition,
+          now,
+        );
       }
     }
     return written;

@@ -560,8 +560,8 @@ if (!summaryOnly) {
         }
       });
     }
-    it("contains 52 fixture directories", () => {
-      check(fixtureDirs.length === 52, `expected 52 fixture directories, found ${fixtureDirs.length}`);
+    it("contains 53 fixture directories", () => {
+      check(fixtureDirs.length === 53, `expected 53 fixture directories, found ${fixtureDirs.length}`);
     });
   });
 
@@ -917,12 +917,20 @@ const scenarios: Array<[string, () => void]> = [
     check(input.source_rate_class === "saturated" && input.client_class === "mobile_app_eligible", "scenario 52 bounded classes");
     check(input.remote_click_ref === "synthetic-remote-52" && !JSON.stringify(input).match(/user-agent|ip_address/i), "scenario 52 no raw edge signal");
   }],
+  ["53 negative CTIT clock guard", () => {
+    const value = fixture("53-negative-ctit-clock-anomaly").output;
+    const diagnostic = value.fraud_decisions.find((item: Any) => item.reason_code === "ctit_clock_anomaly");
+    check(diagnostic?.decision === "clear" && diagnostic.action === "allow", "scenario 53 negative CTIT diagnostic");
+    check(!value.fraud_decisions.some((item: Any) => item.reason_code === "click_injection_suspected"), "scenario 53 negative CTIT is not injection");
+    const provisional = value.attributions.find((item: Any) => item.subject_ref === "installation:valid-53" && item.finality === "provisional");
+    check(provisional?.supersedes_attribution_id === "attr:install-valid-53", "scenario 53 day-wide provisional attribution");
+  }],
 ];
 if (!summaryOnly) {
   describe("reviewed scenarios", () => {
     for (const [name, assertion] of scenarios) it(name, assertion);
-    it("contains 52 scenario assertions", () => {
-      check(scenarios.length === 52, "scenario assertion inventory must contain 52 entries");
+    it("contains 53 scenario assertions", () => {
+      check(scenarios.length === 53, "scenario assertion inventory must contain 53 entries");
     });
   });
 
@@ -1483,7 +1491,7 @@ const acceptance: Array<[string, () => void]> = [
     check(corrections.some((item: Any) => item.correction_type === "retraction"), "AC15 retraction");
     check(fixture("17-redaction-recalculation").output.metric_runs.some((item: Any) => item.supersedes_metric_run_id), "AC15 redaction");
   }],
-  ["AC16 clock referrer prefetch and withdrawal fixtures pass", () => check(scenarios.length === 52 && fixture("11-clock-skew").output.deliveries.some((item: Any) => item.clock_skew_suspected) && fixture("13-referrer-unsupported").output.attributions.length === 2 && fixture("19-bot-prefetch").output.fraud_decisions.length === 1 && fixture("41-click-injection-suspected").output.fraud_decisions.length === 1 && fixture("20-timestamp-invalid").output.rejections.some((item: Any) => item.reason_code === "timestamp_invalid"), "AC16")],
+  ["AC16 clock referrer prefetch and withdrawal fixtures pass", () => check(scenarios.length === 53 && fixture("11-clock-skew").output.deliveries.some((item: Any) => item.clock_skew_suspected) && fixture("13-referrer-unsupported").output.attributions.length === 2 && fixture("19-bot-prefetch").output.fraud_decisions.length === 1 && fixture("41-click-injection-suspected").output.fraud_decisions.length === 1 && fixture("53-negative-ctit-clock-anomaly").output.fraud_decisions.some((item: Any) => item.reason_code === "ctit_clock_anomaly") && fixture("20-timestamp-invalid").output.rejections.some((item: Any) => item.reason_code === "timestamp_invalid"), "AC16")],
   ["AC17 server-recognized withdrawal rejects and redacts payload", () => {
     for (const name of ["14-withdrawal-after-occurrence", "15-event-after-withdrawal"]) {
       const value = fixture(name).output;
@@ -1523,7 +1531,7 @@ const acceptance: Array<[string, () => void]> = [
     for (const forbidden of ["threshold", "model_weight", "watchlist", "ip_address", "user_agent", "response_timing"]) check(!schemaText.includes(forbidden), `AC20 ${forbidden}`);
     check(specText.includes("remain private"), "AC20 private boundary");
   }],
-  ["AC21 one command validates every schema registry fixture and golden", () => check(schemaPaths.length === 27 && Object.keys(registries).length === 8 && fixtureDirs.length === 52 && outputArtifactCount === 52 * 13, "AC21")],
+  ["AC21 one command validates every schema registry fixture and golden", () => check(schemaPaths.length === 27 && Object.keys(registries).length === 8 && fixtureDirs.length === 53 && outputArtifactCount === 53 * 13, "AC21")],
   ["AC22 repeated and independent evaluators produce identical JCS", () => {
     for (const { output, python } of results.values()) check(equal(output, python), "AC22 evaluator mismatch");
     const vector = { numbers: [333333333.33333329, 1e30, 4.50, 2e-3, 1e-27, -0], string: "€$\u000f\nA'B\"\\\"/" };
