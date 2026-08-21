@@ -5,6 +5,7 @@ import { AdServicesLookupLimiter, processAdServicesLookups } from "./adservices-
 import { processMaxInbox } from "./import/max-worker.js";
 import { listRuntimeWorkTenants, processSdkInbox } from "./sdk-worker.js";
 import { aggregateSourceDay, loadFraudBundle, resolveExpiredQuarantines } from "./fraud-worker.js";
+import { processIntegrityVerifications, type IntegrityProvider } from "./integrity-verifier.js";
 
 const connectionString = process.env.OPENMASU_APP_DATABASE_URL;
 if (!connectionString) throw new Error("OPENMASU_APP_DATABASE_URL is required");
@@ -31,6 +32,13 @@ const payloadStore = new EncryptedFilePayloadStore(
 );
 const fraudEnabled = process.env.OPENMASU_FRAUD_ENABLED !== "0";
 const fraudBundle = fraudEnabled ? await loadFraudBundle(process.env.OPENMASU_FRAUD_BUNDLE_PATH) : undefined;
+const integrityProviderMode = (() => {
+  const value = process.env.OPENMASU_INTEGRITY_PROVIDER ?? "off";
+  if (!["off", "play_integrity", "app_attest", "both"].includes(value)) {
+    throw new Error("OPENMASU_INTEGRITY_PROVIDER is invalid");
+  }
+  return value as "off" | IntegrityProvider | "both";
+})();
 async function sweepDashboardSessions(): Promise<void> {
   const now = new Date();
   await withTenant(pool, maxTenantId, async (client) => {
@@ -71,6 +79,11 @@ const tick = async (): Promise<void> => {
         enabled: process.env.OPENMASU_ADSERVICES_LOOKUP !== "off",
         endpoint: process.env.OPENMASU_ADSERVICES_ENDPOINT,
         limiter: adServicesLimiter,
+      });
+      await processIntegrityVerifications(pool, payloadStore, tenantId, {
+        providerMode: integrityProviderMode,
+        playEndpoint: process.env.OPENMASU_PLAY_INTEGRITY_ENDPOINT,
+        appAttestEndpoint: process.env.OPENMASU_APP_ATTEST_ENDPOINT,
       });
       if (fraudBundle) {
         const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);

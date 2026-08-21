@@ -24,6 +24,12 @@ describe("M6 fraud audit report", () => {
     assert.throws(() => parseFraudAuditQuery(new URLSearchParams({
       app_id: "app-local", from: "2026-08-01", to: "2026-09-01", click_id: "forbidden",
     })), /unknown_filter/);
+    assert.equal(parseFraudAuditQuery(new URLSearchParams({
+      app_id: "App.Mixed:1", from: "2026-08-01", to: "2026-09-01",
+    })).appId, "App.Mixed:1");
+    assert.throws(() => parseFraudAuditQuery(new URLSearchParams({
+      app_id: "app-local", from: "2026-02-30", to: "2026-03-02",
+    })), /date_range_invalid/);
   });
 
   it("F-A-20 keeps JSON and CSV row-equivalent without identifying fields", () => {

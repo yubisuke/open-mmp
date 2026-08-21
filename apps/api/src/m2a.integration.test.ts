@@ -16,6 +16,7 @@ import {
   withTenant,
 } from "@openmasu/runtime";
 import { processSdkInbox } from "../../worker/src/sdk-worker.js";
+import { processIntegrityVerifications } from "../../worker/src/integrity-verifier.js";
 import { createRequestHandler } from "./router.js";
 import { KeyedTokenBucket } from "./rate-limit.js";
 import { parseMetricQuery } from "./report-query.js";
@@ -38,6 +39,7 @@ let baseUrl = "";
 let server: ReturnType<typeof createServer>;
 let installationKeyId = "";
 let installationSecret = "";
+const integrityBinding = randomBytes(32).toString("base64url");
 
 function sourceEvent(eventId: string, eventName: string, payload: Record<string, unknown>, occurredAt = "2026-08-19T01:00:00.000Z") {
   return {
@@ -160,6 +162,100 @@ describe("M2a signed SDK ingestion", () => {
     installationSecret = value.installation_secret;
     assert.match(installationKeyId, /^installation-key:/);
     assert.ok(installationSecret.length >= 43);
+  });
+
+  it("F-A-14 rejects parsed integrity claims and protects accepted raw tokens", async () => {
+    const integrityInstallationId = `installation:m2a-integrity-${run}`;
+    const enrollment = await signed("/v1/installations", { installation_id: integrityInstallationId });
+    assert.equal(enrollment.status, 201);
+    const integrityCredential = await enrollment.json() as {
+      installation_key_id: string;
+      installation_secret: string;
+    };
+    const parsedClaim = sourceEvent(`event:integrity-claim:${run}`, "install", {
+      installation_id: installationId,
+      install_type: "first_install",
+      referrer_status: "unavailable",
+      integrity_verdict: { provider: "play_integrity", verdict: "verified", evidence_ref: `protected:${run}` },
+    });
+    const rejected = await signed("/v1/events/batch", { records: [parsedClaim] }, {
+      secret: installationSecret,
+      installationKeyId,
+    });
+    assert.equal(rejected.status, 403);
+    assert.equal((await rejected.json() as { error: string }).error, "device_integrity_claim_forbidden");
+
+    const rawToken = `synthetic-integrity-token-${run}`;
+    const accepted = sourceEvent(`event:integrity-token:${run}`, "install", {
+      installation_id: integrityInstallationId,
+      install_type: "first_install",
+      referrer_status: "unavailable",
+      extensions: {
+        integrity_token_protected: rawToken,
+        integrity_provider: "play_integrity",
+        integrity_binding_mode: "challenge",
+        integrity_binding: integrityBinding,
+      },
+    });
+    assert.equal((await signed("/v1/events/batch", { records: [accepted] }, {
+      secret: integrityCredential.installation_secret,
+      installationKeyId: integrityCredential.installation_key_id,
+    })).status, 202);
+    await processSdkInbox(pool, payloadStore, tenantId);
+    const evidence = await withTenant(pool, tenantId, async (client) => ({
+      queued: (await client.query<{ token_ref: string }>(
+        `SELECT token_ref FROM ephemeral.integrity_verifications
+         WHERE tenant_id=$1 AND app_id=$2 AND subject_record_id IN (
+           SELECT record_id FROM ledger.raw_records WHERE tenant_id=$1 AND app_id=$2 AND event_id=$3
+         )`,
+        [tenantId, appId, accepted.event_id],
+      )).rows,
+      raw: (await client.query<{ artifact: unknown }>(
+        "SELECT artifact FROM ledger.raw_records WHERE tenant_id=$1 AND app_id=$2 AND event_id=$3",
+        [tenantId, appId, accepted.event_id],
+      )).rows,
+    }));
+    assert.equal(evidence.queued.length, 1);
+    assert.match(evidence.queued[0].token_ref, /^encrypted:/);
+    assert.doesNotMatch(JSON.stringify(evidence.raw), new RegExp(rawToken));
+    assert.equal(await payloadStore.scanFor(rawToken), false, "encrypted store leaked a plaintext integrity token");
+  });
+
+  it("F-A-15 maps provider outages to unavailable without evidence or metric effects", async () => {
+    const before = await withTenant(pool, tenantId, async (client) => ({
+      fraud: (await client.query<{ count: number }>(
+        "SELECT count(*)::int AS count FROM ledger.fraud_decisions WHERE tenant_id=$1 AND app_id=$2",
+        [tenantId, appId],
+      )).rows[0].count,
+      metrics: (await client.query<{ count: number }>(
+        "SELECT count(*)::int AS count FROM ledger.metric_runs WHERE tenant_id=$1 AND app_id=$2",
+        [tenantId, appId],
+      )).rows[0].count,
+    }));
+    const result = await processIntegrityVerifications(pool, payloadStore, tenantId, {
+      providerMode: "play_integrity",
+      playEndpoint: "http://127.0.0.1:9999/verify",
+      client: async () => ({ status: 503, body: Buffer.from("synthetic provider outage") }),
+    });
+    assert.ok(result.unavailable >= 1);
+    const after = await withTenant(pool, tenantId, async (client) => ({
+      verdicts: (await client.query<{ verdict: string; evidence_ref: string | null }>(
+        `SELECT verdict, evidence_ref FROM ledger.integrity_verification_results
+         WHERE tenant_id=$1 AND app_id=$2 ORDER BY decided_at DESC`,
+        [tenantId, appId],
+      )).rows,
+      fraud: (await client.query<{ count: number }>(
+        "SELECT count(*)::int AS count FROM ledger.fraud_decisions WHERE tenant_id=$1 AND app_id=$2",
+        [tenantId, appId],
+      )).rows[0].count,
+      metrics: (await client.query<{ count: number }>(
+        "SELECT count(*)::int AS count FROM ledger.metric_runs WHERE tenant_id=$1 AND app_id=$2",
+        [tenantId, appId],
+      )).rows[0].count,
+    }));
+    assert.ok(after.verdicts.some((row) => row.verdict === "unavailable" && row.evidence_ref === null));
+    assert.equal(after.fraud, before.fraud);
+    assert.equal(after.metrics, before.metrics);
   });
 
   it("keeps a committed receipt across a worker process kill and restart", async () => {
