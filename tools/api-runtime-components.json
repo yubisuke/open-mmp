@@ -1,5 +1,6 @@
 [
   "api",
+  "app-association",
   "apple-postback",
   "fraud-rules",
   "json-canonicalize",
