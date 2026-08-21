@@ -10,6 +10,7 @@ import {
 } from "@openmasu/attribution-core";
 import { validateEventPayload } from "@openmasu/contracts";
 import { uuidV7, withTenant } from "@openmasu/runtime";
+import { retryDeadlockOnce } from "./seed-safety.js";
 
 type Any = Record<string, any>;
 export const parityKinds = [
@@ -610,14 +611,26 @@ function scopeForDerived(artifact: Any, baseOutput: Any, input: Any): { tenant_i
 }
 
 async function resetLedger(seedPool: Pool): Promise<void> {
-  const tables = await seedPool.query<{ table_name: string }>(
-    `SELECT table_name FROM information_schema.tables
-     WHERE table_schema = 'ledger' AND table_type = 'BASE TABLE'
-     ORDER BY table_name`,
-  );
-  if (tables.rowCount === 0) throw new Error("ledger schema contains no base tables");
-  const quoted = tables.rows.map(({ table_name }) => `ledger."${table_name.replaceAll('"', '""')}"`);
-  await seedPool.query(`TRUNCATE TABLE ${quoted.join(", ")} CASCADE`);
+  await retryDeadlockOnce(async () => {
+    const client = await seedPool.connect();
+    try {
+      await client.query("BEGIN");
+      const tables = await client.query<{ table_name: string }>(
+        `SELECT table_name FROM information_schema.tables
+         WHERE table_schema = 'ledger' AND table_type = 'BASE TABLE'
+         ORDER BY table_name`,
+      );
+      if (tables.rowCount === 0) throw new Error("ledger schema contains no base tables");
+      const quoted = tables.rows.map(({ table_name }) => `ledger."${table_name.replaceAll('"', '""')}"`);
+      await client.query(`TRUNCATE TABLE ${quoted.join(", ")} CASCADE`);
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  });
 }
 
 async function capture(seedPool: Pool, fixtureName: string, kind: ParityKind, ordinal: number, artifact: Any): Promise<void> {
