@@ -10,6 +10,7 @@ public struct OpenMasuConfiguration: Sendable {
   public let collectionEnabledByDefault: Bool
   public let conversionSchemaVersion: String?
   public let conversionSchemaSha256: String?
+  public let deepLinkHosts: Set<String>
 
   public init(
     endpoint: URL,
@@ -20,7 +21,8 @@ public struct OpenMasuConfiguration: Sendable {
     requestTimeout: TimeInterval = 10,
     collectionEnabledByDefault: Bool = true,
     conversionSchemaVersion: String? = nil,
-    conversionSchemaSha256: String? = nil
+    conversionSchemaSha256: String? = nil,
+    deepLinkHosts: Set<String> = []
   ) {
     precondition(endpoint.scheme == "https" || endpoint.host == "127.0.0.1" || endpoint.host == "localhost")
     precondition((conversionSchemaVersion == nil) == (conversionSchemaSha256 == nil))
@@ -37,7 +39,56 @@ public struct OpenMasuConfiguration: Sendable {
     self.collectionEnabledByDefault = collectionEnabledByDefault
     self.conversionSchemaVersion = conversionSchemaVersion
     self.conversionSchemaSha256 = conversionSchemaSha256
+    self.deepLinkHosts = Set(deepLinkHosts.map { $0.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: ".")) })
   }
+}
+
+public struct OpenMasuDeepLink: Equatable, Sendable {
+  public let value: String?
+  public let parameters: [String: String]
+  public let openSource: String
+  public let destinationStatus: String
+  public let linkSlug: String
+}
+
+enum DeepLinkParser {
+  static func direct(_ url: URL, allowedHosts: Set<String>) -> OpenMasuDeepLink? {
+    guard ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+          let host = url.host?.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: ".")),
+          allowedHosts.contains(host)
+    else { return nil }
+    let parts = url.path.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
+    guard parts.count >= 2, parts[0] == "r",
+          parts[1].range(of: "^[A-Za-z0-9_-]{12,64}$", options: .regularExpression) != nil
+    else { return nil }
+    let destination = Array(parts.dropFirst(2))
+    guard destination.count <= 8, destination.allSatisfy({
+      $0 != "." && $0 != ".." && $0.range(of: "^[A-Za-z0-9._~-]{1,64}$", options: .regularExpression) != nil
+    }) else { return nil }
+    var parameters: [String: String] = [:]
+    for item in (URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []).sorted(by: { $0.name < $1.name }) {
+      guard parameters.count < 10,
+            let match = item.name.range(of: "^dlp_[a-z][a-z0-9_]{0,63}$", options: .regularExpression),
+            match == item.name.startIndex..<item.name.endIndex,
+            let value = item.value, value.count <= 256
+      else { continue }
+      parameters[String(item.name.dropFirst(4))] = value
+    }
+    return OpenMasuDeepLink(
+      value: destination.isEmpty ? nil : "/" + destination.joined(separator: "/"),
+      parameters: parameters,
+      openSource: "ios_universal_link",
+      destinationStatus: destination.isEmpty ? "absent" : "delivered",
+      linkSlug: parts[1]
+    )
+  }
+}
+
+final class DeepLinkRouter: @unchecked Sendable {
+  private let lock = NSLock()
+  private var listener: (@Sendable (OpenMasuDeepLink) -> Void)?
+  func set(_ value: (@Sendable (OpenMasuDeepLink) -> Void)?) { lock.lock(); listener = value; lock.unlock() }
+  func deliver(_ value: OpenMasuDeepLink) { lock.lock(); let target = listener; lock.unlock(); target?(value) }
 }
 
 public struct InstallationCredential: Codable, Equatable, Sendable {
@@ -156,5 +207,18 @@ enum EventFactory {
       return record
     }
     return try JSONSerialization.data(withJSONObject: ["records": records], options: [.sortedKeys, .withoutEscapingSlashes])
+  }
+
+  static func deepLink(installationId: String, value: OpenMasuDeepLink) throws -> String {
+    var payload: [String: Any] = [
+      "event_name": "deep_link_open",
+      "installation_id": installationId,
+      "open_source": value.openSource,
+      "link_slug": value.linkSlug,
+      "destination_status": value.destinationStatus,
+      "deep_link_params": value.parameters,
+    ]
+    if let destination = value.value { payload["deep_link_value"] = destination }
+    return try json(payload)
   }
 }

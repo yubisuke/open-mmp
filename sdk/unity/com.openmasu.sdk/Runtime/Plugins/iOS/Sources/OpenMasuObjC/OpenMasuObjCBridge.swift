@@ -48,7 +48,8 @@ public func openmasuIOSInitialize(
       endpoint: endpointURL,
       sdkKeyId: String(cString: sdkKeyId),
       sdkSecret: String(cString: sdkSecret),
-      wrapperVersion: "unity-0.1.0"
+      wrapperVersion: "unity-0.1.0",
+      deepLinkHosts: Set(Bundle.main.object(forInfoDictionaryKey: "OpenMasuLinkHosts") as? [String] ?? [])
     )
     let sdk = try OpenMasuSDK(
       configuration: configuration,
@@ -62,6 +63,32 @@ public func openmasuIOSInitialize(
   } catch {
     callback(callbackValue, requestId: requestId, value: "error:storage_failed")
   }
+}
+
+@_cdecl("openmasu_ios_handle_deep_link")
+public func openmasuIOSHandleDeepLink(
+  _ urlValue: UnsafePointer<CChar>?,
+  _ requestId: Int64,
+  _ callbackValue: OpenMasuCStringCallback?
+) {
+  guard let sdk = BridgeState.get(), let urlValue,
+        let url = URL(string: String(cString: urlValue)) else {
+    callback(callbackValue, requestId: requestId, value: "error:deep_link_invalid")
+    return
+  }
+  guard let value = sdk.parseDeepLink(url), sdk.handleDeepLink(url) else {
+    callback(callbackValue, requestId: requestId, value: "error:deep_link_unhandled")
+    return
+  }
+  let object: [String: Any] = [
+    "value": value.value as Any,
+    "parameters": value.parameters,
+    "open_source": value.openSource,
+    "destination_status": value.destinationStatus,
+    "link_slug": value.linkSlug,
+  ]
+  let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes])
+  callback(callbackValue, requestId: requestId, value: data.flatMap { String(data: $0, encoding: .utf8) } ?? "error:deep_link_encoding")
 }
 
 @_cdecl("openmasu_ios_track_custom_event")

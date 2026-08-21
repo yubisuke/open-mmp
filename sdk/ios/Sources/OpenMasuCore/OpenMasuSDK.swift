@@ -1,10 +1,11 @@
 import Foundation
 
 public actor OpenMasuSDK {
-  private let configuration: OpenMasuConfiguration
+  private nonisolated let configuration: OpenMasuConfiguration
   private let storage: OpenMasuStorage
   private let transport: any OpenMasuTransport
   private let tokenProvider: any AdServicesTokenProviding
+  private nonisolated let deepLinkRouter = DeepLinkRouter()
 
   public init(
     configuration: OpenMasuConfiguration,
@@ -51,6 +52,29 @@ public actor OpenMasuSDK {
       ])
     )
     try await flush()
+  }
+
+  public nonisolated func setDeepLinkListener(_ listener: (@Sendable (OpenMasuDeepLink) -> Void)?) {
+    deepLinkRouter.set(listener)
+  }
+
+  @discardableResult
+  public nonisolated func handleDeepLink(_ url: URL) -> Bool {
+    guard let value = parseDeepLink(url) else { return false }
+    deepLinkRouter.deliver(value)
+    Task { try? await self.recordDeepLink(value) }
+    return true
+  }
+
+  public nonisolated func parseDeepLink(_ url: URL) -> OpenMasuDeepLink? {
+    DeepLinkParser.direct(url, allowedHosts: configuration.deepLinkHosts)
+  }
+
+  @discardableResult
+  public nonisolated func handleDeepLink(_ userActivity: NSUserActivity) -> Bool {
+    guard userActivity.activityType == NSUserActivityTypeBrowsingWeb,
+          let url = userActivity.webpageURL else { return false }
+    return handleDeepLink(url)
   }
 
   public func trackCustomEvent(_ eventKey: String, attributes: [String: Any] = [:]) async throws {
@@ -234,6 +258,16 @@ public actor OpenMasuSDK {
     let credential = try await transport.enroll(installationId: storage.installationId())
     try storage.setCredential(credential)
     return credential
+  }
+
+  private func recordDeepLink(_ value: OpenMasuDeepLink) async throws {
+    guard try isCollectionEnabled() else { return }
+    try enqueue(
+      eventName: "deep_link_open",
+      purpose: "attribution",
+      payloadJson: EventFactory.deepLink(installationId: storage.installationId(), value: value)
+    )
+    try await flush()
   }
 
   private func enqueue(eventName: String, purpose: String, payloadJson: String, eventId: String? = nil) throws {
