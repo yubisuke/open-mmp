@@ -223,6 +223,17 @@
         },
         "received_at": { "$ref": "common.schema.json#/$defs/dateTime" },
         "policy_digest": { "type": "string", "minLength": 1 },
+        "deep_link_resolution": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status"],
+          "properties": {
+            "status": { "enum": ["active", "inactive", "unknown"] },
+            "tracking_link_id": { "$ref": "common.schema.json#/$defs/id" },
+            "campaign_id": { "$ref": "common.schema.json#/$defs/id" },
+            "install_attribution_click_id": { "$ref": "common.schema.json#/$defs/clickId" }
+          }
+        },
         "processing_purposes": {
           "type": "array",
           "items": {

@@ -16,6 +16,8 @@ export type RouteHandler =
   | "admin_apps_create"
   | "admin_tracking_links_list"
   | "admin_tracking_links"
+  | "admin_link_domain"
+  | "admin_app_link_identity"
   | "admin_privacy"
   | "admin_apple_registration"
   | "admin_conversion_schema"
@@ -60,6 +62,8 @@ export const routes: readonly RouteDefinition[] = [
   { handler: "admin_apps_create", method: "POST", pattern: /^\/v1\/admin\/apps$/, auth: "admin_bearer", mutates: true, capability: "administer" },
   { handler: "admin_tracking_links_list", method: "GET", pattern: /^\/v1\/admin\/tracking-links$/, auth: "admin_bearer", mutates: false, capability: "read" },
   { handler: "admin_tracking_links", method: "POST", pattern: /^\/v1\/admin\/tracking-links$/, auth: "admin_bearer", mutates: true, capability: "operate" },
+  { handler: "admin_link_domain", method: "POST", pattern: /^\/v1\/admin\/link-domain$/, auth: "admin_bearer", mutates: true, capability: "administer" },
+  { handler: "admin_app_link_identity", method: "POST", pattern: /^\/v1\/admin\/apps\/[^/]+\/link-identity$/, auth: "admin_bearer", mutates: true, capability: "administer" },
   { handler: "admin_privacy", method: "POST", pattern: /^\/v1\/admin\/privacy-requests$/, auth: "admin_bearer", mutates: true, capability: "operate" },
   { handler: "admin_apple_registration", method: "POST", pattern: /^\/v1\/admin\/apps\/[^/]+\/apple-registration$/, auth: "admin_bearer", mutates: true, capability: "administer" },
   { handler: "admin_conversion_schema", method: "POST", pattern: /^\/v1\/admin\/apps\/[^/]+\/conversion-schemas$/, auth: "admin_bearer", mutates: true, capability: "administer" },

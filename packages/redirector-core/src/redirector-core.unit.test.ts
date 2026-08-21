@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   assertAllowedDestination,
+  assertDeepLinkValue,
+  bindDeepLinkParameters,
+  buildDeferredReferrer,
   decodeInstallReferrer,
   encodeInstallReferrer,
   fallbackResponse,
@@ -96,5 +99,28 @@ describe("redirector core", () => {
       source_rate_class: "elevated",
       client_class: "bot",
     });
+  });
+
+  it("DL-A-03 accepts only the bounded destination grammar", () => {
+    const accepted = ["/a", "/shop/item/1", `/${"a".repeat(32)}/${"b".repeat(32)}/${"c".repeat(32)}/${"d".repeat(32)}`];
+    const rejected = ["..", "//", "a", "/a//b", "/a/../b", "/a?b", "/a#b", "/%2F", "http://x", "//evil.example", `/${"a".repeat(65)}`, "/a/b/c/d/e/f/g/h/i", `/${"a".repeat(64)}/${"b".repeat(64)}/${"c".repeat(64)}/${"d".repeat(64)}`];
+    for (const value of accepted) assert.equal(assertDeepLinkValue(value), value);
+    for (const value of rejected) assert.throws(() => assertDeepLinkValue(value), /deep_link_value_invalid/);
+  });
+
+  it("DL-A-05 binds only declared safe parameters", () => {
+    const result = bindDeepLinkParameters(new URLSearchParams("dlp_code=abc&dlp_drop=bad&next=https://invalid&dlp_code=last"), ["code"]);
+    assert.deepEqual(result.values, { code: "last" });
+    assert.equal(result.dropped, 2);
+  });
+
+  it("DL-A-11 keeps click entropy and omits an oversized destination", () => {
+    const clickId = "AbCdEf0123456789_-abcd";
+    const carried = buildDeferredReferrer({ clickId, deepLinkValue: "/shop/item/1", deepLinkParams: { code: "abc" }, maximumEncodedCharacters: 512 });
+    assert.deepEqual(decodeInstallReferrer(carried.referrer), { omv: "1", cid: clickId, dl: "/shop/item/1", dlp_code: "abc" });
+    assert.equal(carried.status, "carried");
+    const omitted = buildDeferredReferrer({ clickId, deepLinkValue: `/${"a".repeat(64)}/${"b".repeat(64)}`, maximumEncodedCharacters: 40 });
+    assert.equal(omitted.status, "omitted_length");
+    assert.deepEqual(decodeInstallReferrer(omitted.referrer), { omv: "1", cid: clickId });
   });
 });

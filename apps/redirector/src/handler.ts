@@ -1,6 +1,9 @@
 import type { IncomingMessage, RequestListener, ServerResponse } from "node:http";
 import type { Pool } from "pg";
+import { appleAssociationDocument, assetLinksDocument, associationBytes, type AppLinkIdentity } from "@openmasu/app-association";
 import {
+  bindDeepLinkParameters,
+  assertDeepLinkValue,
   fallbackResponse,
   prefetchEvidence,
   resolveRedirect,
@@ -21,6 +24,9 @@ export type RedirectorDependencies = {
   fallbackUrl: string;
   geoMode: "off" | "country";
   limiter: RedirectRateLimiter;
+  wellKnownLimiter?: RedirectRateLimiter;
+  hostMode?: "host_header" | "fixed_tenant";
+  referrerMaximumEncodedCharacters?: number;
   clientClassEnabled?: boolean;
   remoteClickParameter?: string;
   clock?: () => Date;
@@ -31,13 +37,64 @@ async function loadLink(pool: Pool, tenantId: string, slug: string): Promise<Tra
     const result = await client.query<TrackingLink>(
       `SELECT tracking_link_id, tenant_id, app_id, slug, destination_kind,
               destination_url, play_package_name, network, site_id,
-              campaign_id, ad_group_id, creative_id, status
+              campaign_id, ad_group_id, creative_id, deep_link_value,
+              deep_link_param_names, deferred_deep_link_ttl_seconds, status
        FROM control.tracking_links_current
        WHERE tenant_id=$1 AND slug=$2`,
       [tenantId, slug],
     );
     return result.rows[0];
   });
+}
+
+async function loadAssociation(
+  pool: Pool,
+  tenantId: string,
+  host: string,
+): Promise<{ readonly assetlinks: Buffer; readonly aasa: Buffer } | undefined> {
+  return withTenant(pool, tenantId, async (client) => {
+    const domain = await client.query("SELECT 1 FROM control.link_domains WHERE tenant_id=$1 AND host=$2", [tenantId, host]);
+    if (domain.rowCount !== 1) return undefined;
+    const identities = await client.query<AppLinkIdentity>(
+      `SELECT app_id, android_package_name, android_sha256_fingerprints,
+              apple_team_id, apple_bundle_id
+         FROM control.app_link_identities
+        WHERE tenant_id=$1 ORDER BY app_id`,
+      [tenantId],
+    );
+    return {
+      assetlinks: associationBytes(assetLinksDocument(identities.rows)),
+      aasa: associationBytes(appleAssociationDocument(identities.rows)),
+    };
+  });
+}
+
+async function tenantForRequest(
+  dependencies: RedirectorDependencies,
+  host: string | undefined,
+): Promise<string | undefined> {
+  if ((dependencies.hostMode ?? "fixed_tenant") === "fixed_tenant") return dependencies.tenantId;
+  if (!host) return undefined;
+  const result = await dependencies.pool.query<{ tenant_id: string }>(
+    "SELECT control.resolve_link_host($1) AS tenant_id",
+    [host],
+  );
+  return result.rows[0]?.tenant_id ?? undefined;
+}
+
+function normalizedHost(request: IncomingMessage): string | undefined {
+  const value = String(request.headers.host ?? "").split(":", 1)[0].toLowerCase().replace(/\.$/, "");
+  return /^[a-z0-9.-]{3,253}$/.test(value) ? value : undefined;
+}
+
+function sendAssociation(response: ServerResponse, body: Buffer): void {
+  response.writeHead(200, {
+    "cache-control": "public, max-age=300",
+    "content-type": "application/json",
+    "content-length": String(body.length),
+    "x-content-type-options": "nosniff",
+  });
+  response.end(body);
 }
 
 function send(response: ServerResponse, result: RedirectResolution): void {
@@ -77,6 +134,8 @@ async function persistClick(dependencies: RedirectorDependencies, result: Redire
       ...(click.remote_click_ref ? { remote_click_ref: click.remote_click_ref } : {}),
       ...(click.source_rate_class ? { source_rate_class: click.source_rate_class } : {}),
       ...(click.client_class ? { client_class: click.client_class } : {}),
+      ...(click.deep_link_value ? { deep_link_value: click.deep_link_value } : {}),
+      ...(click.deferred_deep_link_status ? { deferred_deep_link_status: click.deferred_deep_link_status } : {}),
       ...(result.prefetch ? { bot_prefetch: true } : {}),
     },
   };
@@ -95,8 +154,29 @@ export function createRedirectorHandler(dependencies: RedirectorDependencies): R
   return (request: IncomingMessage, response: ServerResponse) => {
     void (async () => {
       const target = new URL(request.url ?? "/", "http://openmasu.local");
-      const match = request.method === "GET" ? /^\/r\/([A-Za-z0-9_-]{12,64})$/.exec(target.pathname) : null;
+      const wellKnown = request.method === "GET" && (target.pathname === "/.well-known/assetlinks.json"
+        || target.pathname === "/.well-known/apple-app-site-association");
+      const host = normalizedHost(request);
+      let tenantId: string | undefined;
+      try { tenantId = await tenantForRequest(dependencies, host); }
+      catch { response.writeHead(404).end(); return; }
+      if (wellKnown) {
+        if (!(dependencies.wellKnownLimiter ?? { allow: () => true }).allow("well-known")) {
+          response.writeHead(429, { "cache-control": "no-store", "retry-after": "1" });
+          response.end();
+          return;
+        }
+        if (!host || !tenantId) { response.writeHead(404).end(); return; }
+        let documents: Awaited<ReturnType<typeof loadAssociation>>;
+        try { documents = await loadAssociation(dependencies.pool, tenantId, host); }
+        catch { response.writeHead(404).end(); return; }
+        if (!documents) { response.writeHead(404).end(); return; }
+        sendAssociation(response, target.pathname.endsWith("assetlinks.json") ? documents.assetlinks : documents.aasa);
+        return;
+      }
+      const match = request.method === "GET" ? /^\/r\/([A-Za-z0-9_-]{12,64})(\/.*)?$/.exec(target.pathname) : null;
       if (!match) return send(response, fallback);
+      if (!tenantId) return send(response, fallback);
       const remoteAddress = request.socket.remoteAddress ?? "unknown";
       if (!dependencies.limiter.allow(remoteAddress)) {
         response.writeHead(429, { "cache-control": "no-store", "retry-after": "1" });
@@ -104,9 +184,14 @@ export function createRedirectorHandler(dependencies: RedirectorDependencies): R
         return;
       }
       let link: TrackingLink | undefined;
-      try { link = await loadLink(dependencies.pool, dependencies.tenantId, match[1]); }
+      try { link = await loadLink(dependencies.pool, tenantId, match[1]); }
       catch { return send(response, fallback); }
       if (!link || link.status !== "active") return send(response, fallback);
+      let directDeepLinkValue: string | undefined;
+      if (match[2]) {
+        try { directDeepLinkValue = assertDeepLinkValue(match[2]); }
+        catch { return send(response, fallback); }
+      }
       const remoteClickRef = target.searchParams.get(dependencies.remoteClickParameter ?? "cid") ?? undefined;
       if (remoteClickRef && !/^[A-Za-z0-9._~-]{1,128}$/.test(remoteClickRef)) return send(response, fallback);
       const sourceRateClass = dependencies.limiter.classify?.(remoteAddress) ?? "normal";
@@ -137,6 +222,9 @@ export function createRedirectorHandler(dependencies: RedirectorDependencies): R
           ...(remoteClickRef ? { remoteClickRef } : {}),
           sourceRateClass,
           ...(clientClass ? { clientClass } : {}),
+          deepLinkParams: bindDeepLinkParameters(target.searchParams, link.deep_link_param_names ?? []).values,
+          referrerMaximumEncodedCharacters: dependencies.referrerMaximumEncodedCharacters ?? 512,
+          ...(directDeepLinkValue ? { deepLinkValue: directDeepLinkValue } : {}),
         });
         await persistClick(dependencies, result);
         send(response, result);

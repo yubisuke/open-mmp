@@ -168,7 +168,7 @@ async function eventCountValue(
   const eventNames = definition.event_names ?? [];
   const eventName = eventNames[0];
   if (eventNames.length !== 1 || ![
-    "click", "install", "skan_postback", "adattributionkit_postback",
+    "click", "install", "deep_link_open", "skan_postback", "adattributionkit_postback",
   ].includes(eventName)) {
     throw new Error("SQL event_count requires exactly one supported event");
   }
@@ -243,17 +243,24 @@ async function eventCountValue(
     );
     return { value_state: "present", value_unscaled: aggregate.rows[0].value_unscaled };
   }
-  if (grouping.attribution_status !== undefined && eventName !== "install") {
-    throw new Error("SQL event_count attribution_status applies only to install");
+  if (grouping.attribution_status !== undefined && !["install", "deep_link_open"].includes(eventName)) {
+    throw new Error("SQL event_count attribution_status applies only to install or deep_link_open");
   }
   const result = await client.query<{ value_unscaled: string }>(
     `WITH event AS (
        SELECT
          install.installation_id,
-         CASE WHEN logical.event_name='click' THEN click.campaign_id ELSE install.campaign_id END AS campaign_id,
-         CASE WHEN logical.event_name='click' THEN click.network ELSE install.network END AS network,
-         CASE WHEN logical.event_name='click' THEN click.country ELSE install.country END AS country,
-         CASE WHEN logical.event_name='install' THEN coalesce(attribution.status, 'unattributed') END AS attribution_status
+         CASE WHEN logical.event_name='click' THEN click.campaign_id
+              WHEN logical.event_name='deep_link_open' THEN deep.campaign_id
+              ELSE install.campaign_id END AS campaign_id,
+         CASE WHEN logical.event_name='click' THEN click.network
+              WHEN logical.event_name='deep_link_open' THEN NULL
+              ELSE install.network END AS network,
+         CASE WHEN logical.event_name='click' THEN click.country
+              WHEN logical.event_name='deep_link_open' THEN NULL
+              ELSE install.country END AS country,
+         CASE WHEN logical.event_name IN ('install','deep_link_open')
+              THEN coalesce(attribution.status, 'unattributed') END AS attribution_status
        FROM ledger.logical_events AS logical
        JOIN ledger.raw_records_current AS raw
          ON raw.tenant_id=logical.tenant_id
@@ -261,17 +268,22 @@ async function eventCountValue(
         AND raw.record_id=logical.record_id
        LEFT JOIN ledger.click_facts AS click ON click.logical_event_id=logical.logical_event_id
        LEFT JOIN ledger.install_facts AS install ON install.logical_event_id=logical.logical_event_id
+       LEFT JOIN ledger.deep_link_open_facts AS deep ON deep.logical_event_id=logical.logical_event_id
        LEFT JOIN LATERAL (
          SELECT candidate.status
          FROM ledger.attribution_results AS candidate
          WHERE candidate.tenant_id=logical.tenant_id
            AND candidate.app_id=logical.app_id
-           AND candidate.subject_scope='installation_level'
-           AND candidate.subject_ref=install.installation_id
+           AND ((logical.event_name='install'
+                 AND candidate.subject_scope='installation_level'
+                 AND candidate.subject_ref=install.installation_id)
+             OR (logical.event_name='deep_link_open'
+                 AND candidate.subject_scope='engagement_level'
+                 AND candidate.subject_ref='engagement:' || raw.record_id))
            AND candidate.decided_at <= $3
          ORDER BY candidate.decided_at DESC, candidate.attribution_id DESC
          LIMIT 1
-       ) AS attribution ON logical.event_name='install'
+       ) AS attribution ON logical.event_name IN ('install','deep_link_open')
        WHERE logical.tenant_id=$1 AND logical.app_id=$2
          AND raw.received_at <= $3
          AND ($4='before' OR raw.payload_lifecycle_status='available')
@@ -712,6 +724,15 @@ function assertMetricDefinitionSeries(definition: Any): void {
       ? ["metric_date", "apple_conversion_bucket"] : ["metric_date"];
     if (definition.definition?.calculation !== "event_count" || definition.definition?.numerator !== "events" ||
         definition.aggregation_time_zone !== "UTC" || eventNames.length !== 1 || eventNames[0] !== expectedEvent ||
+        grouping.length !== expectedGrouping.length || expectedGrouping.some((value) => !grouping.includes(value))) fail();
+    return;
+  }
+  if (["daily_deep_link_opens", "daily_deep_link_opens_by_status"].includes(definition.metric_name)) {
+    const expectedGrouping = definition.metric_name === "daily_deep_link_opens_by_status"
+      ? ["metric_date", "campaign_id", "attribution_status"]
+      : ["metric_date", "campaign_id"];
+    if (definition.definition?.calculation !== "event_count" || definition.definition?.numerator !== "events" ||
+        eventNames.length !== 1 || eventNames[0] !== "deep_link_open" ||
         grouping.length !== expectedGrouping.length || expectedGrouping.some((value) => !grouping.includes(value))) fail();
     return;
   }

@@ -321,7 +321,9 @@ function validateRegistryReferences(output: Any, label: string): void {
     const aggregateMetricNames = new Set([
       "skan_attributed_installs", "skan_conversion_value_distribution", "aak_attributed_installs",
     ]);
-    const expectedVersion = definition.fraud_policy
+    const expectedVersion = ["daily_deep_link_opens", "daily_deep_link_opens_by_status"].includes(definition.metric_name)
+      ? "0.4.6"
+      : definition.fraud_policy
       ? "0.4.3"
       : aggregateMetricNames.has(definition.metric_name)
       ? "0.3.3"
@@ -920,7 +922,12 @@ const scenarios: Array<[string, () => void]> = [
   ["53 deep link open contract", () => {
     const value = fixture("53-deep-link-open-contract");
     check(value.output.logical_events[0]?.event_name === "deep_link_open", "scenario 53 deep-link logical event");
-    check(value.output.attributions.length === 0 && value.output.rejections.length === 0, "scenario 53 additive event-only contract");
+    const reasons = new Set(value.output.attributions.map((item: Any) => item.reason_code));
+    check(["deep_link_open_attributed", "deep_link_unknown_link", "deep_link_link_inactive", "deep_link_install_click_reused"]
+      .every((reason) => reasons.has(reason)) && value.output.rejections.length === 0,
+    "scenario 53 exercises every deep-link attribution reason");
+    check(value.output.metric_runs.length === 2 && value.output.metric_runs.every((run: Any) => run.value_unscaled === "1"),
+      "scenario 53 deep-link metrics");
   }],
 ];
 if (!summaryOnly) {

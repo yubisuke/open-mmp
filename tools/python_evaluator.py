@@ -689,6 +689,52 @@ def aggregate_postback_attribution(
     }
 
 
+def deep_link_attribution(
+    attempt: dict[str, Any],
+    lifecycle: dict[tuple[str, str, str], str],
+) -> dict[str, Any]:
+    server, record = attempt["server"], attempt["record"]
+    resolution = server.get("deep_link_resolution", {"status": "unknown"})
+    reused = (
+        record["payload"]["open_source"] == "android_deferred_referrer"
+        and resolution.get("install_attribution_click_id") == record["payload"].get("click_id")
+    )
+    if reused:
+        status, reason = "unattributed", "deep_link_install_click_reused"
+    elif resolution["status"] == "active":
+        status, reason = "non_organic", "deep_link_open_attributed"
+    elif resolution["status"] == "inactive":
+        status, reason = "unattributed", "deep_link_link_inactive"
+    else:
+        status, reason = "unattributed", "deep_link_unknown_link"
+    return {
+        "attribution_id": f"attr:engagement:{record['record_id']}",
+        "tenant_id": server["tenant_id"],
+        "app_id": server["app_id"],
+        "subject_scope": "engagement_level",
+        "subject_ref": f"engagement:{record['record_id']}",
+        "status": status,
+        "method": "deep_link",
+        "model": "last_click",
+        "reason_code": reason,
+        "reason_code_version": CONTRACT_VERSION,
+        "evidence_refs": [{
+            "tenant_id": server["tenant_id"],
+            "app_id": server["app_id"],
+            "ref": record["record_id"],
+            "lifecycle_status": lifecycle.get(evidence_key(server["tenant_id"], server["app_id"], record["record_id"]), "available"),
+            "access_class": "protected",
+        }],
+        "effective_at": record["occurred_at"],
+        "decided_at": server["received_at"],
+        "input_cutoff_at": server["received_at"],
+        "finality": "final",
+        "rule_bundle_id": "attribution-default",
+        "rule_bundle_version": REFERENCE_RULE_VERSION,
+        "rule_bundle_hash": ZERO_HASH,
+    }
+
+
 def round_half_even(numerator: int, denominator: int) -> int:
     if denominator <= 0:
         raise ValueError("denominator must be positive")
@@ -788,6 +834,18 @@ def validate_metric_definition_series(definition: dict[str, Any]) -> None:
                 or sorted(grouping) != sorted(expected_grouping)):
             fail()
         return
+    if metric_name in {"daily_deep_link_opens", "daily_deep_link_opens_by_status"}:
+        expected_grouping = (
+            ["metric_date", "campaign_id", "attribution_status"]
+            if metric_name == "daily_deep_link_opens_by_status"
+            else ["metric_date", "campaign_id"]
+        )
+        if (definition.get("definition", {}).get("calculation") != "event_count"
+                or definition.get("definition", {}).get("numerator") != "events"
+                or event_names != ["deep_link_open"]
+                or sorted(grouping) != sorted(expected_grouping)):
+            fail()
+        return
     if any(event_name in aggregate_events for event_name in event_names) or "apple_conversion_bucket" in grouping:
         fail()
 
@@ -824,7 +882,7 @@ def matches_grouping(
         return True
     payload = attempt["record"]["payload"]
     context = payload.get("import_context", {})
-    campaign = payload.get("campaign_id", context.get("provider_campaign_ref"))
+    campaign = payload.get("campaign_id", attempt["server"].get("deep_link_resolution", {}).get("campaign_id", context.get("provider_campaign_ref")))
     network = payload.get("network", payload.get("ad_network", context.get("provider_network")))
     if grouping.get("campaign_id") is not None and campaign != grouping["campaign_id"]:
         return False
@@ -834,11 +892,16 @@ def matches_grouping(
         return False
     if grouping.get("cohort_date") is not None and attempt["record"]["event_name"] == "install" and day(attempt["record"]["occurred_at"], "UTC", "occurred_at") != grouping["cohort_date"]:
         return False
-    if grouping.get("attribution_status") is not None and attempt["record"]["event_name"] == "install":
+    if grouping.get("attribution_status") is not None and attempt["record"]["event_name"] in ("install", "deep_link_open"):
+        subject_ref = (
+            attempt["record"]["payload"]["installation_id"]
+            if attempt["record"]["event_name"] == "install"
+            else f"engagement:{attempt['record']['record_id']}"
+        )
         status = attribution_statuses.get((
             attempt["server"]["tenant_id"],
             attempt["server"]["app_id"],
-            attempt["record"]["payload"]["installation_id"],
+            subject_ref,
         ))
         if status != grouping["attribution_status"]:
             return False
@@ -869,7 +932,7 @@ def metric_runs(
     costs = cost_records(value)
     attribution_statuses = {
         (item["tenant_id"], item["app_id"], item["subject_ref"]): item["status"]
-        for item in attributions if item["subject_scope"] == "installation_level"
+        for item in attributions if item["subject_scope"] in ("installation_level", "engagement_level")
     }
     output: list[dict[str, Any]] = []
     for evaluation in value.get("metric_evaluations", []):
@@ -1039,7 +1102,7 @@ def metric_runs(
                 if metric_date is None:
                     raise ValueError(f"event_count requires metric_date grouping: {metric_name}")
                 if len(event_names) != 1 or event_name not in {
-                    "click", "install", "skan_postback", "adattributionkit_postback",
+                    "click", "install", "deep_link_open", "skan_postback", "adattributionkit_postback",
                 }:
                     raise ValueError(f"event_count requires exactly one supported event name: {metric_name}")
                 aggregate_postback = event_name in {"skan_postback", "adattributionkit_postback"}
@@ -1091,8 +1154,8 @@ def metric_runs(
                 else:
                     if evaluation.get("grouping", {}).get("apple_conversion_bucket") is not None:
                         raise ValueError(f"apple_conversion_bucket requires aggregate SKAN events: {metric_name}")
-                    if evaluation.get("grouping", {}).get("attribution_status") is not None and event_name != "install":
-                        raise ValueError(f"attribution_status event_count requires install events: {metric_name}")
+                    if evaluation.get("grouping", {}).get("attribution_status") is not None and event_name not in {"install", "deep_link_open"}:
+                        raise ValueError(f"attribution_status event_count requires install or deep_link_open events: {metric_name}")
                     amount = sum(
                         1 for item in visible
                         if item["record"]["event_name"] in event_names
@@ -1373,6 +1436,10 @@ def evaluate(value: dict[str, Any]) -> dict[str, Any]:
             aggregate_postback_attribution(attempt, lifecycle)
             for attempt in accepted
             if attempt["record"]["event_name"] in ("skan_postback", "adattributionkit_postback")
+        ],
+        *[
+            deep_link_attribution(attempt, lifecycle)
+            for attempt in accepted if attempt["record"]["event_name"] == "deep_link_open"
         ],
     ], attribution_sort_key)
     corrections: list[dict[str, Any]] = list(value.get("correction_inputs", []))

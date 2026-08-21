@@ -521,6 +521,29 @@ describe("M1b SQL metric parity", { concurrency: false }, () => {
     assert.equal(parts, total);
   });
 
+  it("DL-A-23 and DL-A-24 keep engagement attribution and daily deep-link metrics JCS-identical", async () => {
+    const deepFixture = "53-deep-link-open-contract";
+    const deepDirectory = join(process.cwd(), "fixtures", "v0.4", deepFixture);
+    const deepInput: Any = JSON.parse(readFileSync(join(deepDirectory, "input.json"), "utf8"));
+    const deepGolden: Any[] = JSON.parse(readFileSync(join(deepDirectory, "expected_metric_runs.json"), "utf8"));
+    await ingestFixture(deepFixture, deepInput, appPool, seedPool);
+    const expected = evaluate(deepInput).metric_runs;
+    const actual = await computeSqlMetricRuns(appPool, deepInput, false);
+    assert.equal(jcs(expected), jcs(deepGolden));
+    assert.equal(jcs(actual), jcs(expected));
+    assert.deepEqual(actual.map((run) => [run.metric_name, run.value_unscaled]), [
+      ["daily_deep_link_opens", "1"],
+      ["daily_deep_link_opens_by_status", "1"],
+    ]);
+    const reasons = evaluate(deepInput).attributions.map((item: Any) => item.reason_code).sort();
+    assert.deepEqual(reasons, [
+      "deep_link_install_click_reused",
+      "deep_link_link_inactive",
+      "deep_link_open_attributed",
+      "deep_link_unknown_link",
+    ]);
+  });
+
   it("M4 reproduces qualified Apple aggregate counts and receipt-date buckets", async () => {
     const appleFixture = "44-apple-aggregate-metrics";
     const appleDirectory = join(process.cwd(), "fixtures", "v0.4", appleFixture);

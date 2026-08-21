@@ -15,6 +15,7 @@ import {
 } from "@openmasu/runtime";
 import { decodeInstallReferrer } from "@openmasu/redirector-core";
 import { createTrackingLink } from "../../api/src/tracking-links.js";
+import { registerAppLinkIdentity, registerLinkDomain } from "../../api/src/link-domains.js";
 import { createRedirectorHandler } from "./handler.js";
 
 const suffix = randomBytes(6).toString("hex");
@@ -27,6 +28,7 @@ const fallback = "https://safe.example/fallback";
 let baseUrl = "";
 let server: ReturnType<typeof createServer>;
 let slug = "";
+const linkHost = `links-${suffix}.synthetic.example`;
 
 describe("M2a redirector HTTP shell", () => {
   before(async () => {
@@ -44,6 +46,24 @@ describe("M2a redirector HTTP shell", () => {
       },
     });
     slug = link.slug;
+    await registerLinkDomain({
+      pool,
+      identity: { keyId: "synthetic-admin", tenantId, role: "admin" },
+      host: linkHost,
+      now: "2026-08-19T01:59:00.000Z",
+    });
+    const fingerprint = Array.from({ length: 32 }, (_, index) => index.toString(16).padStart(2, "0").toUpperCase()).join(":");
+    await registerAppLinkIdentity({
+      pool,
+      identity: { keyId: "synthetic-admin", tenantId, appId, role: "admin" },
+      body: {
+        android_package_name: `dev.openmasu.synthetic.${suffix}`,
+        android_sha256_fingerprints: [fingerprint],
+        apple_team_id: "ABCDE12345",
+        apple_bundle_id: `dev.openmasu.synthetic.${suffix}`,
+      },
+      now: "2026-08-19T01:59:01.000Z",
+    });
     server = createServer(createRedirectorHandler({
       pool, payloadStore, tenantId, fallbackUrl: fallback, geoMode: "off",
       limiter: { allow: () => true },
@@ -73,6 +93,34 @@ describe("M2a redirector HTTP shell", () => {
     const referrer = location.searchParams.get("referrer")!;
     assert.ok(Buffer.byteLength(referrer, "utf8") < 64);
     assert.match(decodeInstallReferrer(referrer).cid, /^[A-Za-z0-9_-]{22,128}$/);
+  });
+
+  it("DL-A-08 through DL-A-10 resolves tenant hosts and serves byte-stable public association files", async () => {
+    const hosted = createServer(createRedirectorHandler({
+      pool, payloadStore, tenantId: "unused-fixed-tenant", hostMode: "host_header",
+      fallbackUrl: fallback, geoMode: "off", limiter: { allow: () => true },
+      wellKnownLimiter: { allow: () => true },
+    }));
+    hosted.listen(0, "127.0.0.1");
+    await once(hosted, "listening");
+    const hostedBase = `http://127.0.0.1:${(hosted.address() as AddressInfo).port}`;
+    const get = (path: string, host = linkHost) => fetch(`${hostedBase}${path}`, {
+      redirect: "manual", headers: { host, "user-agent": "Synthetic Android" },
+    });
+    const assetlinks = await get("/.well-known/assetlinks.json");
+    const assetBytes = Buffer.from(await assetlinks.arrayBuffer());
+    const dotted = await get("/.well-known/assetlinks.json", `${linkHost}.`);
+    assert.equal(assetlinks.status, 200);
+    assert.equal(assetlinks.headers.get("set-cookie"), null);
+    assert.equal(assetlinks.headers.get("location"), null);
+    assert.deepEqual(Buffer.from(await dotted.arrayBuffer()), assetBytes);
+    assert.equal((JSON.parse(assetBytes.toString("utf8")) as any[])[0].target.namespace, "android_app");
+    const aasa = await get("/.well-known/apple-app-site-association");
+    assert.deepEqual((await aasa.json() as any).applinks.details[0].components, [{ "/": "/r/*" }]);
+    assert.equal((await get("/.well-known/assetlinks.json", "unknown.synthetic.example")).status, 404);
+    assert.equal((await get(`/r/${slug}/shop/item/53?dlp_code=abc`)).status, 302);
+    hosted.close();
+    await once(hosted, "close");
   });
 
   it("returns byte-identical fallbacks for unknown, paused, archived, and internal-error paths", async () => {

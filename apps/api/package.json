@@ -5,6 +5,7 @@
   "description": "OpenMasu HTTP API",
   "type": "module",
   "dependencies": {
+    "@openmasu/app-association": "0.1.0",
     "@openmasu/apple-postback": "0.1.0",
     "@openmasu/redirector-core": "0.1.0",
     "@openmasu/runtime": "0.1.0",
