@@ -101,22 +101,30 @@ Implemented runtime code lives in `apps/api`, `apps/redirector`, `apps/worker`, 
 
 ## Five-minute synthetic quickstart
 
-Requirements: Docker with Compose, Node.js 22.18.0, and npm 11.6.2. From a clean clone, run:
+Requirements: Docker with Compose, Node.js 22.18.0, and npm 11.6.2. The Node.js and npm versions must match exactly because `.npmrc` enables `engine-strict`; nearby versions are rejected. Use `.nvmrc` with nvm, fnm, or an equivalent version manager. From a clean clone, run:
 
 ```bash
+npm ci
 docker compose up -d --wait
 npm run demo:metrics
 ```
 
-The bootstrap service generates local secrets, migrations run automatically, and the API and worker start only after PostgreSQL is healthy. `demo:metrics` prints tenant-scoped ledger counts plus a clearly labelled contract-synthetic preview. The preview is calculated from fixture 33 and does not claim that a real provider or campaign was queried. Its key values are:
+The bootstrap service generates local secrets, migrations run automatically, and the API and worker start only after PostgreSQL is healthy. `demo:metrics` prints tenant-scoped ledger counts plus a clearly labelled contract-synthetic preview. The preview is calculated from fixture 33 and does not claim that a real provider or campaign was queried.
 
 The API and dashboard listen on `http://localhost:8080` (`/dashboard` for the login page), and the portable redirector listens on `http://localhost:8090`. `npm run bootstrap` prints the local admin key once; paste it into the dashboard login form. Dashboard reports are aggregate operator views, not data-subject exports. Tracking links are created through the authenticated management route; request query parameters and headers can never override their stored destinations. SDK enrollment and event delivery use the HMAC signing string fixed in [M2 Design Baseline](docs/design/m2-baseline.md).
 
+An abridged clean-start output makes the two origins explicit:
+
 ```json
 {
+  "ledger_counts": {
+    "origin": "postgresql_ledger",
+    "raw_records": 0,
+    "logical_events": 0
+  },
   "synthetic_contract_preview": [
-    { "metric_name": "d7_roas", "value_unscaled": "1500000", "ratio_scale": 6 },
-    { "metric_name": "retention_d1", "value_unscaled": "1000000", "ratio_scale": 6 }
+    { "origin": "contract_fixture", "fixture": "33-stage-b-cohort-metrics", "metric_name": "d7_roas", "value_unscaled": "1500000", "ratio_scale": 6 },
+    { "origin": "contract_fixture", "fixture": "33-stage-b-cohort-metrics", "metric_name": "retention_d1", "value_unscaled": "1000000", "ratio_scale": 6 }
   ]
 }
 ```
@@ -127,6 +135,8 @@ To load all reviewed contract fixtures through the real PostgreSQL ingestion pat
 docker compose --profile seed run --rm seed
 npm run verify:parity
 ```
+
+Run the seed profile only on a synthetic instance with concurrent ingestion quiesced. Seed jobs serialize against each other with a PostgreSQL advisory lock and retry one `40P01` deadlock once; a second database deadlock is reported as a failure and should be investigated before rerunning.
 
 To exercise the operator CSV-to-metric path without committing a tabular file, create a synthetic CSV only under the gitignored `.openmasu/` directory and run the two explicit jobs:
 
@@ -140,6 +150,18 @@ npm run metrics:run -- --date=2026-08-20 --definitions=examples/metrics/syntheti
 The first command persists one immutable synthetic `cost_record`; the second runs the existing cohort SQL engine at the explicit day watermark and persists `d0_roas` with `value_state=present`. With no matching synthetic revenue loaded for that cohort, the reproducible ratio value is zero. Re-running the same metric definition intentionally refuses to overwrite the immutable metric-run ID.
 
 This quickstart uses synthetic inputs only. Do not place provider exports, credentials, real user data, campaign values, or validation results in this public repository.
+
+## Create a tracking link in the dashboard
+
+Custom HTTPS destinations fail closed unless their origins are explicitly allowed. Before the first bootstrap, export a comma-separated allowlist and start the stack:
+
+```bash
+export OPENMASU_REDIRECTOR_DESTINATION_ALLOWLIST=https://links.synthetic.example
+docker compose up -d --wait
+docker compose logs bootstrap
+```
+
+Open `http://localhost:8080/dashboard`, sign in with the generated admin key shown by the bootstrap log, select the application, and use **Create a tracking link**. The destination URL must use an origin in `OPENMASU_REDIRECTOR_DESTINATION_ALLOWLIST`; an unlisted origin remains rejected. An existing deployment must update its generated app runtime environment through its secret-management procedure and restart the API before a changed allowlist takes effect.
 
 ## Android, iOS, and Unity SDK development
 
